@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-10T11:00:10.038Z
--- Routines: 1349
+-- Generated: 2026-08-14T14:57:15.830Z
+-- Routines: 1383
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -682,10 +682,6 @@ BEGIN
         WHEN 'staff' THEN ARRAY[
           'dashboard','customers','estimates','sales_orders','invoices',
           'inventory','product_availability','attendance']
-        WHEN 'sales' THEN ARRAY[
-          'dashboard','customers','estimates','sales_orders','invoices',
-          'product_availability']
-        WHEN 'employee' THEN ARRAY['dashboard','attendance']
         WHEN 'viewer' THEN ARRAY['dashboard','reports']
         ELSE ARRAY[]::TEXT[]
       END;
@@ -1260,6 +1256,55 @@ BEGIN
     ORDER BY a.score DESC LIMIT p_limit;
   END IF;
 END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- anon_prelogin_exceptions()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.anon_prelogin_exceptions()
+ RETURNS text[]
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  -- **الأبوابُ التى يطرقُها من لا حسابَ له بعد.**
+  -- كلُّ اسمٍ هنا **دَينٌ مُعلَنٌ لا رخصة**، **ولا رخصةَ بلا طارق**: يُشترَطُ
+  -- أن يناديَه سطرٌ فى شفرةِ التطبيق، وإلّا سقطَ حارسُ المستودع.
+  --
+  -- v3.75.28 — رُفعت ثلاثةُ أسماءٍ بعدَ قياس:
+  --   check_username_available     — صفرُ نداءٍ فى الشفرة، وصفرُ طلبٍ حىّ.
+  --   generate_username_from_email — كذلك. وكلتاهما تُنادى **من داخلِ**
+  --                                  دالّتَين SECURITY DEFINER، فلا تحتاجُ منحة.
+  --   get_user_company_status      — **مغلَقٌ للزائرِ أصلاً** ويُنادى بعدَ الدخول
+  --                                  (٧٠٩٨ طلباً)، فإعلانُه كان وصفاً كاذباً.
+  SELECT ARRAY[
+    'find_user_by_login',  -- app/auth/login/page.tsx — تحوّلُ اسمَ المستخدمِ إلى بريد
+    'auth_email_state'     -- app/auth/sign-up-success/page.tsx — بتٌّ واحدٌ ومحدودةٌ بمعدّل
+  ]::text[]
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- anon_reachable_ceiling()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.anon_reachable_ceiling()
+ RETURNS integer
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  -- **السقفُ الواحدُ لعددِ دالّاتِ الصلاحيّاتِ الكاملةِ التى يبلغُها الزائر.**
+  --
+  -- الواقعُ المقيسُ يومَ الولادة: **٣٥ فى الإنتاج و٣٥ فى بيتِ الاختبار** —
+  -- والفسحةُ **واحدةٌ معلومةٌ مكتوبةٌ لا مسكوتٌ عنها**، لأنّ البيتَينِ لا يلزمُ
+  -- أن يتطابقا حرفاً بحرفٍ وإن لزمَ أن يخضعا لقانونٍ واحد.
+  --
+  -- **ولا يُرفَعُ هذا الرقمُ ليمرَّ فحص**: رفعُه اعترافٌ بأنّ باباً فُتح، ولا يُرفَعُ
+  -- إلّا بقرارٍ مكتوبٍ فى دفعتِه. **ويُخفَضُ فى دفعةِ من خفضَ الواقع** — وإلّا
+  -- صارَ سقفاً لا يمنعُ شيئاً، يُطمئنُ ولا يحرس. و`assert_baseline_v3_75_31_check`
+  -- يمنعُ الأمرَين: أن ينزلَ تحتَ الواقع، وأن يرتفعَ فوقَه بلا حدّ.
+  SELECT 36
 $function$
 ;
 
@@ -3271,7 +3316,7 @@ BEGIN
 
   SELECT pg_get_functiondef(p.oid) INTO v_approve_def FROM pg_proc p WHERE p.proname='approve_purchase_order_atomic' LIMIT 1;
   IF v_approve_def NOT LIKE '%v_last_disc_status = ''rejected''%'
-     OR v_approve_def NOT LIKE '%''owner''%' OR (v_approve_def NOT LIKE '%''admin''%' AND v_approve_def NOT LIKE '%''general_manager''%') THEN
+     OR v_approve_def NOT LIKE '%''owner''%' OR (v_approve_def NOT LIKE '%''admin''%') THEN
     RAISE EXCEPTION 'BASELINE FAIL: approve_purchase_order_atomic invariants';
   END IF;
 
@@ -3281,7 +3326,7 @@ BEGIN
   END IF;
 
   SELECT pg_get_functiondef(p.oid) INTO v_inv_trg_def FROM pg_proc p WHERE p.proname='inv_request_discount_approval_trg' LIMIT 1;
-  IF (v_inv_trg_def NOT LIKE '%sales_order_id%' AND NOT EXISTS (SELECT 1 FROM pg_proc d JOIN pg_namespace dn ON dn.oid = d.pronamespace WHERE dn.nspname = 'public' AND d.prokind = 'f' AND v_inv_trg_def LIKE '%' || d.proname || '(%' AND pg_get_functiondef(d.oid) LIKE '%sales_order_id%')) THEN
+  IF (v_inv_trg_def NOT LIKE '%sales_order_id%' AND NOT EXISTS (SELECT 1 FROM pg_proc d JOIN pg_namespace dn ON dn.oid = d.pronamespace WHERE dn.nspname = 'public' AND d.prokind = 'f' AND d.proname <> 'inv_request_discount_approval_trg' AND v_inv_trg_def LIKE '%' || d.proname || '(%' AND pg_get_functiondef(d.oid) LIKE '%sales_order_id%')) THEN
     RAISE EXCEPTION 'BASELINE FAIL: inv_request_discount_approval_trg invariants (v3.74.419)';
   END IF;
 
@@ -3335,7 +3380,7 @@ BEGIN
   END IF;
 
   SELECT pg_get_functiondef(p.oid) INTO v_pay_ins_def FROM pg_proc p WHERE p.proname='payment_supplier_approval_insert_trg' LIMIT 1;
-  IF v_pay_ins_def NOT LIKE '%''owner''%' OR (v_pay_ins_def NOT LIKE '%''admin''%' AND v_pay_ins_def NOT LIKE '%''general_manager''%') OR v_pay_ins_def NOT LIKE '%supplier_id%' OR v_pay_ins_def NOT LIKE '%bill_id%' THEN
+  IF v_pay_ins_def NOT LIKE '%''owner''%' OR (v_pay_ins_def NOT LIKE '%''admin''%') OR v_pay_ins_def NOT LIKE '%supplier_id%' OR v_pay_ins_def NOT LIKE '%bill_id%' THEN
     RAISE EXCEPTION 'BASELINE FAIL: payment_supplier_approval_insert_trg invariants (v3.74.426)';
   END IF;
   SELECT pg_get_functiondef(p.oid) INTO v_pay_upd_def FROM pg_proc p WHERE p.proname='payment_supplier_approval_update_trg' LIMIT 1;
@@ -3349,7 +3394,7 @@ BEGIN
 
   -- Section AA (v3.74.427) — purchase return approval gates.
   SELECT pg_get_functiondef(p.oid) INTO v_pr_ins_def FROM pg_proc p WHERE p.proname='purchase_return_approval_insert_trg' LIMIT 1;
-  IF v_pr_ins_def NOT LIKE '%''owner''%' OR (v_pr_ins_def NOT LIKE '%''admin''%' AND v_pr_ins_def NOT LIKE '%''general_manager''%') THEN
+  IF v_pr_ins_def NOT LIKE '%''owner''%' OR (v_pr_ins_def NOT LIKE '%''admin''%') THEN
     RAISE EXCEPTION 'BASELINE FAIL: purchase_return_approval_insert_trg invariants (v3.74.427)';
   END IF;
   SELECT pg_get_functiondef(p.oid) INTO v_pr_upd_def FROM pg_proc p WHERE p.proname='purchase_return_approval_update_trg' LIMIT 1;
@@ -3530,7 +3575,7 @@ BEGIN
 
   -- Contract invariants
   SELECT pg_get_functiondef(oid) INTO v_def FROM pg_proc WHERE proname='sales_return_approval_insert_trg';
-  IF v_def NOT LIKE '%''owner''%' OR (v_def NOT LIKE '%''admin''%' AND v_def NOT LIKE '%''general_manager''%') THEN
+  IF v_def NOT LIKE '%''owner''%' OR (v_def NOT LIKE '%''admin''%') THEN
     RAISE EXCEPTION 'BASELINE FAIL: sales_return_approval_insert_trg missing role gate (v3.74.430)';
   END IF;
   SELECT pg_get_functiondef(oid) INTO v_def FROM pg_proc WHERE proname='invoice_notify_accountant_trg';
@@ -3613,7 +3658,7 @@ BEGIN
 
   -- Approve RPC must be owner/GM gated
   SELECT pg_get_functiondef(oid) INTO v_def FROM pg_proc WHERE proname='approve_routing_version_atomic';
-  IF v_def NOT LIKE '%''owner''%' OR (v_def NOT LIKE '%''admin''%' AND v_def NOT LIKE '%''general_manager''%') THEN
+  IF v_def NOT LIKE '%''owner''%' OR (v_def NOT LIKE '%''admin''%') THEN
     RAISE EXCEPTION 'BASELINE FAIL: approve_routing_version_atomic role gate (v3.74.437)';
   END IF;
 END;
@@ -3664,7 +3709,7 @@ BEGIN
   END LOOP;
 
   SELECT pg_get_functiondef(oid) INTO v_def FROM pg_proc WHERE proname='approve_production_order_atomic';
-  IF v_def NOT LIKE '%''owner''%' OR (v_def NOT LIKE '%''admin''%' AND v_def NOT LIKE '%''general_manager''%') THEN
+  IF v_def NOT LIKE '%''owner''%' OR (v_def NOT LIKE '%''admin''%') THEN
     RAISE EXCEPTION 'BASELINE FAIL: approve_production_order_atomic role gate (v3.74.438)';
   END IF;
 END;
@@ -4972,6 +5017,1789 @@ BEGIN
   END;
   IF NOT v_caught THEN
     RAISE EXCEPTION 'BASELINE FAIL: زُرعت دالّةٌ بلا مسارٍ مثبَّتٍ ولم يرها الفحص (v3.74.998)';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_74_999_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_74_999_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_vocab   text[] := public.erp_membership_roles();
+  v_bad     text;
+  v_n       int;
+  v_caught  boolean;
+BEGIN
+  IF array_length(v_vocab, 1) IS NULL OR array_length(v_vocab, 1) = 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: مفرداتُ الأدوار فارغة (v3.74.999)';
+  END IF;
+
+  -- ═══ الكتالوجُ والقيدُ يقولان قولاً واحداً ═══
+  SELECT string_agg(r, ', ') INTO v_bad
+  FROM unnest(v_vocab) AS r WHERE r NOT IN (SELECT name FROM public.roles);
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: وظيفةٌ يقبلها القيدُ ولا اسمَ لها فى الكتالوج: % (v3.74.999)', v_bad;
+  END IF;
+
+  SELECT string_agg(name, ', ') INTO v_bad
+  FROM public.roles WHERE NOT (name = ANY (v_vocab));
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: وظيفةٌ فى الكتالوجِ لا يقبلها القيد: % (v3.74.999)', v_bad;
+  END IF;
+
+  -- ═══ ولا وظيفةَ بلا اسمٍ معروض ═══
+  SELECT string_agg(name, ', ') INTO v_bad
+  FROM public.roles
+  WHERE coalesce(btrim(title_ar), '') = '' OR coalesce(btrim(title_en), '') = '';
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: وظيفةٌ بلا اسمٍ معروض: % (v3.74.999)', v_bad;
+  END IF;
+
+  -- ═══ ولا اسمَ واحدٌ لوظيفتين — **واسمانِ لوظيفةٍ ليسا اسماً** ═══
+  SELECT string_agg(t, ' | ') INTO v_bad
+  FROM (
+    SELECT title_ar || ' → ' || string_agg(name, ' و') AS t
+    FROM public.roles GROUP BY title_ar HAVING count(*) > 1
+  ) s;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: اسمٌ عربىٌّ واحدٌ لوظيفتين: % (v3.74.999)', v_bad;
+  END IF;
+
+  SELECT string_agg(t, ' | ') INTO v_bad
+  FROM (
+    SELECT title_en || ' → ' || string_agg(name, ' و') AS t
+    FROM public.roles GROUP BY title_en HAVING count(*) > 1
+  ) s;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: اسمٌ إنجليزىٌّ واحدٌ لوظيفتين: % (v3.74.999)', v_bad;
+  END IF;
+
+  -- ═══ والترتيبُ متّصلٌ من ١ إلى العدد، بلا فجوةٍ ولا تكرار ═══
+  SELECT count(*) INTO v_n FROM public.roles;
+  IF EXISTS (
+    SELECT 1 FROM public.roles GROUP BY priority HAVING count(*) > 1
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: ترتيبٌ مكرَّرٌ فى كتالوج الوظائف (v3.74.999)';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM generate_series(1, v_n) AS g
+    WHERE g NOT IN (SELECT priority FROM public.roles)
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: ترتيبُ الوظائفِ ليس متّصلاً من ١ إلى % (v3.74.999)', v_n;
+  END IF;
+
+  -- ═══ والرتبةُ العليا موجودةٌ ومعروفة ═══
+  IF array_length(public.erp_senior_roles(), 1) IS NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: لا رتبةَ عليا فى الكتالوج — ومن لا عليا له لا يعتمدُ أحدٌ شيئاً (v3.74.999)';
+  END IF;
+  IF NOT public.erp_is_senior_role('owner') THEN
+    RAISE EXCEPTION 'BASELINE FAIL: المالكُ ليس من الأدوارِ العليا (v3.74.999)';
+  END IF;
+  SELECT string_agg(r, ', ') INTO v_bad
+  FROM unnest(public.erp_senior_roles()) AS r WHERE NOT (r = ANY (v_vocab));
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: رتبةٌ عليا لوظيفةٍ لا يقبلها النظام: % (v3.74.999)', v_bad;
+  END IF;
+
+  -- ═══ والفخُّ يُشغَّل: يُزرع اسمٌ مكرَّرٌ فيجب أن يُرى، ثمّ يُلغى الزرع ═══
+  -- **فخٌّ لا يُشغَّل ليس فخّاً.**
+  v_caught := false;
+  BEGIN
+    INSERT INTO public.roles (name, title_ar, title_en, tier, priority, is_system)
+    SELECT 'zz_probe_999', r.title_ar, 'ZZ Probe 999', 'normal', 9999, false
+    FROM public.roles r ORDER BY r.priority LIMIT 1;
+
+    PERFORM 1 FROM (
+      SELECT title_ar FROM public.roles GROUP BY title_ar HAVING count(*) > 1
+    ) s;
+    IF FOUND THEN v_caught := true; END IF;
+
+    RAISE EXCEPTION 'ROLLBACK_PROBE_999';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'ROLLBACK_PROBE_999' THEN RAISE; END IF;
+    WHEN OTHERS THEN
+      -- زرعٌ رفضته القاعدةُ نفسُها حراسةٌ أقوى، ويُعدّ نجاحاً معلَناً
+      v_caught := true;
+  END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'BASELINE FAIL: زُرع اسمٌ مكرَّرٌ لوظيفتين ولم يره الفحص (v3.74.999)';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_11_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_11_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_bad  text;
+  v_seen int;
+BEGIN
+  -- ═══ (أ) لا شرطَ يُقارنُ الشىءَ بنفسِه ═══
+  SELECT string_agg(t, ' | ') INTO v_bad FROM (
+    SELECT DISTINCT c.relname || '.' || pol.polname || ' → ' || m[1] AS t
+    FROM pg_policy pol
+    JOIN pg_class c ON c.oid = pol.polrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    CROSS JOIN LATERAL regexp_matches(
+      coalesce(pg_get_expr(pol.polqual, pol.polrelid), '') || ' ~ ' ||
+      coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), ''),
+      '(\m([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*\2\.\3\M)', 'g') m
+    WHERE n.nspname IN ('public', 'storage')
+  ) s;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: شرطٌ يقارنُ الشىءَ بنفسِه فهو صحيحٌ دائماً: % (v3.75.11)', v_bad;
+  END IF;
+
+  -- ═══ (ب) وكلُّ سياسةِ كتابةٍ يبلغُها المستخدمُ تربطُ الصفَّ بمن يكتبُه ═══
+  -- المقياسُ اعتمادٌ مسجَّلٌ فى القاعدة (pg_depend) لا شكلُ نصّ: هل تمسُّ
+  -- السياسةُ عموداً من أعمدةِ جدولِها؟ فإن لم تمسَّ، فهى تسألُ عن الشخصِ
+  -- ولا تسألُ عن الصفّ. **ومن لا يُسأل عن صفِّه يكتبُ فى صفِّ غيرِه.**
+  SELECT string_agg(t, ' | ') INTO v_bad FROM (
+    SELECT c.relname || '.' || pol.polname AS t
+    FROM pg_policy pol
+    JOIN pg_class c ON c.oid = pol.polrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND pol.polcmd <> 'r'
+      AND pol.polpermissive
+      -- منعٌ صريحٌ ليس ثغرة
+      AND coalesce(pg_get_expr(pol.polqual, pol.polrelid), '') <> 'false'
+      AND coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), '') <> 'false'
+      -- ما لا يبلغُه إلّا مفتاحُ الخدمة
+      AND coalesce(pg_get_expr(pol.polqual, pol.polrelid), '')
+        || coalesce(pg_get_expr(pol.polwithcheck, pol.polrelid), '') !~* 'service_role'
+      AND NOT (array_length(pol.polroles, 1) = 1
+               AND (SELECT r.rolname FROM pg_roles r WHERE r.oid = pol.polroles[1]) = 'service_role')
+      -- **استثناءٌ واحدٌ معلَن**: التسجيلُ يقعُ قبل أن يكونَ للطالبِ حسابٌ أصلاً،
+      -- فلا صفَّ يُربَطُ به. معدودٌ لا مسكوتٌ عنه.
+      AND c.relname <> 'pending_companies'
+      AND NOT EXISTS (
+        SELECT 1 FROM pg_depend d
+        WHERE d.classid = 'pg_policy'::regclass AND d.objid = pol.oid
+          AND d.refobjid = c.oid AND d.refobjsubid > 0
+      )
+  ) s;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: سياسةُ كتابةٍ لا تربطُ الصفَّ بمن يكتبُه: % (v3.75.11)', v_bad;
+  END IF;
+
+  -- ═══ (ج) والبابُ الثانى لا يعود ═══
+  IF EXISTS (
+    SELECT 1 FROM pg_policy pol JOIN pg_class c ON c.oid = pol.polrelid
+    WHERE c.relname = 'shareholders' AND pol.polname = 'Enable insert for authenticated users only'
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: عادَ البابُ الثانى على المساهمين (v3.75.11)';
+  END IF;
+
+  -- ═══ (د) وكتالوجُ الجميعِ لا يكتبُ فيه مستأجر ═══
+  SELECT string_agg(t, ' · ') INTO v_bad FROM (
+    SELECT c.relname AS t
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relname IN ('roles', 'permissions', 'role_default_permissions')
+      AND (has_table_privilege('authenticated', c.oid, 'INSERT')
+        OR has_table_privilege('authenticated', c.oid, 'UPDATE')
+        OR has_table_privilege('authenticated', c.oid, 'DELETE')
+        OR has_table_privilege('anon', c.oid, 'INSERT'))
+  ) s;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: كتالوجٌ عالمىٌّ ممنوحٌ للمستخدمِ النهائىِّ بالكتابة: % (v3.75.11)', v_bad;
+  END IF;
+
+  -- ═══ (ه) والفخُّ يُشغَّل بلا لمسِ صفٍّ واحد ═══
+  -- **فخٌّ لا يُشغَّل ليس فخّاً**: يُصطنَعُ نصٌّ فيه المقارنةُ بالنفس، فيجب أن
+  -- تراه القاعدةُ نفسُها التى حكمت على السياسات.
+  IF NOT ('(cm.company_id = cm.company_id) and (cm.user_id = auth.uid())'
+          ~ '\m([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*\1\.\2\M') THEN
+    RAISE EXCEPTION 'BASELINE FAIL: القاعدةُ لا ترى المقارنةَ بالنفسِ حتى حين تُصطنَع (v3.75.11)';
+  END IF;
+  -- **ولا يصرخُ على البرىء**: المقارنةُ الصحيحةُ ليست مقارنةً بالنفس.
+  IF ('(cm.company_id = shareholders.company_id)'
+      ~ '\m([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*\1\.\2\M') THEN
+    RAISE EXCEPTION 'BASELINE FAIL: القاعدةُ تصرخُ على شرطٍ سليم (v3.75.11)';
+  END IF;
+
+  -- ═══ (ز) ولا فحصٌ مرجعىٌّ يبلغُه زائرٌ أو مستخدم ═══
+  -- **وحارسٌ يُفتَحُ بابُه ليس حارساً**: الفحوصُ المرجعيّةُ كلُّها
+  -- SECURITY DEFINER — تعملُ بصلاحيّاتِ صاحبِ القاعدة. وأداتُها للمُطوِّرِ
+  -- ولسكربتِ الدفعة، لا لزائرٍ ولا لمستخدمٍ نهائىّ. **وأقلُّ صلاحيّةٍ تكفى.**
+  SELECT string_agg(t, ' · ') INTO v_bad FROM (
+    SELECT p.proname AS t
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname LIKE 'assert\_baseline%'
+      AND (has_function_privilege('anon', p.oid, 'EXECUTE')
+        OR has_function_privilege('authenticated', p.oid, 'EXECUTE'))
+  ) s;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: فحصٌ مرجعىٌّ يبلغُه زائرٌ أو مستخدم: % (v3.75.11)', v_bad;
+  END IF;
+
+  -- ═══ (ح) ولا يُقرأُ فراغٌ ويُسمّى سلاماً ═══
+  SELECT count(*) INTO v_seen FROM pg_policy pol
+  JOIN pg_class c ON c.oid = pol.polrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public' AND pol.polcmd <> 'r';
+  IF v_seen = 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: لا سياسةَ كتابةٍ واحدةً — بحثٌ لا يجد ليس دليلَ غياب (v3.75.11)';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_13_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_13_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_home   text[];
+  v_live   text[];
+  v_invite text[];
+  v_bad    text;
+  v_ok     boolean;
+BEGIN
+  -- ═══ (أ) البيوتُ تقولُ قولاً واحداً ═══
+  SELECT array_agg(name ORDER BY name) INTO v_home FROM public.roles;
+  SELECT array_agg(x ORDER BY x) INTO v_live FROM unnest(public.erp_membership_roles()) x;
+  SELECT array_agg(DISTINCT m[1] ORDER BY m[1]) INTO v_invite
+  FROM pg_constraint c
+  JOIN pg_class t ON t.oid = c.conrelid
+  JOIN pg_namespace n ON n.oid = t.relnamespace
+  CROSS JOIN LATERAL regexp_matches(pg_get_constraintdef(c.oid), '''([a-z_]+)''::text', 'g') m
+  WHERE n.nspname = 'public' AND t.relname = 'company_invitations'
+    AND c.conname = 'company_invitations_role_check';
+
+  IF v_home IS NULL OR array_length(v_home, 1) = 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: بيتُ الأسماءِ فارغ — بحثٌ لا يجد ليس دليلَ غياب (v3.75.13)';
+  END IF;
+  IF v_home IS DISTINCT FROM v_live THEN
+    RAISE EXCEPTION 'BASELINE FAIL: بيتُ الأسماءِ يخالفُ المفرداتِ الحيّة: % مقابل % (v3.75.13)', v_home, v_live;
+  END IF;
+  IF v_home IS DISTINCT FROM v_invite THEN
+    RAISE EXCEPTION 'BASELINE FAIL: بيتُ الأسماءِ يخالفُ قيدَ الدعوات: % مقابل % (v3.75.13)', v_home, v_invite;
+  END IF;
+
+  -- ═══ (ب) والأعمدةُ الثلاثةُ مربوطةٌ ببيتٍ حقيقىّ — تُقاسُ بالرباطِ لا بالاسم ═══
+  SELECT string_agg(t, ' · ') INTO v_bad FROM (
+    SELECT x.tbl || '.' || x.col AS t
+    FROM (VALUES
+      ('company_role_permissions', 'role', 'roles'),
+      ('role_default_permissions', 'role_name', 'roles'),
+      ('role_default_permissions', 'permission_action', 'permissions')
+    ) AS x(tbl, col, ref)
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM pg_constraint c
+      JOIN pg_class src ON src.oid = c.conrelid
+      JOIN pg_class tgt ON tgt.oid = c.confrelid
+      JOIN pg_attribute a ON a.attrelid = src.oid AND a.attnum = c.conkey[1]
+      WHERE c.contype = 'f' AND src.relname = x.tbl AND tgt.relname = x.ref
+        AND a.attname = x.col AND array_length(c.conkey, 1) = 1
+    )
+  ) s;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: عمودٌ يحملُ اسماً بلا رباطٍ ببيتِه: % (v3.75.13)', v_bad;
+  END IF;
+
+  -- ═══ (ج) ولا قائمةَ أسماءٍ مكتوبةً بيدٍ تعودُ بجانبِ الرباط ═══
+  -- **وبابٌ ثانٍ بجوارِ البابِ المحروسِ يُبطلُ الحراسة**، وقائمةٌ نصّيّةٌ تجمُد
+  -- بينما البيتُ ينمو.
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = t.relnamespace
+    WHERE n.nspname = 'public' AND t.relname = 'company_role_permissions'
+      AND c.contype = 'c' AND pg_get_constraintdef(c.oid) ~ '''owner''::text'
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: عادت قائمةُ أسماءٍ مكتوبةٌ بيدٍ على جدولِ الصلاحيّات (v3.75.13)';
+  END IF;
+
+  -- ═══ (د) والفخُّ يُشغَّلُ حقّاً — ثمّ يُلغى ═══
+  -- **فخٌّ لا يُشغَّل ليس فخّاً**: يُحاوَلُ إدخالُ اسمٍ لا بيتَ له، فيجب أن
+  -- ترفضَه القاعدةُ نفسُها. والمحاولةُ فى معاملةٍ فرعيّةٍ تُلغى فلا يبقى أثر.
+  -- **ولا يُقرأُ فراغٌ ويُسمّى سلاماً**: بلا شركةٍ لا يُشغَّلُ الفخُّ أصلاً.
+  IF NOT EXISTS (SELECT 1 FROM public.companies) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: لا شركةَ واحدةً فلا يُشغَّلُ الفخّ — بحثٌ لا يجد ليس دليلَ غياب (v3.75.13)';
+  END IF;
+  v_ok := false;
+  BEGIN
+    INSERT INTO public.company_role_permissions (company_id, role, resource)
+    SELECT c.id, 'zz_no_such_role', 'zz_probe_v3_75_13' FROM public.companies c LIMIT 1;
+    -- إن وصلنا هنا فالبابُ مفتوح
+  EXCEPTION
+    WHEN foreign_key_violation THEN v_ok := true;
+  END;
+  IF NOT v_ok THEN
+    RAISE EXCEPTION 'BASELINE FAIL: قُبِل اسمُ وظيفةٍ لا بيتَ له (v3.75.13)';
+  END IF;
+
+  -- **ولا يصرخُ على البرىء**: اسمٌ له بيتٌ يجب أن يُقبَل.
+  v_ok := true;
+  BEGIN
+    INSERT INTO public.company_role_permissions (company_id, role, resource)
+    SELECT c.id, r.name, 'zz_probe_v3_75_13' FROM public.companies c, public.roles r
+    WHERE r.name = 'accountant' LIMIT 1;
+    RAISE EXCEPTION 'ZZ_ROLLBACK_PROBE';
+  EXCEPTION
+    WHEN foreign_key_violation THEN v_ok := false;
+    WHEN others THEN
+      IF SQLERRM <> 'ZZ_ROLLBACK_PROBE' THEN RAISE; END IF;
+  END;
+  IF NOT v_ok THEN
+    RAISE EXCEPTION 'BASELINE FAIL: رُفض اسمٌ له بيتٌ — الحارسُ يصرخ على البرىء (v3.75.13)';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_14_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_14_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_co      public.companies%ROWTYPE;
+  v_new     uuid;
+  v_actual  text[];
+  v_tpl     text[];
+  v_over    text[];
+  v_under   text[];
+  v_ran     boolean := false;
+BEGIN
+  -- **ولا يُقرأُ فراغٌ ويُسمّى سلاماً**: بلا شركةٍ لا تُشتقُّ ولادة.
+  IF NOT EXISTS (SELECT 1 FROM public.companies) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: لا شركةَ واحدةً فلا تُولَدُ ولادةُ القياس (v3.75.14)';
+  END IF;
+
+  BEGIN
+    SELECT * INTO v_co FROM public.companies ORDER BY created_at LIMIT 1;
+    v_new := gen_random_uuid();
+    v_co.id := v_new;
+    v_co.name := 'ZZ ولادة الفحص المرجعى v3.75.14';
+    INSERT INTO public.companies VALUES (v_co.*);
+
+    -- ما ينالُه المولودُ فعلاً (بذّارٌ يدوىٌّ ثمّ قالبٌ يملأُ الفراغ)
+    SELECT array_agg(role || '|' || resource || '|' || concat_ws(',',
+             CASE WHEN can_access THEN 'ac' END, CASE WHEN can_read   THEN 'r' END,
+             CASE WHEN can_write  THEN 'c'  END, CASE WHEN can_update THEN 'u' END,
+             CASE WHEN can_delete THEN 'd'  END)
+           ORDER BY role, resource)
+      INTO v_actual
+      FROM public.company_role_permissions WHERE company_id = v_new;
+
+    -- ثمّ يُمحى الأثرُ ويُشغَّلُ **القالبُ وحدَه**
+    DELETE FROM public.company_role_permissions WHERE company_id = v_new;
+    PERFORM public.copy_default_permissions_for_company(v_new);
+
+    SELECT array_agg(role || '|' || resource || '|' || concat_ws(',',
+             CASE WHEN can_access THEN 'ac' END, CASE WHEN can_read   THEN 'r' END,
+             CASE WHEN can_write  THEN 'c'  END, CASE WHEN can_update THEN 'u' END,
+             CASE WHEN can_delete THEN 'd'  END)
+           ORDER BY role, resource)
+      INTO v_tpl
+      FROM public.company_role_permissions WHERE company_id = v_new;
+
+    SELECT array_agg(x ORDER BY x) INTO v_over
+      FROM (SELECT unnest(coalesce(v_tpl, '{}'::text[])) EXCEPT SELECT unnest(coalesce(v_actual, '{}'::text[]))) z(x);
+    SELECT array_agg(x ORDER BY x) INTO v_under
+      FROM (SELECT unnest(coalesce(v_actual, '{}'::text[])) EXCEPT SELECT unnest(coalesce(v_tpl, '{}'::text[]))) z(x);
+    v_ran := true;
+    RAISE EXCEPTION 'ZZ_UNDO_V37514';
+  EXCEPTION
+    WHEN others THEN
+      IF SQLERRM <> 'ZZ_UNDO_V37514' THEN RAISE; END IF;
+  END;
+
+  -- **وفخٌّ لا يُشغَّل ليس فخّاً**
+  IF NOT v_ran THEN
+    RAISE EXCEPTION 'BASELINE FAIL: لم تُشغَّلْ ولادةُ القياسِ أصلاً (v3.75.14)';
+  END IF;
+  IF v_actual IS NULL OR array_length(v_actual, 1) = 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: مولودٌ بلا صلاحيّاتٍ إطلاقاً — بحثٌ لا يجد ليس دليلَ غياب (v3.75.14)';
+  END IF;
+
+  -- **وقالبٌ يمنحُ أكثرَ ممّا يمنحُه الواقعُ قنبلةٌ موقوتة**
+  IF v_over IS NOT NULL AND array_length(v_over, 1) > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: القالبُ أسخى من الواقعِ فى % موضعاً: % (v3.75.14)',
+      array_length(v_over, 1), array_to_string(v_over[1:8], ' · ');
+  END IF;
+
+  -- وما يمنحُه الواقعُ يجب أن يقولَه القالب
+  IF v_under IS NOT NULL AND array_length(v_under, 1) > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: القالبُ يجهلُ % ممّا يناله المولود: % (v3.75.14)',
+      array_length(v_under, 1), array_to_string(v_under[1:8], ' · ');
+  END IF;
+
+  -- **ولا يُصدَّقُ المقياسُ حتّى يُكادَ له**: يُصطنَعُ اختلافٌ فيجب أن يُرى.
+  IF NOT EXISTS (
+    SELECT 1 FROM (SELECT unnest(ARRAY['manager|invoices|ac,r,c']) EXCEPT
+                   SELECT unnest(ARRAY['manager|invoices|ac,r'])) z(x)
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: المقياسُ لا يرى الاختلافَ حتّى حين يُصطنَع (v3.75.14)';
+  END IF;
+  -- **ولا يصرخُ على البرىء**: المتطابقانِ لا يُعدّانِ اختلافاً.
+  IF EXISTS (
+    SELECT 1 FROM (SELECT unnest(ARRAY['manager|invoices|ac,r']) EXCEPT
+                   SELECT unnest(ARRAY['manager|invoices|ac,r'])) z(x)
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: المقياسُ يصرخُ على متطابقَين (v3.75.14)';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_15_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_15_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_bad  int;
+  v_ex   text;
+  v_seen int;
+  v_trap boolean := false;
+BEGIN
+  -- **ولا يُقرأُ فراغٌ ويُسمّى سلاماً**
+  SELECT count(*) INTO v_seen FROM public.companies;
+  IF v_seen = 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: لا شركةَ واحدة — بحثٌ لا يجد ليس دليلَ غياب (v3.75.15)';
+  END IF;
+  SELECT count(*) INTO v_seen FROM public.permissions;
+  IF v_seen = 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: كتالوجُ الصلاحيّاتِ فارغ (v3.75.15)';
+  END IF;
+
+  -- ═══ لا يقولُ صفُّ المالكِ أو المديرِ العامِّ أقلَّ ممّا يستطيعُه ═══
+  -- حكمُهما تجاوزٌ كامل، فأىُّ خانةٍ فارغةٍ على الشاشةِ **جملةٌ غيرُ صحيحة**.
+  WITH need AS (
+    SELECT c.id AS company_id, r.role, p.resource, split_part(p.action, ':', 2) AS verb
+    FROM public.companies c
+    CROSS JOIN (VALUES ('owner'), ('admin')) AS r(role)
+    CROSS JOIN public.permissions p
+    WHERE split_part(p.action, ':', 2) IN ('access','read','create','update','delete')
+  )
+  SELECT count(*), left(coalesce(string_agg(DISTINCT n.role || '.' || n.resource || ':' || n.verb, ' · '), ''), 200)
+    INTO v_bad, v_ex
+  FROM need n
+  LEFT JOIN public.company_role_permissions p
+         ON p.company_id = n.company_id AND p.role = n.role AND p.resource = n.resource
+  WHERE p.company_id IS NULL
+     OR NOT CASE n.verb
+          WHEN 'access' THEN p.can_access WHEN 'read'   THEN p.can_read
+          WHEN 'create' THEN p.can_write  WHEN 'update' THEN p.can_update
+          WHEN 'delete' THEN p.can_delete END;
+
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: صفٌّ يقولُ أقلَّ ممّا يستطيعُه صاحبُه فى % موضعاً: % (v3.75.15)', v_bad, v_ex;
+  END IF;
+
+  -- ═══ **وفخٌّ لا يُشغَّل ليس فخّاً**: يُضيَّقُ صفٌّ حقّاً فيجب أن يُرى ═══
+  BEGIN
+    UPDATE public.company_role_permissions
+       SET can_read = false
+     WHERE role = 'owner' AND ctid = (SELECT ctid FROM public.company_role_permissions
+                                       WHERE role = 'owner' LIMIT 1);
+    WITH need AS (
+      SELECT c.id AS company_id, r.role, p.resource, split_part(p.action, ':', 2) AS verb
+      FROM public.companies c
+      CROSS JOIN (VALUES ('owner'), ('admin')) AS r(role)
+      CROSS JOIN public.permissions p
+      WHERE split_part(p.action, ':', 2) IN ('access','read','create','update','delete')
+    )
+    SELECT count(*) INTO v_bad
+    FROM need n
+    LEFT JOIN public.company_role_permissions p
+           ON p.company_id = n.company_id AND p.role = n.role AND p.resource = n.resource
+    WHERE p.company_id IS NULL
+       OR NOT CASE n.verb
+            WHEN 'access' THEN p.can_access WHEN 'read'   THEN p.can_read
+            WHEN 'create' THEN p.can_write  WHEN 'update' THEN p.can_update
+            WHEN 'delete' THEN p.can_delete END;
+    v_trap := (v_bad > 0);
+    RAISE EXCEPTION 'ZZ_UNDO_V37515';
+  EXCEPTION
+    WHEN others THEN
+      IF SQLERRM <> 'ZZ_UNDO_V37515' THEN RAISE; END IF;
+  END;
+
+  IF NOT v_trap THEN
+    RAISE EXCEPTION 'BASELINE FAIL: المقياسُ لا يرى تضييقاً حتّى حين يُصطنَع (v3.75.15)';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_17_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_17_check()
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_bad    int;
+  v_names  text[];
+  v_roles  text[];
+BEGIN
+  -- (أ) ولا يقبلُ فحصٌ اسماً ميّتاً بدلَ الحىّ، ولا يشترطُه
+  SELECT count(*) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname IN ('assert_baseline','assert_baseline_v3_74_430_check',
+                       'assert_baseline_v3_74_437_check','assert_baseline_v3_74_438_check')
+     AND strpos(pg_get_functiondef(p.oid), 'general_manager') > 0;
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: عادَ general_manager إلى % فحصاً مرجعيّاً (v3.75.17)', v_bad;
+  END IF;
+
+  -- (ب) ولا تسمّى دالّةُ رؤيةٍ وظيفةً لا يشغلها أحد
+  SELECT count(*) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname IN ('current_user_record_visibility','current_user_resource_visibility')
+     AND strpos(pg_get_functiondef(p.oid), '''supervisor''') > 0;
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: عادَ supervisor إلى % دالّةَ رؤية (v3.75.17)', v_bad;
+  END IF;
+
+  -- (ج) ولا فرعَ لا يُبلَغُ فى مساعِدِ الذكاءِ الاصطناعىّ
+  SELECT count(*) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname = 'ai_current_user_allowed_resources'
+     AND (strpos(pg_get_functiondef(p.oid), 'WHEN ''sales''') > 0
+       OR strpos(pg_get_functiondef(p.oid), 'WHEN ''employee''') > 0);
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: عادَ فرعُ CASE ميّتٌ إلى ai_current_user_allowed_resources (v3.75.17)';
+  END IF;
+
+  -- (د) ونظافةُ شارةِ الاعتماداتِ ليست يدويّة
+  SELECT count(*) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname = 'get_user_approval_badges'
+     AND strpos(pg_get_functiondef(p.oid), 'general_manager') > 0;
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: عادَ general_manager إلى get_user_approval_badges (v3.75.17)';
+  END IF;
+
+  -- (ه) وأنّ الفحصَ الكبيرَ يسألُ عن الوظائفِ التشغيليّةِ الحيّةِ الأربع
+  SELECT count(*) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'assert_baseline'
+     AND (strpos(pg_get_functiondef(p.oid), '%purchasing_officer%') = 0
+       OR strpos(pg_get_functiondef(p.oid), '%booking_officer%') = 0
+       OR strpos(pg_get_functiondef(p.oid), '%manufacturing_officer%') = 0
+       OR strpos(pg_get_functiondef(p.oid), '%hr_officer%') = 0);
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: assert_baseline لم يعُدْ يسألُ عن الوظائفِ التشغيليّةِ الأربع (v3.75.17)';
+  END IF;
+
+  -- (و) والمقدّمةُ التى قامَ عليها كلُّ نزعٍ أعلاه — تُقاسُ ولا تُفترَض
+  SELECT array_agg(m[1] ORDER BY m[1]) INTO v_names
+    FROM pg_constraint c
+    JOIN pg_class cl ON cl.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = cl.relnamespace,
+    LATERAL regexp_matches(pg_get_constraintdef(c.oid), '''([a-z_]+)''::text', 'g') AS m
+   WHERE n.nspname = 'public' AND cl.relname = 'company_members'
+     AND c.conname = 'company_members_role_check';
+
+  SELECT array_agg(name ORDER BY name) INTO v_roles FROM public.roles;
+
+  IF v_names IS NULL OR v_names IS DISTINCT FROM v_roles THEN
+    RAISE EXCEPTION 'BASELINE FAIL: مفرداتُ العضويّةِ لا تطابقُ جدولَ الوظائف — % مقابل % (v3.75.17)',
+      v_names, v_roles;
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_18_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_18_check()
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_company uuid;
+  v_bad     int;
+BEGIN
+  -- (أ) غيابُ القاعدة منعٌ — يُقاسُ بالسلوكِ لا بالنصّ
+  SELECT company_id INTO v_company FROM public.company_role_permissions LIMIT 1;
+  IF v_company IS NOT NULL THEN
+    IF public.check_page_access(v_company, 'zz_role_nobody_holds', 'zz_no_rule_here') IS NOT FALSE THEN
+      RAISE EXCEPTION 'BASELINE FAIL: صمتُ القاعدة قُرئ إذناً فى check_page_access (v3.75.18)';
+    END IF;
+  END IF;
+
+  -- (ب) ولا يُلغى حذفٌ بصمت
+  SELECT count(*) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'prevent_posted_journal_modification'
+     AND strpos(pg_get_functiondef(p.oid), 'COALESCE(NEW, OLD)') = 0;
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: عادَ حارسُ القيدِ المرحَّلِ يُلغى الحذفَ بصمت (v3.75.18)';
+  END IF;
+
+  -- (ج) ولا يُكتَبُ مستندٌ بلا فرعٍ ولا مخزنٍ ولا مركزِ تكلفة
+  SELECT count(*) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'check_governance_scope'
+     AND (strpos(pg_get_functiondef(p.oid), 'NEW.branch_id IS NULL')      = 0
+       OR strpos(pg_get_functiondef(p.oid), 'NEW.warehouse_id IS NULL')   = 0
+       OR strpos(pg_get_functiondef(p.oid), 'NEW.cost_center_id IS NULL') = 0);
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: حارسُ النطاقِ لم يعُدْ يسألُ عن الفراغ (v3.75.18)';
+  END IF;
+
+  -- (د) وفخٌّ يمرّ بنفسه ليس فخّاً
+  SELECT count(*) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'assert_baseline' AND p.pronargs = 0
+     AND strpos(pg_get_functiondef(p.oid), 'd.proname <> ''inv_request_discount_approval_trg''') = 0;
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: عادَ الفحصُ الكبيرُ يقبلُ أن تُثبتَ الدالّةُ نفسَها بنفسِها (v3.75.18)';
+  END IF;
+
+  -- (ه) والفحصانِ اللذانِ غابا عن بيتٍ لا يغيبانِ بعد اليوم
+  SELECT count(*) INTO v_bad
+    FROM (VALUES ('assert_baseline_v3_74_993_check'), ('assert_baseline_v3_74_998_check')) AS w(nm)
+   WHERE NOT EXISTS (
+     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.proname = w.nm AND p.pronargs = 0);
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: % فحصاً مرجعيّاً مفقوداً من هذا البيت (v3.75.18)', v_bad;
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_19_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_19_check()
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_closed boolean;
+  v_bad    int;
+BEGIN
+  -- (أ) وفخٌّ لا يُشغَّل ليس فخّاً: يُنادى المسارُ المتقاعدُ فعلاً ويجب أن يرفض
+  --     قبل أن يمسَّ صفّاً واحداً.
+  v_closed := FALSE;
+  BEGIN
+    PERFORM public.post_payroll_run_atomic(NULL::uuid, NULL::uuid, NULL::uuid, NULL::uuid);
+  EXCEPTION WHEN OTHERS THEN
+    IF position('DEPRECATED_PAYROLL_POSTER' in SQLERRM) > 0 THEN v_closed := TRUE; END IF;
+  END;
+  IF NOT v_closed THEN
+    RAISE EXCEPTION 'BASELINE FAIL: مُرحِّلُ الرواتبِ القديمُ ما زال يعمل — وكان يُنتجُ قيداً غير متوازن (v3.75.19)';
+  END IF;
+
+  v_closed := FALSE;
+  BEGIN
+    PERFORM public.record_shareholder_drawing_atomic(
+      NULL::uuid, NULL::uuid, NULL::numeric, NULL::date, NULL::uuid, NULL::uuid);
+  EXCEPTION WHEN OTHERS THEN
+    IF position('DEPRECATED_DRAWING_PATH' in SQLERRM) > 0 THEN v_closed := TRUE; END IF;
+  END;
+  IF NOT v_closed THEN
+    RAISE EXCEPTION 'BASELINE FAIL: مسارُ المسحوباتِ القديمُ ما زال يعمل — بلا اعتمادٍ ولا فصلِ مهامّ (v3.75.19)';
+  END IF;
+
+  -- (ب) وقيدُ العمولةِ يعرفُ الاسترداد
+  SELECT count(*) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'post_bonus_accrual_atomic'
+     AND strpos(pg_get_functiondef(p.oid), 'v_is_clawback') = 0;
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: قيدُ العمولةِ لم يعُدْ يعرفُ الاسترداد — فمبلغٌ سالبٌ يُكتَبُ مديناً بالسالب (v3.75.19)';
+  END IF;
+
+  -- (ج) وصرفُ المرتّباتِ يُغلقُ مفتاحَ منعِ التكرارِ عند الفشل، ويمنعُ عدمَ التوازن
+  SELECT count(*) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'post_payroll_atomic'
+     AND (strpos(pg_get_functiondef(p.oid), 'complete_idempotency_key') = 0
+       OR strpos(pg_get_functiondef(p.oid), 'PAYSLIP_IMBALANCE') = 0);
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: صرفُ المرتّباتِ يتركُ مفتاحَ منعِ التكرارِ معلَّقاً أو لا يفحصُ توازنَ الكشوف (v3.75.19)';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_20_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_20_check()
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_bad      int;
+  v_co       uuid;
+  v_prod     uuid;
+  v_refused  boolean;
+BEGIN
+  -- (أ) لا يعودُ زنادٌ يكتبُ حركةَ مخزنٍ بلا نطاق، ولا شبكةُ أمانٍ مقطوعة
+  SELECT count(*) INTO v_bad
+    FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND NOT t.tgisinternal
+     AND t.tgname IN ('trg_auto_inventory_vendor_credit_item',
+                      'trg_inherit_branch_warehouse_inventory');
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: عادَ % زناداً نُزع فى v3.75.20 (لغمُ إشعارِ الدائن أو شبكةُ الوراثةِ المقطوعة)', v_bad;
+  END IF;
+
+  -- (ب) **وفخٌّ لا يُشغَّل ليس فخّاً**: يُجرَّبُ إدخالُ حركةِ مخزنٍ بلا فرعٍ فعلاً،
+  --     ويجب أن تُرفَض. والإدخالُ داخلَ معاملةٍ فرعيّةٍ تُلغى فى الحالتَين.
+  SELECT id INTO v_co FROM public.companies LIMIT 1;
+  IF v_co IS NULL THEN
+    RAISE NOTICE 'v3.75.20 · لا شركةَ تُقاسُ عليها — لم يُدَّعَ قياس.';
+    RETURN;
+  END IF;
+  SELECT id INTO v_prod FROM public.products WHERE company_id = v_co LIMIT 1;
+  IF v_prod IS NULL THEN
+    RAISE NOTICE 'v3.75.20 · لا منتجَ يُقاسُ عليه — لم يُدَّعَ قياس.';
+    RETURN;
+  END IF;
+
+  v_refused := FALSE;
+  BEGIN
+    INSERT INTO public.inventory_transactions
+      (company_id, product_id, transaction_type, quantity_change, notes)
+    VALUES (v_co, v_prod, 'purchase_return', -1, 'zz_probe_v3_75_20');
+    -- وصلَ إلى هنا يعنى أنّ الإدخالَ نجحَ بلا فرع — يُلغى ثمّ يُصرَخُ عليه.
+    RAISE EXCEPTION 'ZZ_ROLLBACK_PROBE_37520';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM <> 'ZZ_ROLLBACK_PROBE_37520' THEN v_refused := TRUE; END IF;
+  END;
+
+  IF NOT v_refused THEN
+    RAISE EXCEPTION 'BASELINE FAIL: حركةُ مخزنٍ بلا فرعٍ قُبِلت — والنطاقُ لم يعُدْ مطلوباً (v3.75.20)';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_21_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_21_check()
+ RETURNS void
+ LANGUAGE plpgsql
+AS $function$
+DECLARE
+  v_bad  int;
+  v_co   uuid;
+  v_n    int;
+BEGIN
+  -- (أ) **الخاصّيّةُ الحاملة**: نظرةُ المورّدين تبقى بصلاحيّةِ من يناديها.
+  SELECT count(*) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'get_suppliers_overview' AND p.prosecdef;
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: get_suppliers_overview صارت بصلاحيّاتٍ كاملة — فينكشفُ مالُ الفروعِ كلِّها لمحاسبِ فرع (v3.75.21)';
+  END IF;
+
+  -- (ب) وإشعارُ الوجودِ يسألُ من الطارقِ قبلَ أن يُجيب، ومسارُه مثبَّت
+  SELECT count(*) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'suppliers_with_balance_outside_scope'
+     AND (NOT p.prosecdef
+       OR p.proconfig IS NULL
+       OR NOT EXISTS (SELECT 1 FROM unnest(p.proconfig) c WHERE c LIKE 'search\_path=%')
+       OR strpos(pg_get_functiondef(p.oid), 'assert_company_access') = 0);
+  IF v_bad > 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: إشعارُ الوجودِ بلا مسارٍ مثبَّتٍ أو لا يسألُ من الطارق (v3.75.21)';
+  END IF;
+
+  -- (ج) ولا «خارج» حين لا فرعَ معروض — يُقاسُ بالسلوكِ لا بالنصّ
+  SELECT id INTO v_co FROM public.companies LIMIT 1;
+  IF v_co IS NULL THEN
+    RAISE NOTICE 'v3.75.21 · لا شركةَ تُقاسُ عليها — لم يُدَّعَ قياس.';
+    RETURN;
+  END IF;
+  SELECT count(*) INTO v_n FROM public.suppliers_with_balance_outside_scope(v_co, NULL);
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: أُشعِرَ بوجودِ «خارج» ولا فرعَ معروضاً أصلاً (v3.75.21)';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_22_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_22_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_def   TEXT;
+  v_qual  TEXT;
+  v_name  TEXT;
+BEGIN
+  -- (١) القانونُ موجودٌ وثابتٌ لا يتبدّل.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public' AND p.proname = 'bill_status_is_payable'
+       AND p.provolatile = 'i'
+  ) THEN
+    RAISE EXCEPTION 'v3.75.22: القانونُ الواحدُ bill_status_is_payable مفقودٌ أو غيرُ ثابت (IMMUTABLE).';
+  END IF;
+
+  -- (٢) وكلُّ حالةٍ تُولَدُ مرفوضةً حتى تُذكَر — فحصٌ سلوكىٌّ لا نصّىّ.
+  FOREACH v_name IN ARRAY ARRAY['draft','cancelled','rejected','pending_approval','sent','voided','approved','pending',''] LOOP
+    IF public.bill_status_is_payable(v_name) THEN
+      RAISE EXCEPTION 'v3.75.22: القانونُ قبِلَ حالةً لم تعبرِ الأستاذَ: %', v_name;
+    END IF;
+  END LOOP;
+  IF public.bill_status_is_payable(NULL) IS NOT FALSE THEN
+    RAISE EXCEPTION 'v3.75.22: القانونُ لم يرفضْ حالةً غائبة.';
+  END IF;
+  FOREACH v_name IN ARRAY ARRAY['received','partially_paid','paid','partially_returned','fully_returned'] LOOP
+    IF NOT public.bill_status_is_payable(v_name) THEN
+      RAISE EXCEPTION 'v3.75.22: القانونُ رفضَ حالةً عبرتِ الأستاذَ: %', v_name;
+    END IF;
+  END LOOP;
+
+  -- (٣) وأفواهُ المالِ الثلاثةُ تسألُ القانونَ ولا تحملُ قائمةً خاصّةً بها.
+  FOREACH v_name IN ARRAY ARRAY['get_suppliers_overview','ic_ap_balance','suppliers_with_balance_outside_scope'] LOOP
+    SELECT pg_get_functiondef(p.oid) INTO v_def
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public' AND p.proname = v_name
+     LIMIT 1;
+    IF v_def IS NULL THEN
+      RAISE EXCEPTION 'v3.75.22: فمُ مالٍ مفقود: %', v_name;
+    END IF;
+    IF strpos(v_def, 'bill_status_is_payable') = 0 THEN
+      RAISE EXCEPTION 'v3.75.22: % لا يسألُ القانونَ الواحد.', v_name;
+    END IF;
+    IF strpos(v_def, '''draft'',''cancelled'',''fully_returned''') > 0
+       OR strpos(v_def, '''draft'', ''cancelled'', ''fully_returned''') > 0 THEN
+      RAISE EXCEPTION 'v3.75.22: % عادَ يحملُ قائمةَ منعٍ خاصّةً به.', v_name;
+    END IF;
+  END LOOP;
+
+  -- (٤) وشاشةُ الموردينَ تبقى بصلاحيّةِ المستدعى — وإلّا رأى محاسبُ الفرعِ مالَ الفروعِ كلِّها.
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public' AND p.proname = 'get_suppliers_overview' AND p.prosecdef
+  ) THEN
+    RAISE EXCEPTION 'v3.75.22: get_suppliers_overview صارت SECURITY DEFINER — عزلُ الفروعِ يسقط.';
+  END IF;
+
+  -- (٥) ودالّةُ الحركةِ لا تأخذُ فرعاً من الطارق، وتعملُ بصلاحيّاتٍ كاملةٍ بمسارٍ مثبَّت.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public' AND p.proname = 'supplier_is_active_in_my_branch'
+       AND p.pronargs = 2 AND p.prosecdef
+       AND array_to_string(COALESCE(p.proconfig, ARRAY[]::text[]), ',') LIKE '%search_path%'
+  ) THEN
+    RAISE EXCEPTION 'v3.75.22: supplier_is_active_in_my_branch مفقودةٌ أو تأخذُ فرعاً من الطارق أو مسارُها غيرُ مثبَّت.';
+  END IF;
+
+  -- (٦) وبابُ الاطّلاعِ على الموردينَ يعرفُ الطريقَين: فرعُ السجلِّ وفرعُ الحركة.
+  SELECT qual INTO v_qual FROM pg_policies
+   WHERE schemaname = 'public' AND tablename = 'suppliers' AND policyname = 'suppliers_select_branch_isolation';
+  IF v_qual IS NULL THEN
+    RAISE EXCEPTION 'v3.75.22: سياسةُ اطّلاعِ الموردينَ مفقودة.';
+  END IF;
+  IF strpos(v_qual, 'can_access_record_branch') = 0 THEN
+    RAISE EXCEPTION 'v3.75.22: سياسةُ اطّلاعِ الموردينَ فقدتْ عزلَ الفروع.';
+  END IF;
+  IF strpos(v_qual, 'supplier_is_active_in_my_branch') = 0 THEN
+    RAISE EXCEPTION 'v3.75.22: سياسةُ اطّلاعِ الموردينَ لا ترى من له دَينٌ فى فرعِ الناظر.';
+  END IF;
+
+  -- (٧) ولم يتّسعْ إلّا الاطّلاع: التعديلُ والحذفُ والإضافةُ على حالِها.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+     WHERE schemaname='public' AND tablename='suppliers' AND cmd='UPDATE'
+       AND COALESCE(qual,'') LIKE '%can_manage_supplier_row%'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_policies
+     WHERE schemaname='public' AND tablename='suppliers' AND cmd='DELETE'
+       AND COALESCE(qual,'') LIKE '%can_manage_supplier_row%'
+  ) OR NOT EXISTS (
+    SELECT 1 FROM pg_policies
+     WHERE schemaname='public' AND tablename='suppliers' AND cmd='INSERT'
+       AND COALESCE(with_check,'') LIKE '%can_manage_supplier_row%'
+  ) THEN
+    RAISE EXCEPTION 'v3.75.22: اتّسعَ أكثرُ من الاطّلاع — التعديلُ أو الحذفُ أو الإضافةُ فقدَ حارسَه.';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_23_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_23_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_name TEXT;
+  v_arr  TEXT[];
+BEGIN
+  -- (١) البابُ الثانى موجودٌ وثابتٌ لا يتبدّل.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+     WHERE n.nspname = 'public' AND p.proname = 'bill_payable_statuses'
+       AND p.pronargs = 0 AND p.provolatile = 'i'
+  ) THEN
+    RAISE EXCEPTION 'v3.75.23: البابُ الثانى bill_payable_statuses مفقودٌ أو غيرُ ثابت.';
+  END IF;
+
+  -- (٢) والقانونُ يسألُ المصفوفةَ ولا يحملُ نسختَه منها.
+  IF strpos(pg_get_functiondef('public.bill_status_is_payable(text)'::regprocedure),
+            'bill_payable_statuses') = 0 THEN
+    RAISE EXCEPTION 'v3.75.23: القانونُ عادَ يحملُ نسختَه من الأسماء بدلَ أن يسألَ المصفوفة.';
+  END IF;
+
+  -- (٣) والبابانِ يقولانِ قولاً واحداً — يُقاسُ سلوكاً على كلِّ اسمٍ حىٍّ وميّت.
+  v_arr := public.bill_payable_statuses();
+  IF v_arr IS NULL OR array_length(v_arr, 1) IS NULL THEN
+    RAISE EXCEPTION 'v3.75.23: المصفوفةُ فارغةٌ — بابٌ يقولُ إنّ لا شىءَ مالٌ أبداً.';
+  END IF;
+  FOREACH v_name IN ARRAY ARRAY[
+    'draft','cancelled','rejected','pending_approval','sent','voided','approved','pending','',
+    'received','partially_paid','paid','partially_returned','fully_returned'
+  ] LOOP
+    IF public.bill_status_is_payable(v_name) <> (v_name = ANY (v_arr)) THEN
+      RAISE EXCEPTION 'v3.75.23: البابانِ اختلفا على الاسم: %', v_name;
+    END IF;
+  END LOOP;
+
+  -- (٤) وما رُفض عند الاستلامِ يبقى خارجَ المال.
+  IF 'rejected' = ANY (v_arr) OR 'draft' = ANY (v_arr) OR 'cancelled' = ANY (v_arr)
+     OR 'sent' = ANY (v_arr) OR 'pending_approval' = ANY (v_arr) OR 'voided' = ANY (v_arr) THEN
+    RAISE EXCEPTION 'v3.75.23: المصفوفةُ قبِلت حالةً لم تعبرِ الأستاذ.';
+  END IF;
+
+  -- (٥) وبابا القانونِ لا يبلغُهما زائر — ولا تطرقُهما سياسةُ حماية، فإغلاقُهما
+  --     لا يكسرُ شيئاً. **ولا يُقاسُ بابانِ بمقياسِ بابٍ ثالثٍ تطرقُه سياسة.**
+  IF has_function_privilege('anon', 'public.bill_payable_statuses()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'v3.75.23: البابُ الثانى مفتوحٌ لزائرٍ لم يُسجِّلْ دخولَه.';
+  END IF;
+  IF has_function_privilege('anon', 'public.bill_status_is_payable(text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'v3.75.23: القانونُ مفتوحٌ لزائرٍ لم يُسجِّلْ دخولَه.';
+  END IF;
+
+  -- (٦) **ودالّةُ الحركةِ تطرقُها سياسةُ الاطّلاعِ على الموردين، فتبقى مفتوحةً
+  --     للزائرِ عمداً** (v3.75.24) — وأمانُها فى جسدِها لا فى منحتِها: أوّلُ
+  --     سطرٍ فيها يردُّ من لا هويّةَ له. وهذا هو **الفحصُ الصحيحُ** بدلَ الذى
+  --     كان يشترطُ إغلاقَها فيكسرُ حمايةَ الصفوف.
+  IF NOT has_function_privilege('anon', 'public.supplier_is_active_in_my_branch(uuid,uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'v3.75.23: بابٌ تطرقُه سياسةُ الموردينَ مغلقٌ — يُردُّ الزائرُ بعطبٍ لا بصفرِ صفوف.';
+  END IF;
+  IF strpos(pg_get_functiondef('public.supplier_is_active_in_my_branch(uuid,uuid)'::regprocedure),
+            'auth.uid() IS NULL') = 0 THEN
+    RAISE EXCEPTION 'v3.75.23: دالّةُ الحركةِ لم تعُدْ تردُّ من لا هويّةَ له — وهى مفتوحةٌ للزائر.';
+  END IF;
+
+  -- (٧) ويبقى البابُ مفتوحاً لمن يستعملُه فعلاً.
+  IF NOT has_function_privilege('authenticated', 'public.bill_payable_statuses()', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.bill_status_is_payable(text)', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.supplier_is_active_in_my_branch(uuid,uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'v3.75.23: أُغلق بابٌ فى وجهِ من يحتاجُه — الشاشةُ تعطّلت.';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_24_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_24_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_missing TEXT;
+  v_open    INT;
+  v_ceiling CONSTANT INT := public.anon_reachable_ceiling();
+BEGIN
+  -- (١) **الأرضيّة**: كلُّ دالّةٍ تطرقُها سياسةُ حمايةٍ على جدولٍ يبلغُه الزائرُ
+  --     يجب أن يستطيعَ الزائرُ تنفيذَها — وإلّا رُدَّ بعطبٍ لا بصفرِ صفوف.
+  --     **وتُقاسُ حيّاً من الكتالوجِ ولا تُكتَبُ قائمةً بيد.**
+  --
+  --     v3.75.29 — **والحكمُ نفسُه فى جزءٍ من مئةٍ من الزمن**: كان هذا البندُ
+  --     يقابلُ كلَّ دالّةٍ بكلِّ سياسةٍ ببصمةٍ نصّيّة (٢٩٫٦٧ ثانيةً على الإنتاج).
+  --     وصارَ ينادى **البيتَ الواحد** الذى وُلد فى v3.75.27 فيستخرجُ الأسماءَ
+  --     مرّةً واحدةً ويقارنُ بالتساوى (٠٫١٠ ثانية). **ولا يُقبَلُ تسريعٌ يغيّرُ
+  --     الحكم**: قُوبل الشكلانِ على السليمِ وعلى أعطابٍ مزروعةٍ فى معاملاتٍ
+  --     أُلغيت، فأعطيا **الاسمَ نفسَه بالترتيبِ نفسِه**، ولم يذكرْ أىٌّ منهما
+  --     باباً لا تطرقُه سياسة.
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO v_missing
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.prokind = 'f'
+     AND p.proname = ANY (public.policy_knocked_function_names(true))
+     AND NOT has_function_privilege('anon', p.oid, 'EXECUTE');
+
+  IF v_missing IS NOT NULL THEN
+    RAISE EXCEPTION
+      'v3.75.24: سياسةُ حمايةٍ تطرقُ باباً مغلقاً فى وجهِ الزائرِ — تُردُّ بعطبٍ لا بصفرِ صفوف: %',
+      v_missing;
+  END IF;
+
+  -- (٢) **السقف**: لا يزيدُ عددُ الدالّاتِ ذاتِ الصلاحيّاتِ الكاملةِ التى يبلغُها
+  --     الزائر. وقد قِيس ١٣٤ قبلَ هذه الدفعة، وصارَ ١٣٥ **بضرورةٍ مبرهَنة** فى
+  --     البندِ (١) لا برغبة. **معدودٌ لا مسكوتٌ عنه.**
+  --
+  --     v3.75.31 — **والسقفُ صارَ فى بيتٍ واحد**: كان ١٣٥ مكتوباً هنا باليدِ
+  --     والواقعُ ٣٥، فكان سقفاً لا يمنعُ شيئاً. وصارَ ينادى
+  --     `public.anon_reachable_ceiling()` — **ولا يُبنى بيتٌ ثانٍ**، ولم يُمَسَّ
+  --     تعريفُ ما يُعَدُّ هنا حرفاً واحداً.
+  SELECT count(*) INTO v_open
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.prokind = 'f' AND p.prosecdef
+     AND has_function_privilege('anon', p.oid, 'EXECUTE');
+
+  IF v_open > v_ceiling THEN
+    RAISE EXCEPTION
+      'v3.75.24: زادَ ما يبلغُه الزائرُ من دالّاتِ الصلاحيّاتِ الكاملة: % (السقف %).',
+      v_open, v_ceiling;
+  END IF;
+
+  -- (٣) **المصدر**: الصلاحيّةُ الافتراضيّةُ لم تعُدْ تمنحُ الزائرَ تنفيذَ كلِّ
+  --     دالّةٍ جديدة — فتُولَدُ مغلقةً، ومن احتاجَ فتحاً فتحَ بقرارٍ مكتوب.
+  IF EXISTS (
+    SELECT 1 FROM pg_default_acl d
+      JOIN pg_namespace n ON n.oid = d.defaclnamespace
+     WHERE n.nspname = 'public' AND d.defaclobjtype = 'f'
+       AND d.defaclrole = 'postgres'::regrole
+       AND d.defaclacl::text LIKE '%anon=X%'
+  ) THEN
+    RAISE EXCEPTION 'v3.75.24: الصلاحيّةُ الافتراضيّةُ عادت تمنحُ الزائرَ كلَّ دالّةٍ جديدة.';
+  END IF;
+
+  -- (٤) ومن يحتاجُ البابَ يبقى له مفتوحاً — **وحارسٌ يُغلقُ على البرىء يُطفأ.**
+  IF NOT has_function_privilege('authenticated', 'public.supplier_is_active_in_my_branch(uuid,uuid)', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.bill_status_is_payable(text)', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.bill_payable_statuses()', 'EXECUTE') THEN
+    RAISE EXCEPTION 'v3.75.24: أُغلق بابٌ فى وجهِ من يحتاجُه.';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_25_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_25_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_open    TEXT;
+  v_n       INT;
+  v_ceiling CONSTANT INT := public.anon_reachable_ceiling();
+BEGIN
+  -- (١) **لا دالّةَ زنادٍ ممنوحةٌ للنداء** — لا لزائرٍ ولا لمستخدم.
+  --     تُقاسُ من الكتالوجِ حيّاً، فتشملُ ما يُولَدُ غداً بلا أن يُذكَرَ اسمُه هنا.
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO v_open
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.prokind = 'f' AND p.prorettype = 'trigger'::regtype
+     AND (has_function_privilege('anon', p.oid, 'EXECUTE')
+          OR has_function_privilege('authenticated', p.oid, 'EXECUTE'));
+
+  IF v_open IS NOT NULL THEN
+    RAISE EXCEPTION
+      'v3.75.25: دالّةُ زنادٍ ممنوحةٌ للنداءِ ولا يستطيعُ أحدٌ نداءَها — زينةٌ على بابٍ لا يُفتَح: %',
+      v_open;
+  END IF;
+
+  -- (٢) **والأزندةُ ما زالت مركَّبةً تعمل** — فالنزعُ لم يُفكَّ زناداً.
+  --     يُقاسُ العددُ الحىُّ للأزندةِ غيرِ الداخليّة: لو سقطَ إلى صفرٍ لصرخ.
+  SELECT count(*) INTO v_n
+    FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
+   WHERE NOT t.tgisinternal;
+  IF v_n < 1 THEN
+    RAISE EXCEPTION 'v3.75.25: لا زنادَ مركَّبٌ فى المخطَّطِ العامّ — شىءٌ فُكَّ.';
+  END IF;
+
+  -- (٣) **والسقفُ ينزل**: كان ١٣٥ فصارَ ٦٥ بعدَ نزعِ الزنادِ من العدّ.
+  --     والإنتاجُ عندَه ٦٤ وبيتُ الاختبارِ ٦٥ — ففسحةُ الإنتاجِ واحدةٌ **معلومةٌ
+  --     مكتوبةٌ لا مسكوتٌ عنها**. **ومعدودٌ لا مسكوتٌ عنه.**
+  --
+  --     v3.75.31 — **وصارَ فى بيتٍ واحد**: كان ٦٥ مكتوباً هنا باليدِ والواقعُ ٣٥،
+  --     فينادى `public.anon_reachable_ceiling()`. **ولا يُبنى بيتٌ ثانٍ** —
+  --     ولم يُمَسَّ تعريفُ ما يُعَدُّ هنا حرفاً واحداً.
+  SELECT count(*) INTO v_n
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.prokind = 'f' AND p.prosecdef
+     AND has_function_privilege('anon', p.oid, 'EXECUTE');
+  IF v_n > v_ceiling THEN
+    RAISE EXCEPTION
+      'v3.75.25: زادَ ما يبلغُه الزائرُ من دالّاتِ الصلاحيّاتِ الكاملة: % (السقف %).',
+      v_n, v_ceiling;
+  END IF;
+
+  -- (٤) **ولم يُغلَقْ على البرىء**: كلُّ دالّةٍ تطرقُها سياسةٌ على جدولٍ يبلغُه
+  --     الزائرُ تبقى قابلةً للتنفيذ — وهو شرطُ v3.75.24 يُعادُ هنا لأنّ هذه
+  --     الدفعةَ تنزعُ منحاً، **ونازعُ المنحِ أولى الناسِ بأن يُراقَب**.
+  --
+  --     v3.75.29 — نُقل هذا البندُ إلى **البيتِ الواحد** كما فى `_24_`،
+  --     **بالحكمِ نفسِه** مبرهَناً بالزرعِ لا بالوصف. **ولا يُبنى بيتٌ ثانٍ.**
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO v_open
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.prokind = 'f'
+     AND p.proname = ANY (public.policy_knocked_function_names(true))
+     AND NOT has_function_privilege('anon', p.oid, 'EXECUTE');
+  IF v_open IS NOT NULL THEN
+    RAISE EXCEPTION 'v3.75.25: نُزعت منحةٌ تحتاجُها سياسةُ حماية: %', v_open;
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_27_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_27_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  r         record;
+  v_bad     TEXT;
+  v_n       INT;
+  v_probed  INT    := 0;
+  v_failed  TEXT[] := '{}';
+  v_ceiling CONSTANT INT := public.anon_reachable_ceiling();
+BEGIN
+  -- (١) **القانونُ المغلَق**: لا دالّةَ صلاحيّاتٍ كاملةٍ يبلغُها الزائرُ إلّا
+  --     لسببٍ من اثنين — سياسةٌ تطرقُها، أو بابٌ مُعلَنٌ لِما قبلَ الدخول.
+  --     يُقاسُ من الكتالوجِ حيّاً، **فيشملُ ما يُولَدُ غداً بلا أن يُذكَرَ اسمُه**.
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO v_bad
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.prokind = 'f'
+     AND p.prosecdef
+     AND p.prorettype <> 'trigger'::regtype
+     AND has_function_privilege('anon', p.oid, 'EXECUTE')
+     AND NOT (p.proname = ANY (public.policy_knocked_function_names(false)))
+     AND NOT (p.proname = ANY (public.anon_prelogin_exceptions()));
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION
+      'v3.75.27: بابٌ بصلاحيّاتٍ كاملةٍ يبلغُه الزائرُ ولا سياسةَ تطرقُه ولا إعلانَ له: %',
+      v_bad;
+  END IF;
+
+  -- (٢) **وبابٌ تطرقُه سياسةٌ لا يُغلَقُ فى وجهِ الطارق** — الجهةُ الأخرى.
+  --     **ونازعُ المنحِ أولى الناسِ بأن يُراقَب.**
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO v_bad
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.prokind = 'f'
+     AND p.proname = ANY (public.policy_knocked_function_names(true))
+     AND NOT has_function_privilege('anon', p.oid, 'EXECUTE');
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'v3.75.27: نُزعت منحةٌ تحتاجُها سياسةُ حماية: %', v_bad;
+  END IF;
+
+  -- (٣) **ولا اسمَ بلا بيت**: كلُّ اسمٍ فى إعلانِ ما قبلَ الدخولِ له دالّةٌ حيّة.
+  --     **وإعلانٌ ماتَ موضوعُه يبقى رخصةً معلَّقةً فى الهواء.**
+  SELECT string_agg(nm, ', ' ORDER BY nm) INTO v_bad
+    FROM unnest(public.anon_prelogin_exceptions()) AS nm
+   WHERE NOT EXISTS (
+     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.proname = nm
+   );
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'v3.75.27: إعلانُ ما قبلَ الدخولِ يذكرُ اسماً لا دالّةَ له: %', v_bad;
+  END IF;
+
+  -- (٤) **والسقفُ نزل**: ٦٤ ← ٣٧.
+  --
+  --     v3.75.31 — **وصارَ فى بيتٍ واحد**: `public.anon_reachable_ceiling()`.
+  --     **ولا يُبنى بيتٌ ثانٍ** — ولم يُمَسَّ تعريفُ ما يُعَدُّ هنا حرفاً واحداً.
+  SELECT count(*) INTO v_n
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.prokind = 'f' AND p.prosecdef
+     AND p.prorettype <> 'trigger'::regtype
+     AND has_function_privilege('anon', p.oid, 'EXECUTE');
+  IF v_n > v_ceiling THEN
+    RAISE EXCEPTION
+      'v3.75.27: زادَ ما يبلغُه الزائرُ من دالّاتِ الصلاحيّاتِ الكاملة: % (السقف %).',
+      v_n, v_ceiling;
+  END IF;
+
+  -- (٥) **والبرهانُ الحىّ**: تُقرأُ القاعدةُ بعينِ الزائرِ نفسِه فى كلِّ دفعة —
+  --     **وفخٌّ لا يُشغَّل ليس فخّاً**. وثمنُه أقلُّ من ثانيةٍ واحدة (مقيس).
+  SET LOCAL ROLE anon;
+  FOR r IN
+    SELECT c.oid::regclass::text AS t
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = 'public' AND c.relkind = 'r' AND c.relrowsecurity
+       AND has_table_privilege('anon', c.oid, 'SELECT')
+     ORDER BY 1
+  LOOP
+    BEGIN
+      EXECUTE format('SELECT 1 FROM %s LIMIT 1', r.t);
+      v_probed := v_probed + 1;
+    EXCEPTION WHEN OTHERS THEN
+      v_failed := v_failed || (r.t || ' :: ' || SQLERRM);
+    END;
+  END LOOP;
+  RESET ROLE;
+
+  IF COALESCE(array_length(v_failed, 1), 0) > 0 THEN
+    RAISE EXCEPTION 'v3.75.27: الزائرُ يُردُّ بعطبٍ لا بصفرِ صفوفٍ على % جدولاً: %',
+      array_length(v_failed, 1), array_to_string(v_failed[1:5], ' | ');
+  END IF;
+
+  -- **وبحثٌ لا يجد ليس دليلَ غياب**: لو لم يُقرأْ جدولٌ واحدٌ لَكان الفحصُ
+  -- صامتاً لا سليماً. فيُشترَطُ أن يكونَ قد قرأَ شيئاً.
+  IF v_probed < 1 THEN
+    RAISE EXCEPTION 'v3.75.27: لم يُقرأْ جدولٌ واحدٌ بعينِ الزائر — فحصٌ صامتٌ لا سليم.';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_28_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_28_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_bad     TEXT;
+  v_n       INT;
+  v_ceiling CONSTANT INT := public.anon_reachable_ceiling();
+BEGIN
+  -- (١) **ولا إعلانَ ميّت**: كلُّ اسمٍ فى إعلانِ ما قبلَ الدخولِ يجبُ أن يكونَ
+  --     **مفتوحاً للزائرِ فعلاً**. فاسمٌ مُعلَنٌ وهو مغلَقٌ أصلاً لا يفتحُ باباً
+  --     ولا يحرسُ شيئاً — هو رخصةٌ معلَّقةٌ فى الهواءِ تُطمئنُ من يقرؤُها.
+  --     (وهذا بعينِه ما كُشف فى get_user_company_status.)
+  SELECT string_agg(nm, ', ' ORDER BY nm) INTO v_bad
+    FROM unnest(public.anon_prelogin_exceptions()) AS nm
+   WHERE NOT EXISTS (
+     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.proname = nm
+        AND has_function_privilege('anon', p.oid, 'EXECUTE')
+   );
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION
+      'v3.75.28: إعلانُ ما قبلَ الدخولِ يذكرُ اسماً لا يفتحُ باباً (مغلَقٌ أو غيرُ موجود): %',
+      v_bad;
+  END IF;
+
+  -- (٢) **وإعلانٌ يتضخّمُ يصيرُ باباً خلفيّاً**: يُسقَفُ عددُ الأسماءِ المُعلَنة،
+  --     فلا يُوسَّعُ الاستثناءُ صامتاً دفعةً بعدَ دفعة.
+  SELECT count(*) INTO v_n FROM unnest(public.anon_prelogin_exceptions()) AS nm;
+  IF v_n > 3 THEN
+    RAISE EXCEPTION
+      'v3.75.28: إعلانُ ما قبلَ الدخولِ اتّسع إلى % اسماً (السقف ٣) — يُقاسُ كلُّ اسمٍ قبلَ أن يُضاف.',
+      v_n;
+  END IF;
+
+  -- (٣) **والسقفُ نزل**: ٣٧ ← ٣٥.
+  --
+  --     v3.75.31 — **وصارَ فى بيتٍ واحد**: `public.anon_reachable_ceiling()`.
+  --     **ولا يُبنى بيتٌ ثانٍ** — ولم يُمَسَّ تعريفُ ما يُعَدُّ هنا حرفاً واحداً.
+  SELECT count(*) INTO v_n
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.prokind = 'f' AND p.prosecdef
+     AND p.prorettype <> 'trigger'::regtype
+     AND has_function_privilege('anon', p.oid, 'EXECUTE');
+  IF v_n > v_ceiling THEN
+    RAISE EXCEPTION
+      'v3.75.28: زادَ ما يبلغُه الزائرُ من دالّاتِ الصلاحيّاتِ الكاملة: % (السقف %).',
+      v_n, v_ceiling;
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_29_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_29_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  t0        timestamptz;
+  v_secs    numeric;
+  v_budget  CONSTANT numeric := 10;   -- ثوانٍ. المقيسُ اليومَ أقلُّ من ٢، والفسحةُ واسعةٌ عمداً
+  v_bad     TEXT;
+BEGIN
+  -- (١) **ولا يعودُ الشكلُ البطىءُ صامتاً**: يُقاسُ زمنُ الفحصَينِ حيّاً.
+  --     **وحارسٌ بطىءٌ يُغرى بتخطّيه**، والبطءُ يعودُ بسطرٍ واحدٍ منسىّ.
+  t0 := clock_timestamp();
+  PERFORM public.assert_baseline_v3_75_24_check();
+  PERFORM public.assert_baseline_v3_75_25_check();
+  v_secs := extract(epoch FROM clock_timestamp() - t0);
+
+  IF v_secs > v_budget THEN
+    RAISE EXCEPTION
+      'v3.75.29: عادَ الفحصانِ إلى البطء: % ثانية (الميزانيّة % ثانية). عادَ الشكلُ الذى يقابلُ كلَّ دالّةٍ بكلِّ سياسة؟',
+      round(v_secs, 2), v_budget;
+  END IF;
+
+  -- (٢) **ولا بيتَ ثانٍ**: كلاهما ينادى البيتَ الواحد. فلو أعادَ أحدُهما كتابةَ
+  --     السؤالِ بيدِه لعادَ الفمانِ يقولانِ فى الأمرِ الواحدِ قولَين.
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname IN ('assert_baseline_v3_75_24_check', 'assert_baseline_v3_75_25_check')
+     AND p.prosrc NOT LIKE '%policy_knocked_function_names%';
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'v3.75.29: فحصٌ لا ينادى البيتَ الواحدَ بل يكتبُ السؤالَ بيدِه: %', v_bad;
+  END IF;
+
+  -- (٣) **والبيتُ يقولُ شيئاً**: لو أعادَ فراغاً لَمرَّ البندانِ صامتَين
+  --     **وهما لا يفحصانِ شيئاً**. **والطمأنينةُ الكاذبة أسوأُ من الغياب.**
+  IF COALESCE(array_length(public.policy_knocked_function_names(true), 1), 0) < 1 THEN
+    RAISE EXCEPTION 'v3.75.29: البيتُ الواحدُ لا يعرفُ اسماً واحداً — فحصٌ صامتٌ لا سليم.';
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_31_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_31_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_bad     TEXT;
+  v_n       INT;
+  v_live    INT;
+  v_ceiling INT;
+  v_slack   CONSTANT INT := 5;
+BEGIN
+  -- (١) **ولا يُبنى بيتٌ ثانٍ للسقف.** كلُّ فحصٍ مرجعىٍّ يَعُدُّ دالّاتِ الصلاحيّاتِ
+  --     الكاملةِ التى يبلغُها الزائرُ **يجبُ أن ينادى البيتَ الواحد**. وهذه
+  --     الخاصّيّةُ **لا أثرَ لها فى الكتالوج** — فتُقرأُ من النصّ، وهو استثناءٌ
+  --     مذكورٌ لا مسكوتٌ عنه، سبقَ مثلُه فى v3.75.29.
+  --
+  --     **وهذا هو الفخُّ الحىّ**: فحصٌ خامسٌ يُولَدُ غداً ويكتبُ سقفَه بيدِه
+  --     يُكشَفُ فى أوّلِ دفعةٍ **بلا أن يُذكَرَ اسمُه هنا**.
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname ~ '^assert_baseline_'
+     AND p.prosrc LIKE '%p.prosecdef%'
+     AND p.prosrc LIKE '%has_function_privilege(''anon''%'
+     AND p.prosrc NOT LIKE '%anon_reachable_ceiling%';
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION
+      'v3.75.31: فحصٌ مرجعىٌّ يَعُدُّ ما يبلغُه الزائرُ ولا ينادى البيتَ الواحدَ للسقف: %',
+      v_bad;
+  END IF;
+
+  -- (٢) **وبحثٌ لا يجد ليس دليلَ غياب.** البندُ (١) يمرُّ صامتاً لو اختفت الفحوصُ
+  --     الأربعةُ أو أُعيدت كتابتُها بلا عدّ. فيُشترَطُ أن تكونَ الأربعةُ حيّةً
+  --     وأن تنادىَ البيتَ **بالاسم**.
+  SELECT count(*) INTO v_n
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname IN ('assert_baseline_v3_75_24_check',
+                       'assert_baseline_v3_75_25_check',
+                       'assert_baseline_v3_75_27_check',
+                       'assert_baseline_v3_75_28_check')
+     AND p.prosrc LIKE '%anon_reachable_ceiling%';
+  IF v_n <> 4 THEN
+    RAISE EXCEPTION
+      'v3.75.31: الفحوصُ التى تنادى البيتَ الواحدَ % لا ٤ — أحدُها ماتَ أو استعادَ سقفاً بيدِه.',
+      v_n;
+  END IF;
+
+  -- (٣) **والسقفُ فوقَ الواقعِ ولا يُرفَعُ بلا حدّ.**
+  --     • تحتَ الواقعِ ← حارسٌ يصرخُ على البرىءِ فى كلِّ دفعة، **فيُطفأ**.
+  --     • فوقَه بلا حدٍّ ← **سقفٌ لا يمنعُ شيئاً يُطمئنُ ولا يحرس**، وهو بعينِه
+  --       العطبُ الذى وُلدت هذه الدفعةُ لتُصلحَه (١٣٥ و٦٥ والواقعُ ٣٥).
+  --     فالفسحةُ **مسقوفةٌ هى الأخرى**، ومن خفضَ الواقعَ خفضَ السقفَ فى دفعتِه.
+  v_ceiling := public.anon_reachable_ceiling();
+
+  SELECT count(*) INTO v_live
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.prokind = 'f' AND p.prosecdef
+     AND has_function_privilege('anon', p.oid, 'EXECUTE');
+
+  IF v_ceiling < v_live THEN
+    RAISE EXCEPTION
+      'v3.75.31: السقفُ % تحتَ الواقعِ % — حارسٌ يصرخُ على البرىءِ فى كلِّ دفعة.',
+      v_ceiling, v_live;
+  END IF;
+
+  IF v_ceiling > v_live + v_slack THEN
+    RAISE EXCEPTION
+      'v3.75.31: السقفُ % والواقعُ % — فسحةٌ تتجاوزُ % فلا يمنعُ السقفُ شيئاً. يُخفَضُ فى دفعةِ من خفضَ الواقع.',
+      v_ceiling, v_live, v_slack;
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_6_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_6_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_total int;
+  v_bad   text;
+  v_seen  int;
+  v_def   text;
+  v_caught boolean;
+BEGIN
+  -- **بحثٌ لا يجد ليس دليلَ غياب** — فيُعدُّ ما مرَّ أوّلاً
+  SELECT count(*) INTO v_total FROM public.erp_policy_role_groups();
+  IF v_total = 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: لم تُقرأ مقارنةُ وظيفةٍ واحدةٍ فى السياسات (v3.75.6)';
+  END IF;
+
+  -- ═══ ولا بابَ مفتوحٌ على لا أحد ═══
+  SELECT string_agg(policy_name || ' [' || array_to_string(roles_named, ', ') || ']', ' | ')
+    INTO v_bad
+  FROM public.erp_policy_role_groups()
+  WHERE NOT (roles_named && public.erp_membership_roles());
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: بابٌ مفتوحٌ على لا أحد: % (v3.75.6)', v_bad;
+  END IF;
+
+  -- ═══ والقيدُ ما زال يرفضُ الاسمَ المحذوف — **فخٌّ يُشغَّل** ═══
+  -- يُنسخ نصُّ القيدِ الحىِّ نفسُه إلى جدولٍ مؤقّت، فمن وسَّع القيدَ يوماً
+  -- وسَّع النسخةَ معه وسقطَ الفخُّ فسقطَ الفحص.
+  SELECT pg_get_constraintdef(oid) INTO v_def
+  FROM pg_constraint
+  WHERE conrelid = 'public.company_members'::regclass AND conname = 'company_members_role_check';
+  IF v_def IS NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: قيدُ وظائفِ الأعضاءِ غائبٌ — ولا شىءَ يمنعُ اسماً مخترَعاً (v3.75.6)';
+  END IF;
+  v_caught := false;
+  BEGIN
+    EXECUTE 'CREATE TEMP TABLE zz_probe_3756_role (role text, CONSTRAINT zz_probe_3756_c ' || v_def || ')';
+    BEGIN
+      EXECUTE 'INSERT INTO zz_probe_3756_role (role) VALUES (''general_manager'')';
+    EXCEPTION WHEN check_violation THEN
+      v_caught := true;
+    END;
+    RAISE EXCEPTION 'ROLLBACK_PROBE_3756A';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'ROLLBACK_PROBE_3756A' THEN RAISE; END IF;
+  END;
+  IF NOT v_caught THEN
+    RAISE EXCEPTION 'BASELINE FAIL: القيدُ يقبلُ الاسمَ المحذوفَ — والشرطُ الذى حُذف لم يكن ميّتاً (v3.75.6)';
+  END IF;
+
+  -- ═══ والماسحُ يرى لو زُرع بابٌ على لا أحد — **فخٌّ لا يُشغَّل ليس فخّاً** ═══
+  v_seen := -1;
+  BEGIN
+    EXECUTE 'CREATE TABLE public.zz_probe_3756_pol (id int, role text)';
+    EXECUTE 'ALTER TABLE public.zz_probe_3756_pol ENABLE ROW LEVEL SECURITY';
+    EXECUTE 'CREATE POLICY zz_probe_3756_p ON public.zz_probe_3756_pol FOR SELECT USING (role = ANY (ARRAY[''zz_nobody''::text]))';
+    SELECT count(*) INTO v_seen
+    FROM public.erp_policy_role_groups()
+    WHERE policy_name LIKE '%zz_probe_3756_pol%'
+      AND NOT (roles_named && public.erp_membership_roles());
+    RAISE EXCEPTION 'ROLLBACK_PROBE_3756B';
+  EXCEPTION
+    WHEN raise_exception THEN
+      IF SQLERRM <> 'ROLLBACK_PROBE_3756B' THEN RAISE; END IF;
+  END;
+  IF v_seen <> 1 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: زُرع بابٌ على لا أحدٍ فلم يره الفحصُ (رأى %) (v3.75.6)', v_seen;
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_7_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_7_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_vocab   text[] := public.erp_membership_roles();
+  v_ncomp   int;
+  v_bad     text;
+  v_seen    int;
+BEGIN
+  SELECT count(*) INTO v_ncomp FROM public.companies;
+  IF v_ncomp = 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: لا شركةَ واحدةٌ لتُفحَص — بحثٌ لا يجد ليس دليلَ غياب (v3.75.7)';
+  END IF;
+  IF array_length(v_vocab, 1) IS NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: مفرداتُ الوظائفِ فارغة (v3.75.7)';
+  END IF;
+
+  -- ═══ ولا وظيفةٌ حيّةٌ بلا صلاحيّاتٍ فى شركةٍ واحدة ═══
+  SELECT string_agg(t, ' | ') INTO v_bad
+  FROM (
+    SELECT c.name || ' ← ' || string_agg(r.role, ', ') AS t
+    FROM public.companies c
+    CROSS JOIN (SELECT unnest(v_vocab) AS role) r
+    WHERE NOT EXISTS (
+      SELECT 1 FROM public.company_role_permissions p
+      WHERE p.company_id = c.id AND p.role = r.role
+    )
+    GROUP BY c.name
+  ) s;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: وظيفةٌ حيّةٌ بلا صلاحيّاتٍ فى شركة: % (v3.75.7)', v_bad;
+  END IF;
+
+  -- ═══ والبذّارُ يعرفُ الاسم — وإلّا وُلدت الشركةُ التاليةُ ناقصة ═══
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'seed_hr_officer_permissions'
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: بيتُ بذرِ مسؤولِ الموارد البشريّةِ غائب (v3.75.7)';
+  END IF;
+  IF (SELECT prosrc FROM pg_proc WHERE proname = 'trg_auto_seed_role_permissions')
+       NOT LIKE '%seed_hr_officer_permissions%' THEN
+    RAISE EXCEPTION 'BASELINE FAIL: مُشغِّلُ الإنشاءِ لا ينادى بيتَ البذرِ الجديد (v3.75.7)';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+    JOIN pg_proc p ON p.oid = t.tgfoid
+    WHERE c.relname = 'companies' AND p.proname = 'trg_auto_seed_role_permissions'
+      AND NOT t.tgisinternal
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: مُشغِّلُ البذرِ غيرُ مركَّبٍ على جدولِ الشركات (v3.75.7)';
+  END IF;
+
+  -- ═══ ولا تُسلَّم دالّةٌ تكتبُ بصلاحيّاتٍ كاملةٍ لمستخدمٍ نهائىّ ═══
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'seed_hr_officer_permissions'
+      AND (has_function_privilege('authenticated', p.oid, 'EXECUTE')
+        OR has_function_privilege('anon', p.oid, 'EXECUTE'))
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: بيتُ البذرِ ممنوحٌ لمستخدمٍ نهائىّ (v3.75.7)';
+  END IF;
+
+  -- ═══ والفخُّ يُشغَّل: يُحجَبُ اسمٌ تخيُّلاً فيجب أن تراه الاستعلامةُ نفسُها ═══
+  -- **فخٌّ لا يُشغَّل ليس فخّاً** — ويُشغَّل بلا لمسِ صفٍّ واحد.
+  SELECT count(*) INTO v_seen
+  FROM public.companies c
+  CROSS JOIN (SELECT unnest(v_vocab) AS role) r
+  WHERE NOT EXISTS (
+    SELECT 1 FROM public.company_role_permissions p
+    WHERE p.company_id = c.id AND p.role = r.role
+      AND r.role <> 'hr_officer'
+  );
+  IF v_seen < v_ncomp THEN
+    RAISE EXCEPTION 'BASELINE FAIL: حُجبت صفوفُ وظيفةٍ تخيُّلاً فلم ترها الاستعلامة (رأت % من %) (v3.75.7)', v_seen, v_ncomp;
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_8_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_8_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_ncomp  int;
+  v_nres   int;
+  v_bad    text;
+  v_seen   int;
+BEGIN
+  SELECT count(*) INTO v_ncomp FROM public.companies;
+  SELECT count(DISTINCT resource) INTO v_nres FROM public.company_role_permissions;
+  IF v_ncomp = 0 OR v_nres = 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: لا شركةَ أو لا مورد — بحثٌ لا يجد ليس دليلَ غياب (v3.75.8)';
+  END IF;
+
+  -- ═══ ولا موردٌ يعرفُه بعضُ الشركاتِ ويجهلُه بعضُها ═══
+  -- وجودُ الصفِّ ليس قرارَ المالك: شاشتُه تُحدِّث ولا تحذف.
+  SELECT string_agg(t, ' | ') INTO v_bad
+  FROM (
+    SELECT x.resource || ' ← ينقص ' || count(*)::text || ' شركة' AS t
+    FROM (SELECT DISTINCT resource FROM public.company_role_permissions) x
+    CROSS JOIN public.companies c
+    WHERE NOT EXISTS (
+      SELECT 1 FROM public.company_role_permissions p
+      WHERE p.company_id = c.id AND p.resource = x.resource
+    )
+    GROUP BY x.resource
+  ) s;
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: موردٌ موجودٌ فى شركةٍ وغائبٌ عن أخرى: % (v3.75.8)', v_bad;
+  END IF;
+
+  -- ═══ والبذّارُ الجديدُ مُنادًى ومحجوبٌ عن المستخدم ═══
+  IF (SELECT prosrc FROM pg_proc WHERE proname = 'trg_auto_seed_role_permissions')
+       NOT LIKE '%seed_late_added_resources_permissions%' THEN
+    RAISE EXCEPTION 'BASELINE FAIL: مُشغِّلُ الإنشاءِ لا ينادى بيتَ البذرِ الجديد (v3.75.8)';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'seed_late_added_resources_permissions'
+      AND (has_function_privilege('authenticated', p.oid, 'EXECUTE')
+        OR has_function_privilege('anon', p.oid, 'EXECUTE'))
+  ) THEN
+    RAISE EXCEPTION 'BASELINE FAIL: بيتُ البذرِ ممنوحٌ لمستخدمٍ نهائىّ (v3.75.8)';
+  END IF;
+
+  -- ═══ وما تحملُه الشركاتُ يجب أن يُولَدَ به الجديد ═══
+  -- موردٌ مستعمَلٌ لا يعرفُه بذّارٌ ولا كتالوجٌ = شركةٌ تُولدُ غداً بلا هذا الباب.
+  SELECT string_agg(x.resource, ', ') INTO v_bad
+  FROM (SELECT DISTINCT resource FROM public.company_role_permissions) x
+  WHERE NOT EXISTS (SELECT 1 FROM public.permissions pm WHERE pm.resource = x.resource)
+    AND (SELECT string_agg(prosrc, E'\n') FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+         WHERE n.nspname = 'public' AND (
+           p.proname = 'trg_auto_seed_role_permissions'
+           OR p.proname IN (SELECT m[1] FROM pg_proc q,
+                 LATERAL regexp_matches(q.prosrc, 'perform\s+public\.([a-z_]+)\s*\(', 'gi') m
+               WHERE q.proname = 'trg_auto_seed_role_permissions')))
+        NOT LIKE '%''' || x.resource || '''%';
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: موردٌ تحملُه الشركاتُ ولا يعرفُه مسارُ البذر — الشركةُ التاليةُ تُولدُ بلا: % (v3.75.8)', v_bad;
+  END IF;
+
+  -- ═══ والفخُّ يُشغَّل: يُحجَبُ موردٌ تخيُّلاً فيجب أن تراه الاستعلامةُ نفسُها ═══
+  -- **فخٌّ لا يُشغَّل ليس فخّاً** — ويُشغَّل بلا لمسِ صفٍّ واحد.
+  SELECT count(*) INTO v_seen
+  FROM (SELECT DISTINCT resource FROM public.company_role_permissions) x
+  CROSS JOIN public.companies c
+  WHERE NOT EXISTS (
+    SELECT 1 FROM public.company_role_permissions p
+    WHERE p.company_id = c.id AND p.resource = x.resource
+      AND x.resource <> 'dispatch_approvals'
+  );
+  IF v_seen < v_ncomp THEN
+    RAISE EXCEPTION 'BASELINE FAIL: حُجب موردٌ تخيُّلاً فلم ترهُ الاستعلامة (رأت % من %) (v3.75.8)', v_seen, v_ncomp;
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_9_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_9_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_src   text;
+  v_hand  text;
+  v_tpl   text;
+  v_seen  int;
+BEGIN
+  -- ═══ القالبُ لا يملكُ الكتابةَ فوقَ أحد ═══
+  SELECT prosrc INTO v_src FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = 'copy_default_permissions_for_company';
+  IF v_src IS NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: بذّارُ القالبِ غائب (v3.75.9)';
+  END IF;
+  -- **التعليقُ ليس تعليمة**: تُطرح أسطرُ التعليقِ قبلَ الحكم، وإلّا حكمَ الفحصُ
+  -- على شرحٍ يذكرُ ما كان.
+  v_src := regexp_replace(v_src, '--[^\n]*', ' ', 'g');
+  IF v_src ~* 'ON\s+CONFLICT[^;]*DO\s+UPDATE' THEN
+    RAISE EXCEPTION 'BASELINE FAIL: القالبُ يكتبُ فوقَ صفٍّ قائم — وهو أرضيّةٌ لا سقف (v3.75.9)';
+  END IF;
+  IF v_src !~* 'ON\s+CONFLICT[^;]*DO\s+NOTHING' THEN
+    RAISE EXCEPTION 'BASELINE FAIL: القالبُ بلا شرطِ تعارضٍ معروف (v3.75.9)';
+  END IF;
+
+  -- ═══ والترتيبُ يبقى: اليدوىُّ أوّلاً ثمّ القالب ═══
+  SELECT t.tgname INTO v_hand FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+    JOIN pg_proc p ON p.oid = t.tgfoid
+  WHERE c.relname = 'companies' AND NOT t.tgisinternal
+    AND p.proname = 'trg_auto_seed_role_permissions';
+  SELECT t.tgname INTO v_tpl FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+    JOIN pg_proc p ON p.oid = t.tgfoid
+  WHERE c.relname = 'companies' AND NOT t.tgisinternal
+    AND p.proname = 'trigger_copy_permissions_on_company_create';
+  IF v_hand IS NULL OR v_tpl IS NULL THEN
+    RAISE EXCEPTION 'BASELINE FAIL: أحدُ مُشغِّلَى البذرِ غائب (v3.75.9)';
+  END IF;
+  IF v_hand >= v_tpl THEN
+    RAISE EXCEPTION 'BASELINE FAIL: تغيّر ترتيبُ البذر — القالبُ صار يسبقُ اليدوىَّ: % ثمّ % (v3.75.9)', v_tpl, v_hand;
+  END IF;
+
+  -- ═══ ولا يُحاكَمُ مقدارُ الصلاحيّة ═══
+  -- قِيمُ الأعلامِ اختيارُ صاحبِ البيت، فلا يحرسُها فحصٌ وإلّا خاصمَ المالكَ فى
+  -- شاشتِه. المحروسُ هنا **البنية**: من يبذر، وبأىِّ ترتيب، وهل يملكُ المحوَ.
+  -- **ولا يُحاكَم قرارٌ يملكُه صاحبُه.**
+
+  -- ═══ والفخُّ يُشغَّل بلا لمسِ صفٍّ واحد ═══
+  -- **فخٌّ لا يُشغَّل ليس فخّاً**: يُصطنَعُ نصٌّ فيه DO UPDATE فيجب أن تراه
+  -- القاعدةُ نفسُها التى حكمت على القالب.
+  IF NOT (('insert into t values (1) on conflict (a) do update set b = 1')
+          ~* 'ON\s+CONFLICT[^;]*DO\s+UPDATE') THEN
+    RAISE EXCEPTION 'BASELINE FAIL: القاعدةُ لا ترى الكتابةَ فوقَ صفٍّ حتى حين تُصطنَع (v3.75.9)';
+  END IF;
+  IF ('insert into t values (1) on conflict (a) do nothing')
+     ~* 'ON\s+CONFLICT[^;]*DO\s+UPDATE' THEN
+    RAISE EXCEPTION 'BASELINE FAIL: القاعدةُ تصرخُ على البرىء — DO NOTHING ليس محواً (v3.75.9)';
+  END IF;
+
+  -- ═══ ولا يُقرأُ فراغٌ ويُسمّى سلاماً ═══
+  SELECT count(*) INTO v_seen FROM public.company_role_permissions;
+  IF v_seen = 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: لا صفَّ صلاحيّةٍ واحداً — بحثٌ لا يجد ليس دليلَ غياب (v3.75.9)';
   END IF;
 END;
 $function$
@@ -8069,6 +9897,21 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- bill_payable_statuses()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.bill_payable_statuses()
+ RETURNS text[]
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT ARRAY[
+    'received', 'partially_paid', 'paid', 'partially_returned', 'fully_returned'
+  ]::text[];
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- bill_protect_posted_trg()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.bill_protect_posted_trg()
@@ -8182,6 +10025,19 @@ BEGIN
   PERFORM public.bill_evaluate_discount_approval(NEW.id);
   RETURN NEW;
 END; $function$
+;
+
+-- ---------------------------------------------------------------
+-- bill_status_is_payable(p_status text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.bill_status_is_payable(p_status text)
+ RETURNS boolean
+ LANGUAGE sql
+ IMMUTABLE
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT COALESCE(p_status, '') = ANY (public.bill_payable_statuses());
+$function$
 ;
 
 -- ---------------------------------------------------------------
@@ -14855,7 +16711,10 @@ BEGIN
       -- owner و admin لديهم كل الصلاحيات
       v_all_access := v_role IN ('owner', 'admin');
 
-      -- إدراج أو تحديث الصلاحية
+      -- v3.75.9 — **القالب أرضية لا سقف.** كان DO UPDATE، ومشغله يعمل بعد
+      -- البذار اليدوى، فكان يكتب فوقه فى 25 زوجا عند ميلاد كل شركة. ويكتب
+      -- كذلك فوق اختيار صاحب البيت لو نودى على شركة قائمة. فصار DO NOTHING:
+      -- يملأ الفراغ ولا يمحو قرارا.
       INSERT INTO company_role_permissions (
         company_id, role, resource,
         can_read, can_write, can_update, can_delete, all_access, can_access,
@@ -14865,14 +16724,7 @@ BEGIN
         v_can_read, v_can_write, v_can_update, v_can_delete, v_all_access, v_can_access,
         v_actions
       )
-      ON CONFLICT (company_id, role, resource) DO UPDATE SET
-        can_read = EXCLUDED.can_read,
-        can_write = EXCLUDED.can_write,
-        can_update = EXCLUDED.can_update,
-        can_delete = EXCLUDED.can_delete,
-        all_access = EXCLUDED.all_access,
-        can_access = EXCLUDED.can_access,
-        allowed_actions = EXCLUDED.allowed_actions;
+      ON CONFLICT (company_id, role, resource) DO NOTHING;
     END LOOP;
   END LOOP;
 END;
@@ -18740,7 +20592,7 @@ BEGIN
 
   RETURN CASE
     WHEN v_role IN ('owner', 'admin')                                              THEN 'company'
-    WHEN v_role IN ('manager', 'accountant', 'supervisor', 'store_manager',
+    WHEN v_role IN ('manager', 'accountant', 'store_manager',
                     'manufacturing_officer', 'purchasing_officer', 'hr_officer')   THEN 'branch'
     WHEN v_role = 'viewer'                                                         THEN 'company'
     ELSE 'own'  -- staff, employee, sales, booking_officer
@@ -18781,7 +20633,7 @@ BEGIN
     RETURN 'none';
   END IF;
 
-  -- v3.74.317: general_manager joins owner/admin at the company scope
+  -- owner/admin see the whole company
   IF v_role IN ('owner', 'admin') THEN
     RETURN 'company';
   END IF;
@@ -18798,7 +20650,7 @@ BEGIN
   END IF;
 
   RETURN CASE
-    WHEN v_role IN ('manager', 'accountant', 'supervisor', 'store_manager',
+    WHEN v_role IN ('manager', 'accountant', 'store_manager',
                     'manufacturing_officer', 'purchasing_officer', 'hr_officer')
       THEN 'branch'
     WHEN v_role = 'viewer' THEN 'company'
@@ -21104,6 +22956,22 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- erp_is_senior_role(p_role text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_is_senior_role(p_role text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT EXISTS (
+    SELECT 1 FROM public.roles
+    WHERE name = lower(trim(coalesce(p_role, ''))) AND tier = 'senior'
+  );
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- erp_is_sole_senior(p_company_id uuid, p_user_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.erp_is_sole_senior(p_company_id uuid, p_user_id uuid)
@@ -21217,6 +23085,39 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- erp_policy_role_groups()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_policy_role_groups()
+ RETURNS TABLE(policy_name text, roles_named text[])
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  WITH pol AS (
+    SELECT n.nspname || '.' || c.relname || ' / ' || p.polname AS nm,
+           coalesce(pg_get_expr(p.polqual, p.polrelid), '') || ' ||| ' ||
+           coalesce(pg_get_expr(p.polwithcheck, p.polrelid), '') AS body
+    FROM pg_policy p
+    JOIN pg_class c ON c.oid = p.polrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname IN ('public', 'storage')
+  ), grp AS (
+    SELECT nm, m[1] AS lst FROM pol,
+      LATERAL regexp_matches(body, '(?<![''"])\mrole\M(?!\s*\()[^=<>!]{0,60}?=\s*ANY\s*\(\s*ARRAY\s*\[([^\]]*)\]', 'g') m
+    UNION ALL
+    SELECT nm, m[1] FROM pol,
+      LATERAL regexp_matches(body, '(?<![''"])\mrole\M(?!\s*\()[^=<>!]{0,60}?=\s*(''[a-z_]+'')', 'g') m
+    UNION ALL
+    SELECT nm, m[1] FROM pol,
+      LATERAL regexp_matches(body, '(?<![''"])\mrole\M(?!\s*\()[^=<>!]{0,60}?IN\s*\(\s*((?:''[a-z_]+''\s*(?:::text)?\s*,?\s*)+)\)', 'g') m
+  )
+  SELECT nm, (SELECT array_agg(t[1]) FROM regexp_matches(lst, '''([a-z_]+)''', 'g') t)
+  FROM grp
+  WHERE (SELECT array_agg(t[1]) FROM regexp_matches(lst, '''([a-z_]+)''', 'g') t) IS NOT NULL;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- erp_product_sku_prefix(p_item_type text, p_product_type text)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.erp_product_sku_prefix(p_item_type text, p_product_type text)
@@ -21319,6 +23220,20 @@ BEGIN
 
   RETURN 'لا تعتمد ما أنشأتَه بنفسك — وفى الشركة ' || v_others || ' من يملك اعتمادَه';
 END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- erp_senior_roles()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_senior_roles()
+ RETURNS text[]
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT coalesce(array_agg(name ORDER BY priority), ARRAY[]::text[])
+  FROM public.roles WHERE tier = 'senior';
 $function$
 ;
 
@@ -28194,7 +30109,15 @@ BEGIN
       SELECT s.*
       FROM suppliers s
       WHERE s.company_id = p_company_id
-        AND (p_branch_filter IS NULL OR s.branch_id = p_branch_filter)
+        -- v3.75.22 — المورّدُ يظهرُ إن كان سجلُّه فى الفرعِ المعروض **أو**
+        -- كانت له حركةٌ عبرتِ الأستاذَ فى فرعِ صاحبِ الشاشة. ودالّةُ الحركةِ
+        -- تسألُ عضويّتَه عن فرعِه بنفسِها، فمن يرى الفروعَ كلَّها تُجيبُه بلا
+        -- ويبقى تصفيتُه على سجلِّ المورّدِ كما كانت.
+        AND (
+             p_branch_filter IS NULL
+             OR s.branch_id = p_branch_filter
+             OR public.supplier_is_active_in_my_branch(p_company_id, s.id)
+        )
         AND (
              v_search IS NULL
              OR s.name  ILIKE '%' || v_search || '%'
@@ -28204,8 +30127,10 @@ BEGIN
         )
     ),
     -- v3.26.3: payables and bill overpayments come from the same scan of bills.
-    -- Drafts / cancelled / fully_returned are pre-GL or terminal and contribute
-    -- nothing to either column.
+    -- v3.75.22: **القانونُ الواحد** `bill_status_is_payable` بدلَ قائمةِ المنع —
+    -- فما لم يعبرْ حدَّ الأستاذِ لا يُطالَبُ به. **والشاشةُ لا تُطالبُ بدَينٍ
+    -- رفضَه الدفتر.** والمجاميعُ تعرفُ نطاقَها: إن صُفّىَ العرضُ بفرعٍ صُفّىَ
+    -- المالُ به، فلا يُنسَبُ رقمُ الشركةِ كلِّها إلى فرعٍ واحد.
     bill_agg AS (
       SELECT supplier_id,
         COALESCE(SUM(GREATEST(
@@ -28217,7 +30142,8 @@ BEGIN
         )), 0) AS overpayments
       FROM bills
       WHERE company_id = p_company_id
-        AND COALESCE(status,'') NOT IN ('draft','cancelled','fully_returned')
+        AND public.bill_status_is_payable(status)
+        AND (p_branch_filter IS NULL OR branch_id = p_branch_filter)
       GROUP BY supplier_id
     ),
     credit_agg AS (
@@ -28228,6 +30154,7 @@ BEGIN
       FROM vendor_credits
       WHERE company_id = p_company_id
         AND COALESCE(status,'') = 'open'
+        AND (p_branch_filter IS NULL OR branch_id = p_branch_filter)
       GROUP BY supplier_id
     ),
     -- v3.74.158 advance payments: supplier paid in advance, no bill yet.
@@ -28249,6 +30176,7 @@ BEGIN
         AND invoice_id IS NULL
         AND COALESCE(status, '') = 'approved'
         AND COALESCE(is_deleted, false) = false
+        AND (p_branch_filter IS NULL OR branch_id = p_branch_filter)
       GROUP BY supplier_id
     ),
     enriched AS (
@@ -28701,7 +30629,7 @@ BEGIN
     v_result := v_result || jsonb_build_object('permission_transfer', v_n);
   END IF;
 
-  -- v3.74.373 - discount approvals badge. Only owner/admin/general_manager
+  -- v3.74.373 - discount approvals badge. Only owner/admin
   -- are approvers per the owner's governance decision.
   IF v_is_admin THEN
     SELECT count(*) INTO v_n FROM discount_approvals
@@ -29938,13 +31866,13 @@ CREATE OR REPLACE FUNCTION public.ic_ap_balance(p_company_id uuid)
 AS $function$
 DECLARE v_bill_net numeric; v_acct_net numeric; v_credit_unapplied numeric; v_diff numeric;
 BEGIN
-  -- v3.74.135 — count only bills that have crossed the GL boundary
-  -- (confirm-receipt onward). draft / pending_approval / sent /
-  -- rejected / voided / cancelled are pre-GL and stay excluded.
+  -- v3.75.22 — القانونُ الواحد `bill_status_is_payable` هو المعيار: عبورُ حدِّ
+  -- الأستاذ (من تأكيدِ الاستلامِ فصاعداً). وما قبلَه — مسودّة / بانتظارِ اعتماد /
+  -- مُرسَلة / مرفوضةُ الاستلام / مُبطَلة / ملغاة — يبقى مستثنى.
   SELECT COALESCE(SUM(GREATEST(0, total_amount - COALESCE(paid_amount,0) - COALESCE(returned_amount,0))),0)
     INTO v_bill_net FROM bills
   WHERE company_id = p_company_id
-    AND COALESCE(status,'') IN ('received','partially_paid','paid','partially_returned','fully_returned');
+    AND public.bill_status_is_payable(status);
 
   -- v3.74.907 — إشعارٌ دائنٌ معتمدٌ لم يُطبَّق بعدُ على فاتورة يترك
   -- رصيداً مديناً **مشروعاً** فى حساب الموردين: قيدُه خفّض الالتزام،
@@ -42639,6 +44567,35 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- policy_knocked_function_names(p_anon_readable_only boolean)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.policy_knocked_function_names(p_anon_readable_only boolean DEFAULT false)
+ RETURNS text[]
+ LANGUAGE sql
+ STABLE
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT COALESCE(array_agg(DISTINCT s.nm), '{}'::text[])
+    FROM (
+      SELECT (regexp_matches(
+                COALESCE(pg_get_expr(q.polqual, q.polrelid), '') || ' ' ||
+                COALESCE(pg_get_expr(q.polwithcheck, q.polrelid), ''),
+                '([A-Za-z_][A-Za-z0-9_]*)\s*\(', 'g'))[1] AS nm
+        FROM pg_policy q
+       WHERE NOT p_anon_readable_only
+          OR EXISTS (
+               SELECT 1
+                 FROM pg_class c
+                 JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE c.oid = q.polrelid
+                  AND n.nspname = 'public'
+                  AND has_table_privilege('anon', c.oid, 'SELECT')
+             )
+    ) s
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- post_accounting_event(p_event_type text, p_company_id uuid, p_items jsonb, p_inventory_transactions jsonb, p_cogs_transactions jsonb, p_fifo_consumptions jsonb, p_journal_entries jsonb, p_payments jsonb, p_sales_returns jsonb, p_sales_return_items jsonb, p_update_source jsonb)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.post_accounting_event(p_event_type text, p_company_id uuid, p_items jsonb DEFAULT NULL::jsonb, p_inventory_transactions jsonb DEFAULT NULL::jsonb, p_cogs_transactions jsonb DEFAULT NULL::jsonb, p_fifo_consumptions jsonb DEFAULT NULL::jsonb, p_journal_entries jsonb DEFAULT NULL::jsonb, p_payments jsonb DEFAULT NULL::jsonb, p_sales_returns jsonb DEFAULT NULL::jsonb, p_sales_return_items jsonb DEFAULT NULL::jsonb, p_update_source jsonb DEFAULT NULL::jsonb)
@@ -54631,6 +56588,73 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- seed_hr_officer_permissions(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.seed_hr_officer_permissions(p_company_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  -- الموارد السبعة كما هى فى الشركة الوحيدة التى مُنح فيها هذا الدور،
+  -- ويؤكّدها بيت الكود lib/role-default-pages.ts.
+  insert into public.company_role_permissions
+    (company_id, role, resource, can_access, can_read, can_write, can_update, can_delete, all_access)
+  values
+    (p_company_id, 'hr_officer', 'employees',    true, true, true,  true,  true,  false),
+    (p_company_id, 'hr_officer', 'payroll',      true, true, true,  true,  true,  false),
+    (p_company_id, 'hr_officer', 'attendance',   true, true, true,  true,  true,  false),
+    (p_company_id, 'hr_officer', 'branches',     true, true, false, false, false, false),
+    (p_company_id, 'hr_officer', 'cost_centers', true, true, false, false, false, false),
+    (p_company_id, 'hr_officer', 'dashboard',    true, true, false, false, false, false),
+    (p_company_id, 'hr_officer', 'reports',      true, true, false, false, false, false)
+  on conflict (company_id, role, resource) do nothing;
+end;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- seed_late_added_resources_permissions(p_company_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.seed_late_added_resources_permissions(p_company_id uuid)
+ RETURNS void
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  insert into public.company_role_permissions
+    (company_id, role, resource, can_access, can_read, can_write, can_update, can_delete, all_access)
+  values
+    -- موافقات الصرف (منقولة عن الشركتين الأحدث)
+    (p_company_id, 'accountant',         'dispatch_approvals',      true, true, false, false, false, false),
+    (p_company_id, 'manager',            'dispatch_approvals',      true, true, false, false, false, false),
+    (p_company_id, 'purchasing_officer', 'dispatch_approvals',      true, true, false, false, false, false),
+    (p_company_id, 'store_manager',      'dispatch_approvals',      true, true, true,  true,  true,  false),
+    -- استلام البضاعة
+    (p_company_id, 'accountant',         'inventory_goods_receipt', true, true, false, false, false, false),
+    (p_company_id, 'manager',            'inventory_goods_receipt', true, true, false, false, false, false),
+    (p_company_id, 'purchasing_officer', 'inventory_goods_receipt', true, true, false, false, false, false),
+    (p_company_id, 'store_manager',      'inventory_goods_receipt', true, true, true,  true,  true,  false),
+    -- طلبات مرتجع المبيعات
+    (p_company_id, 'accountant',         'sales_return_requests',   true, true, true,  true,  false, false),
+    (p_company_id, 'manager',            'sales_return_requests',   true, true, false, false, false, false),
+    (p_company_id, 'store_manager',      'sales_return_requests',   true, true, true,  true,  false, false),
+    -- طلبات رد أموال العملاء (منقولة عن الشركة الوحيدة التى تملكها)
+    (p_company_id, 'accountant',         'customer_refund_requests', true, true, false, false, false, false),
+    -- طلبات تصحيح دفع الموردين
+    (p_company_id, 'accountant',         'vendor_payment_correction_requests', true, true, true, false, false, false),
+    -- التقارير المالية: موجودة فى الشركات الست كلها بهجرة قديمة، ولا بذّار
+    -- يعرفها — فشركة تولد غدًا لا تأخذها. **وما يُصلَح للقديم يجب أن يُولد به الجديد.**
+    (p_company_id, 'owner',              'financial_reports',       true, true, false, false, false, false),
+    (p_company_id, 'admin',              'financial_reports',       true, true, false, false, false, false)
+  on conflict (company_id, role, resource) do nothing;
+end;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- seed_purchasing_officer_returns_permissions(p_company_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.seed_purchasing_officer_returns_permissions(p_company_id uuid)
@@ -55998,6 +58022,57 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- supplier_is_active_in_my_branch(p_company_id uuid, p_supplier_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.supplier_is_active_in_my_branch(p_company_id uuid, p_supplier_id uuid)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_branch UUID;
+  v_found  BOOLEAN := FALSE;
+BEGIN
+  IF auth.uid() IS NULL OR p_company_id IS NULL OR p_supplier_id IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  SELECT cm.branch_id, TRUE
+    INTO v_branch, v_found
+    FROM public.company_members cm
+   WHERE cm.user_id = auth.uid()
+     AND cm.company_id = p_company_id
+   LIMIT 1;
+
+  IF NOT COALESCE(v_found, FALSE) OR v_branch IS NULL THEN
+    RETURN FALSE;
+  END IF;
+
+  RETURN EXISTS (
+    SELECT 1 FROM public.bills b
+     WHERE b.company_id = p_company_id
+       AND b.supplier_id = p_supplier_id
+       AND b.branch_id = v_branch
+       AND public.bill_status_is_payable(b.status)
+  ) OR EXISTS (
+    SELECT 1 FROM public.vendor_credits vc
+     WHERE vc.company_id = p_company_id
+       AND vc.supplier_id = p_supplier_id
+       AND vc.branch_id = v_branch
+  ) OR EXISTS (
+    SELECT 1 FROM public.payments pm
+     WHERE pm.company_id = p_company_id
+       AND pm.supplier_id = p_supplier_id
+       AND pm.branch_id = v_branch
+       AND COALESCE(pm.status, '') = 'approved'
+       AND COALESCE(pm.is_deleted, false) = false
+  );
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- supplier_payment_decision_error(p_status text, p_action text, p_role text)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.supplier_payment_decision_error(p_status text, p_action text, p_role text)
@@ -56069,6 +58144,29 @@ AS $function$
       THEN 'approved'
     ELSE NULL
   END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- suppliers_with_balance_outside_scope(p_company_id uuid, p_visible_branch uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.suppliers_with_balance_outside_scope(p_company_id uuid, p_visible_branch uuid)
+ RETURNS SETOF uuid
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+BEGIN
+  PERFORM public.assert_company_access(p_company_id);
+  IF p_visible_branch IS NULL THEN RETURN; END IF;
+  RETURN QUERY
+  SELECT DISTINCT b.supplier_id FROM public.bills b
+  WHERE b.company_id = p_company_id AND b.supplier_id IS NOT NULL
+    AND b.branch_id IS DISTINCT FROM p_visible_branch
+    AND public.bill_status_is_payable(b.status)
+    AND GREATEST(GREATEST(COALESCE(b.total_amount,0)-COALESCE(b.returned_amount,0),0)
+          - COALESCE(b.paid_amount,0), 0) > 0;
+END;
 $function$
 ;
 
@@ -57951,6 +60049,10 @@ begin
   perform public.seed_reports_access_v581(new.id);
   -- v3.74.597: branch outlets are created by the branches INSERT
   -- trigger (the auto main branch included) — pickup seeding removed.
+  -- v3.75.7: مسؤول الموارد البشرية كان غائبًا عن البذّارين معًا.
+  perform public.seed_hr_officer_permissions(new.id);
+  -- v3.75.8: موارد تأخّرت عن الشركات القديمة، واثنان لم يعرفهما بذّار قط.
+  perform public.seed_late_added_resources_permissions(new.id);
   return new;
 end;
 $function$
