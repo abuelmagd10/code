@@ -167,6 +167,9 @@ async function liveFire(mode, work) {
   return { attempts, message }
 }
 
+/** يُنادى البيتُ عندَ الحاجةِ لا عندَ التحميل — **ولا يُنسَخُ ما يُنادى**. */
+function withLiveDatabaseRef() { return require("./lib/live-db").withLiveDatabase }
+
 async function selftest() {
   const { isConnectionFailure } = require("./lib/live-db")
   const TODAY = "Client has encountered a connection error and is not queryable"
@@ -215,6 +218,37 @@ async function selftest() {
 
   const refused = await liveFire("server-says-no", async (c) => c.query("select 1"))
   t("وحين يُجيبُ الخادمُ برأيِه لا يُعادُ القياسُ", refused.attempts, 1)
+
+  // ── وإعادةُ محاولةٍ بلا مهلةٍ ليست إعادةَ محاولة (v3.75.30) ──────────
+  //    وُلدت من حادثةٍ حقيقيّة: سقطَ المقبسُ، فأُعيدت المحاولةُ فى نفسِ
+  //    اللحظةِ والشبكةُ لم تعُدْ، فتوقّفت دفعةٌ سليمةٌ تماماً.
+  const { hostOf, waitForNetwork, waitForNetworkSync } = require("./lib/live-db")
+  const DEAD = "postgresql://u:p@erb-no-such-host.invalid:5432/d"
+  const LIVE = "postgresql://u:p@127.0.0.1:5432/d"
+
+  t("يقرأُ مضيفَ القاعدةِ من نصِّ الاتّصال", hostOf(DEAD), "erb-no-such-host.invalid")
+  t("ولا يسقطُ على نصٍّ ليس عنواناً", hostOf("not a url at all"), null)
+
+  const waitedDead = await waitForNetwork(DEAD, 700, 200)
+  t("وينتظرُ حتى السقفِ حين لا يعودُ الاسم", waitedDead >= 700, true)
+  const waitedLive = await waitForNetwork(LIVE, 5000, 200)
+  t("ويعودُ فورَ أن يُترجَمَ الاسم — ولا ينتظرُ بلا سبب", waitedLive < 200, true)
+
+  const syncDead = waitForNetworkSync(DEAD, 700, 200)
+  t("والمسارُ المتزامنُ ينتظرُ بالسياسةِ نفسِها", syncDead >= 700, true)
+  const syncLive = waitForNetworkSync(LIVE, 5000, 200)
+  t("ويعودُ هو أيضاً فورَ عودةِ الاسم", syncLive < 1500, true)
+
+  // **ولا يُفقَدُ سلوكٌ كان قائماً**: لو لم تعُدِ الشبكةُ أُعيدت المحاولةُ
+  // مرّةً واحدةً كما كانت قبلَ المهلة — المهلةُ تؤخّرُ ولا تمنع.
+  let deadAttempts = 0
+  try {
+    await withLiveDatabaseRef()(DEAD, async (c) => c.query("select 1"), {
+      ssl: false, retryCeilingMs: 500, retryProbeMs: 200,
+      onAttempt: () => { deadAttempts++ },
+    })
+  } catch { /* الرفضُ متوقَّع */ }
+  t("والمهلةُ تؤخّرُ ولا تمنعُ الإعادة", deadAttempts, 2)
 
   // ── وإعادةُ تشغيلِ العمليّةِ كلِّها — بتشغيلٍ حقيقىّ لا بادّعاء ────────
   const { spawnSync } = require("child_process")

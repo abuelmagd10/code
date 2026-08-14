@@ -98,10 +98,97 @@ function isConnectionFailure(err, client) {
  *        ولا يُشغَّلُ هذا الطريقُ حقّاً إلّا على خادمٍ وهمىٍّ بلا تعميةٍ محلّيّاً.
  *        وافتراضُه هو ما تستعملُه الحراسُ كلُّها.
  */
+// ═══════════════════════════════════════════════════════════════════════════
+// **وإعادةُ محاولةٍ بلا مهلةٍ ليست إعادةَ محاولة**
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// ═══ الحادثةُ التى وُلدت منها هذه المهلة — دفعةُ v3.75.29 ═══
+//
+//     X read ECONNRESET
+//     ! سقط الاتّصالُ بالقاعدة — يُعادُ تشغيلُه مرّةً واحدة.
+//     X getaddrinfo ENOTFOUND aws-1-us-east-1.pooler.supabase.com
+//     X صلاحيات اللقطة لا تطابق القاعدة.
+//
+// البيتُ **صنّفَ الحالتَينِ صحيحاً** — سقوطُ مقبسٍ ثمّ فشلُ ترجمةِ اسم — وأعادَ
+// المحاولةَ كما وُعد. لكنّه أعادَها **فى نفسِ اللحظة**، والشبكةُ لم تكنْ عادت.
+// فتوقّفت دفعةٌ **سليمةٌ تماماً** بعدَ تسعِ دقائقَ من الحراسةِ والبناء — وقد
+// قِيس الطرفانِ بعدَها فكانا متطابقَينِ حرفاً بحرف. **وحارسٌ يرفضُ البرىءَ
+// يُغرى صاحبَه بتخطّيه.**
+//
+// ═══ والمهلةُ ليست رقماً يُخمَّن ═══
+//
+// لا يُنتظَرُ زمنٌ مُقدَّر، بل **تُنتظَرُ عودةُ الشبكةِ نفسِها**: يُسأَلُ نظامُ
+// الأسماءِ عن مضيفِ القاعدة، فإن أجاب عادت المحاولةُ **فوراً**، وإن لم يُجبْ
+// أُعيدت عند السقفِ **مرّةً واحدةً كما كانت** — فلا يُفقَدُ سلوكٌ كان قائماً،
+// ولا يُنتظَرُ بلا نهاية. **ومعدودٌ لا مسكوتٌ عنه**: تُطبَعُ المدّةُ المنتظَرة.
+const RETRY_CEILING_MS = 15000   // أقصى انتظارٍ قبلَ إعادةِ المحاولةِ على أىِّ حال
+const RETRY_PROBE_MS = 500       // بين سؤالَين عن الاسم
+
+/** مضيفُ القاعدةِ من نصِّ الاتّصال — ولا يُقرأُ منه شىءٌ آخر. */
+function hostOf(url) {
+  try {
+    const h = new URL(String(url)).hostname
+    return h || null
+  } catch { return null }
+}
+
+/**
+ * ينتظرُ حتى يُترجَمَ اسمُ المضيفِ إلى عنوان، أو حتى السقف. يعيدُ المدّةَ
+ * المنتظَرةَ بالمللى ثانية. **ولا يُبنى بيتٌ ثانٍ**: هذه سياسةُ المهلةِ الوحيدة،
+ * ومسارُ الخروجِ المتزامنُ ينفّذُها نفسَها فى عمليّةٍ صغيرة.
+ */
+async function waitForNetwork(url, ceilingMs, probeMs) {
+  const ceiling = typeof ceilingMs === "number" ? ceilingMs : RETRY_CEILING_MS
+  const probe = typeof probeMs === "number" ? probeMs : RETRY_PROBE_MS
+  const host = hostOf(url)
+  const t0 = Date.now()
+  const dns = require("dns").promises
+  for (;;) {
+    if (host) {
+      try { await dns.lookup(host); return Date.now() - t0 } catch { /* not back yet */ }
+    }
+    if (Date.now() - t0 >= ceiling) return Date.now() - t0
+    await new Promise((r) => setTimeout(r, probe))
+  }
+}
+
+/** نصُّ العمليّةِ الصغيرةِ التى تنفّذُ السياسةَ نفسَها من مسارٍ متزامن. */
+const WAIT_CHILD_SRC =
+  'const dns=require("dns"),h=process.argv[1],c=+process.argv[2],p=+process.argv[3],t0=Date.now();' +
+  "(function tick(){dns.lookup(h,function(e){" +
+  "if(!e)return process.exit(0);" +
+  "if(Date.now()-t0>=c)return process.exit(1);" +
+  "setTimeout(tick,p)})})()"
+
+/** انتظارٌ متزامنٌ بالسياسةِ نفسِها. يعيدُ المدّةَ المنتظَرة. */
+function waitForNetworkSync(url, ceilingMs, probeMs) {
+  const ceiling = typeof ceilingMs === "number" ? ceilingMs : RETRY_CEILING_MS
+  const probe = typeof probeMs === "number" ? probeMs : RETRY_PROBE_MS
+  const host = hostOf(url)
+  const t0 = Date.now()
+  if (!host) {
+    // لا اسمَ يُسأَلُ عنه — فتُعطى الشبكةُ مهلةً واحدةً بالسقفِ لا أكثر.
+    const sab = new Int32Array(new SharedArrayBuffer(4))
+    Atomics.wait(sab, 0, 0, Math.min(ceiling, RETRY_CEILING_MS))
+    return Date.now() - t0
+  }
+  try {
+    require("child_process").execFileSync(
+      process.execPath,
+      ["-e", WAIT_CHILD_SRC, host, String(ceiling), String(probe)],
+      { stdio: "ignore", timeout: ceiling + 5000 }
+    )
+  } catch { /* لم تعُدْ قبلَ السقف — تُعادُ المحاولةُ على أىِّ حال */ }
+  return Date.now() - t0
+}
+
 async function withLiveDatabase(url, work, opts) {
   const ATTEMPTS = 2
   const onAttempt = opts && typeof opts.onAttempt === "function" ? opts.onAttempt : null
   const ssl = opts && "ssl" in opts ? opts.ssl : { rejectUnauthorized: false }
+  // **مِفصلٌ للفخِّ وحدَه**: يُقصَّرُ السقفُ فى الاختبارِ لئلّا يطولَ الفخّ.
+  const ceiling = opts && typeof opts.retryCeilingMs === "number" ? opts.retryCeilingMs : RETRY_CEILING_MS
+  const probe = opts && typeof opts.retryProbeMs === "number" ? opts.retryProbeMs : RETRY_PROBE_MS
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
     if (onAttempt) onAttempt(attempt)
     // **ولا تتراكبُ استراتيجيّتان**: هذه تُعيدُ القياسَ داخلَ العمليّة، فتستعمل
@@ -116,8 +203,13 @@ async function withLiveDatabase(url, work, opts) {
       return await work(client)
     } catch (e) {
       if (attempt < ATTEMPTS && isConnectionFailure(e, client)) {
-        console.log(`! سقط الاتّصالُ بالقاعدة (${(e && e.message) || e}) — يُقاسُ مرّةً أخرى، مرّةً واحدة.`)
         try { await client.end() } catch { /* already gone */ }
+        // **وإعادةُ محاولةٍ بلا مهلةٍ ليست إعادةَ محاولة** — تُنتظَرُ عودةُ الشبكة.
+        const waited = await waitForNetwork(url, ceiling, probe)
+        console.log(
+          `! سقط الاتّصالُ بالقاعدة (${(e && e.message) || e}) — ` +
+            `انتُظرت الشبكةُ ${waited}ms ثمّ يُقاسُ مرّةً أخرى، مرّةً واحدة.`
+        )
         continue
       }
       throw e
@@ -188,7 +280,14 @@ process.on("exit", (code) => {
   const { spawnSync } = require("child_process")
   const script = process.argv[1]
   if (!script) return
-  console.log("! سقط الاتّصالُ بالقاعدة أثناءَ هذا الحارس — يُعادُ تشغيلُه مرّةً واحدة.")
+  // **وإعادةُ محاولةٍ بلا مهلةٍ ليست إعادةَ محاولة**: تُنتظَرُ عودةُ الشبكةِ قبلَ
+  // إعادةِ التشغيل. وهذا المسارُ متزامنٌ (مُستمِعُ الخروج)، فتُنفَّذُ السياسةُ
+  // نفسُها فى عمليّةٍ صغيرة — **ولا يُبنى بيتٌ ثانٍ**.
+  const waited = waitForNetworkSync(process.env.PRODUCTION_SUPABASE_DB_URL || "")
+  console.log(
+    `! سقط الاتّصالُ بالقاعدة أثناءَ هذا الحارس — انتُظرت الشبكةُ ${waited}ms ` +
+      "ثمّ يُعادُ تشغيلُه مرّةً واحدة."
+  )
   const res = spawnSync(process.execPath, [script].concat(process.argv.slice(2)), {
     stdio: "inherit",
     env: Object.assign({}, process.env, { [RETRY_FLAG]: "1" }),
@@ -199,4 +298,6 @@ process.on("exit", (code) => {
 module.exports = {
   isConnectionFailure, withLiveDatabase, NET_ERRNO, SQLSTATE_CONNECTION,
   Client, // بديلُ `pg` فى الحراسِ التى لا تُعيدُ القياسَ داخلَ عمليّتِها
+  // سياسةُ المهلةِ قبلَ الإعادة — تُصدَّرُ لِتُقاسَ فى الفخِّ لا لِتُنسَخ.
+  hostOf, waitForNetwork, waitForNetworkSync, RETRY_CEILING_MS, RETRY_PROBE_MS,
 }
