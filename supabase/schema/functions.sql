@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-14T18:46:11.912Z
--- Routines: 1385
+-- Generated: 2026-08-15T14:08:08.020Z
+-- Routines: 1386
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -6645,6 +6645,111 @@ BEGIN
      AND p.prosecdef AND p.prosrc LIKE '%execute_sales_invoice_accounting%';
   IF v_n < 2 THEN
     RAISE EXCEPTION 'v3.75.34: غلافُ محرِّكِ الاستحقاقِ ماتَ أو لم يعُدْ ينادِيه (وُجد % لا 2).', v_n;
+  END IF;
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_37_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_37_check()
+ RETURNS void
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_bad TEXT;
+  v_n   INT;
+BEGIN
+  -- (١) **كلُّ فحصِ سلامةٍ فعّالٍ له دالّةٌ موجودة** — ولا إعلانَ يشيرُ إلى لا شىء.
+  SELECT string_agg(d.fn_name, ', ' ORDER BY d.fn_name) INTO v_bad
+    FROM public.integrity_check_definitions d
+   WHERE d.active
+     AND NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                      WHERE n.nspname = 'public' AND p.proname = d.fn_name);
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'v3.75.37: إعلانُ فحصٍ يُسمّى دالّةً لا وجودَ لها: %', v_bad;
+  END IF;
+
+  -- (٢) **وكلُّها مغلقةٌ فى وجهِ الزائرِ والمستخدِمِ المسجَّل.**
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname IN (SELECT d.fn_name FROM public.integrity_check_definitions d WHERE d.active)
+     AND (has_function_privilege('anon', p.oid, 'EXECUTE')
+          OR has_function_privilege('authenticated', p.oid, 'EXECUTE'));
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'v3.75.37: فحصُ سلامةٍ عادَ يبلغُه من لا يطرقُه: %', v_bad;
+  END IF;
+
+  -- (٣) **ولم يُقطَعْ طريقُ الخادم** — **ونصفُ جراحةٍ أسوأُ من لا جراحة.**
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname IN (SELECT d.fn_name FROM public.integrity_check_definitions d WHERE d.active)
+     AND NOT has_function_privilege('service_role', p.oid, 'EXECUTE');
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'v3.75.37: نُزعت منحةُ الخدمةِ أيضاً فانقطعَ طريقُ الخادم: %', v_bad;
+  END IF;
+
+  -- (٤) **وكلُّها باقيةٌ بصلاحيّاتٍ كاملةٍ يملكُها postgres** — فلو صارت
+  --     `SECURITY INVOKER` لَانكسرَ نداءُ المُرسِلِ عليها بعدَ الإغلاق.
+  SELECT string_agg(p.proname, ', ' ORDER BY p.proname) INTO v_bad
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname IN (SELECT d.fn_name FROM public.integrity_check_definitions d WHERE d.active)
+     AND (NOT p.prosecdef OR pg_get_userbyid(p.proowner) <> 'postgres');
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'v3.75.37: فحصُ سلامةٍ فقدَ صلاحيّاتِه الكاملةَ أو مالكَه: %', v_bad;
+  END IF;
+
+  -- (٥) **ولا موضعَ يُقيَّمُ بحقِّ صاحبِ العمليّةِ ينادِيها** — وهو الشرطُ الذى
+  --     جعلَ الإغلاقَ آمناً. فلو وُلدَ غداً زنادٌ أو قيمةٌ افتراضيّةٌ أو دالّةٌ
+  --     بصلاحيّاتِ مُنادِيها تنادِى فحصاً منها، لَانكسرَ عندَها صامتاً.
+  --     **ومكسبٌ لا يُثبَّتُ يُلتَفُّ عليه.**
+  SELECT string_agg(DISTINCT d.fn_name, ', ') INTO v_bad
+    FROM public.integrity_check_definitions d
+   WHERE d.active
+     AND EXISTS (
+       SELECT 1 FROM (
+         SELECT pg_get_expr(ad.adbin, ad.adrelid) AS txt
+           FROM pg_attrdef ad JOIN pg_class c ON c.oid = ad.adrelid
+           JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public'
+         UNION ALL
+         SELECT pg_get_constraintdef(k.oid) FROM pg_constraint k
+           JOIN pg_namespace n ON n.oid = k.connamespace
+          WHERE n.nspname = 'public' AND k.contype = 'c'
+         UNION ALL
+         SELECT pg_get_indexdef(i.indexrelid) FROM pg_index i JOIN pg_class c ON c.oid = i.indrelid
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'public' AND (i.indexprs IS NOT NULL OR i.indpred IS NOT NULL)
+         UNION ALL
+         SELECT pg_get_triggerdef(t.oid) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE n.nspname = 'public' AND NOT t.tgisinternal AND t.tgqual IS NOT NULL
+         UNION ALL
+         SELECT p.prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname = 'public' AND NOT p.prosecdef
+       ) s
+       WHERE s.txt ~ ('(^|[^A-Za-z0-9_])(public\.)?' || d.fn_name || '\s*\(')
+     );
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION
+      'v3.75.37: فحصُ سلامةٍ صارَ يُنادَى من موضعٍ يجرى بحقِّ صاحبِ العمليّةِ فينكسرُ: %', v_bad;
+  END IF;
+
+  -- (٦) **والمُرسِلُ حىٌّ ويقرأُ أسماءَه من الجدولِ ويبلغُه المستخدِمُ المسجَّل** —
+  --     فلو ماتَ أو أُغلق أو صارَ يكتبُ الأسماءَ بيدِه لَانقطعَ الطريقُ الوحيدُ إليها.
+  SELECT count(*) INTO v_n
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'run_all_integrity_checks'
+     AND p.prosecdef AND pg_get_userbyid(p.proowner) = 'postgres'
+     AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
+     AND p.prosrc LIKE '%integrity_check_definitions%'
+     AND p.prosrc LIKE '%EXECUTE%';
+  IF v_n < 1 THEN
+    RAISE EXCEPTION 'v3.75.37: المُرسِلُ run_all_integrity_checks ماتَ أو أُغلق أو لم يعُدْ يقرأُ الجدول.';
   END IF;
 END;
 $function$
