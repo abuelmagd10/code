@@ -3,6 +3,7 @@
  * ---------------------------------------------------------------------------
  * v3.75.33 — **وبابٌ بصلاحيّاتٍ كاملةٍ لا يطرقُه أحدٌ ليس باباً، بل ثغرة.**
  * v3.75.34 — **والنداءُ بمتغيّرٍ نداء، وجردٌ فى بعضِ الدارِ ليس جَرداً.**
+ * v3.75.35 — **وجَردٌ يقيسُ القرصَ يقيسُ جهازاً لا مشروعاً.**
  *
  * لماذا وُلد هذا الحارس
  * ---------------------
@@ -46,6 +47,15 @@
  *
  * فصارَ الطارقُ الأوّلُ ثلاثةَ أشكال، والجردُ يشملُ الدارَ كلَّها بالافتراض.
  *
+ * ولماذا صُحِّح ثانيةً فى v3.75.35
+ * -------------------------------
+ * الجردُ الجديدُ مشى على **القرص**، فقالَ عندَ صاحبِ المشروعِ «١٣٦٣ ملفّاً»
+ * وقالَ على نسخةٍ نظيفةٍ من المستودعِ «١٢٣٦». **ولم يتغيّرِ الحكمُ يومَها** (١٩٩
+ * على النسختَين)، **لكنّ الاحتمالَ كان قائماً**: ملفٌّ محلىٌّ غيرُ مرفوعٍ يحملُ
+ * نداءً يجعلُ البابَ مطروقاً على جهازٍ ويتيماً على آخَر — **فيمرُّ عندَ من يدفعُ
+ * ويسقطُ عندَ من يراجع**. فصارَ الجردُ يُقرأُ من `git ls-files` فى بيتٍ واحد
+ * (`scripts/lib/repo-code-files.js`)، **ولا يُبنى بيتٌ ثانٍ**.
+ *
  * مَن هو «الطارق»؟ أربعةٌ، لا واحد
  * --------------------------------
  *   ١) **شاشةٌ أو مسارٌ فى المشروع** — بثلاثةِ أشكال:
@@ -75,38 +85,11 @@
  */
 require("dotenv").config({ path: [".env.local", ".env", ".env.development.local"] });
 
-const fs = require("fs");
-const path = require("path");
-
-const repoRoot = path.join(__dirname, "..");
-const CODE_EXT = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
-
 /**
- * **الجردُ يشملُ الدارَ كلَّها بالافتراض، ويُستثنى ما يُسمَّى.**
- *
- * القائمةُ المكتوبةُ باليدِ كانت قائمةَ **المشمول** (`app`, `lib`, `components`,
- * `hooks`) — فأىُّ مجلّدٍ جديدٍ يسقطُ من الجردِ صامتاً، وهو بعينُه ما وقعَ مع
- * `actions/`. **فقُلبت**: تُمسَحُ كلُّ الشيفرةِ إلّا ما يُستثنى هنا بسببٍ مكتوب،
- * **وأىُّ مجلّدٍ جديدٍ يُمسَحُ تلقائيّاً**.
- *
- * وخطأُ الشمولِ يتركُ باباً معدوداً مطروقاً (دَينٌ ظاهرٌ لم يُسدَّدْ بعد)، وخطأُ
- * النقصِ يدعو إلى نزعِ منحةٍ حيّة — **والميلُ الصحيحُ إلى تركِ البابِ مفتوحاً لا
- * إلى إغلاقِه على برىء**.
- *
- * ولا يُستثنى إلّا ما **لا يجرى بحقِّ المستخدِمِ المسجَّل**:
+ * **بيتٌ واحدٌ يقولُ ما هى شيفرةُ المشروع** — يُقرأُ من `git ls-files` لا من
+ * القرص، ويستثنى ما لا يجرى بحقِّ المستخدِمِ المسجَّل. **ولا يُبنى بيتٌ ثانٍ.**
  */
-const NOT_SHIPPED = new Set([
-  "node_modules", // ليس من المشروع
-  "scripts",      // تجرى بمفتاح الخدمة (service_role) لا بحقِّ المستخدِم
-  "tests",        // لا تُشحَن
-  "scratch",      // لا يُشحَن
-  "archive",      // لا يُشحَن
-  "supabase",     // هجراتٌ ودوالُّ حافّةٍ تجرى بمفتاح الخدمة
-  "docs",
-  "knowledge",
-  "governance",
-  "ops",
-]);
+const { keepPath, projectCodeFiles, NOT_SHIPPED } = require("./lib/repo-code-files");
 
 /**
  * **الرقمُ المُثبَّت.** قِيس ٢١٩ فى v3.75.33 بجردٍ ناقصِ الأرجاءِ وبطارقٍ أعمى عن
@@ -200,30 +183,6 @@ function mentionedButNotCalled(orphans, files) {
   return (orphans || []).filter((n) => (files || []).some((f) => mentionsNameAsText(f.src, n)));
 }
 
-/**
- * **والاستثناءُ يُقاسُ من الجذرِ وحدَه.** `NOT_SHIPPED` قائمةُ مجلّداتٍ عُليا،
- * فلو طُبِّقت على كلِّ عمقٍ لَسقطَ `app/.../ops/` و`lib/.../docs/` من الجردِ
- * بلا سبب — **وهو نقصُ جردٍ من الشكلِ الذى وُلدت هذه الدفعةُ لتُصحّحَه**.
- */
-function readCodeFiles() {
-  const out = [];
-  const walk = (dir, depth) => {
-    let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      if (e.name.startsWith(".")) continue;
-      if (e.name === "node_modules") continue;
-      if (depth === 0 && NOT_SHIPPED.has(e.name)) continue;
-      const p = path.join(dir, e.name);
-      if (e.isDirectory()) walk(p, depth + 1);
-      else if (CODE_EXT.has(path.extname(e.name))) {
-        try { out.push({ rel: path.relative(repoRoot, p), src: fs.readFileSync(p, "utf8") }); } catch { /* ignore */ }
-      }
-    }
-  };
-  walk(repoRoot, 0);
-  return out;
-}
 
 // ── الفخُّ الذاتىّ ────────────────────────────────────────────────────────
 if (process.argv.includes("--selftest")) {
@@ -294,11 +253,20 @@ if (process.argv.includes("--selftest")) {
   ok("ولا يعدُّ ذِكراً داخلَ تعليقٍ ذِكراً",
      mentionedButNotCalled(["silent"], F('// "silent"')), []);
 
-  // **والجردُ يشملُ ما لم يُسمَّ.** مجلّدٌ جديدٌ يُمسَحُ تلقائيّاً، والمستثنى بسبب.
+  // **والجردُ يشملُ ما لم يُسمَّ.** مجلّدٌ جديدٌ يدخلُ تلقائيّاً، والمستثنى بسبب.
   ok("ولا يستثنى مجلّدَ الإجراءاتِ actions - وهو الذى سقطَ من الجردِ القديم",
      NOT_SHIPPED.has("actions"), false);
   ok("ولا يستثنى مجلّدَ التطبيق", NOT_SHIPPED.has("app"), false);
   ok("ويستثنى سكربتاتِ مفتاحِ الخدمة", NOT_SHIPPED.has("scripts"), true);
+
+  // **والجردُ يُقرأُ من المستودعِ لا من القرص** — البيتُ الواحدُ يحكمُ على المسار.
+  ok("فيدخلُ ملفُّ الإجراءاتِ الذى كشفَ العطبَ", keepPath("actions/financial-reports.ts"), true);
+  ok("ويدخلُ مجلّدٌ لم يُسمَّ قطّ", keepPath("brand-new-folder/screen.tsx"), true);
+  ok("ولا يدخلُ سكربتُ مفتاحِ الخدمة", keepPath("scripts/check-x.js"), false);
+  ok("ولا اختبارٌ لا يُشحَن", keepPath("tests/e2e/x.ts"), false);
+  ok("ولا ملفٌّ فى مجلّدٍ مخفىّ", keepPath(".kilo/x.js"), false);
+  ok("ولا ملفٌّ ليس شيفرة", keepPath("app/page.css"), false);
+  ok("ويقبلُ الفاصلَ الخلفىَّ كما تكتبُه ويندوز", keepPath("app\\api\\route.ts"), true);
 
   console.log(`  الفخُّ الذاتىّ: ${total} اتّجاهاً، ${bad === 0 ? "كلُّها صحيحة." : bad + " منها سقط."}`);
   process.exit(bad === 0 ? 0 : 1);
@@ -322,10 +290,15 @@ try { ({ Client } = require("./lib/live-db")); } catch {
 }
 
 (async () => {
-  const codeFiles = readCodeFiles();
-  // **وبحثٌ لا يجد ليس دليلَ غياب**: بلا ملفّاتٍ لَعُدَّ كلُّ بابٍ يتيماً وصرخَ على الجميع.
-  if (codeFiles.length === 0) {
-    console.error("X لم أقرأْ ملفَّ كودٍ واحداً — لا يُحكَمُ على طارقٍ لم يُبحَثْ عنه.");
+  // **وبحثٌ لا يجد ليس دليلَ غياب**: البيتُ الواحدُ يرفعُ خطأً ولا يُعيدُ فراغاً،
+  // فلو أعادَ فراغاً لَعُدَّ كلُّ بابٍ يتيماً ولَصرخَ الحارسُ على الجميع.
+  let codeFiles, skippedFiles;
+  try {
+    const census = projectCodeFiles();
+    codeFiles = census.files;
+    skippedFiles = census.skipped;
+  } catch (e) {
+    console.error(`X ${(e && e.message) || e}`);
     process.exit(1);
   }
   const indirectFiles = codeFiles.filter((f) => dispatchesIndirectly(f.src));
@@ -369,9 +342,10 @@ try { ({ Client } = require("./lib/live-db")); } catch {
 
   console.log(
     `  دالّاتُ صلاحيّاتٍ كاملةٍ يبلغُها المستخدِمُ المسجَّل: ${open.length}` +
-      `   ·   ملفّاتُ كودٍ مسحت: ${codeFiles.length}` +
-      ` (منها ${indirectFiles.length} تنادى باسمٍ محسوب)` +
-      `   ·   عروضٌ قُرئت: ${viewDefs.length}`
+      `   ·   ملفّاتُ شيفرةٍ فى المستودع: ${codeFiles.length}` +
+      ` (منها ${indirectFiles.length} تنادى باسمٍ محسوب` +
+      (skippedFiles.length ? `، و${skippedFiles.length} محذوفٌ لم يُرحَّلْ حذفُه` : "") +
+      `)   ·   عروضٌ قُرئت: ${viewDefs.length}`
   );
   console.log(
     `  يطرقُها طارقٌ معروف: ${open.length - n}   ·   **بلا طارق**: ${n}   (المُثبَّت ${BASELINE})`

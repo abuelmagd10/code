@@ -105,14 +105,17 @@ try {
 //   - the database asserts no declared name is already closed (baseline _28_),
 //   - and this script asserts EVERY declared name is actually CALLED BY THE
 //     APPLICATION CODE. A door nobody knocks on does not get a licence.
-const fs = require("fs");
-const path = require("path");
-
 const PRELOGIN_SQL = "SELECT public.anon_prelogin_exceptions() AS names";
 
-const repoRoot = path.join(__dirname, "..");
-const CODE_ROOTS = ["app", "lib", "components", "hooks"];
-const CODE_EXT = new Set([".ts", ".tsx", ".js", ".jsx"]);
+/**
+ * v3.75.35 — **بيتٌ واحدٌ يقولُ ما هى شيفرةُ المشروع**، يُقرأُ من `git ls-files`.
+ *
+ * كانت هنا قائمةٌ مكتوبةٌ باليد (`app`, `lib`, `components`, `hooks`) ومشىٌ على
+ * القرص. **وكلاهما عطبٌ قِيس أثرُه فى v3.75.34**: المجلّدُ الذى لا يُسمَّى يسقطُ
+ * من الجردِ صامتاً (وسقطَ `actions/` فعلاً)، والمشىُ على القرصِ يجعلُ الحكمَ
+ * صفةَ الجهازِ لا صفةَ المشروع. **ولا يُبنى بيتٌ ثانٍ.**
+ */
+const { projectCodeFiles } = require("./lib/repo-code-files");
 
 /**
  * A comment is not an instruction. A name mentioned only in prose does not
@@ -150,25 +153,6 @@ function callsFunction(src, name) {
   return new RegExp(`rpc\\(\\s*["'\`]${esc}["'\`]|/rpc/${esc}\\b`).test(m);
 }
 
-function walkCode(roots, readDir, readFile) {
-  const out = [];
-  const stack = [...roots];
-  while (stack.length > 0) {
-    const dir = stack.pop();
-    let entries = [];
-    try { entries = readDir(dir); } catch { continue; }
-    for (const e of entries) {
-      const full = path.join(dir, e.name);
-      if (e.isDirectory()) {
-        if (e.name === "node_modules" || e.name === ".next" || e.name === "_to_delete") continue;
-        stack.push(full);
-      } else if (CODE_EXT.has(path.extname(e.name))) {
-        out.push({ file: full, src: readFile(full) });
-      }
-    }
-  }
-  return out;
-}
 
 /** Which declared names does no file call? */
 function unknockedNames(names, files) {
@@ -271,15 +255,14 @@ const SQL = `
   // **ولا رخصةَ بلا طارق** (v3.75.28): a declared pre-login exception must be
   // a door the application actually knocks on. Otherwise the declaration keeps
   // a door open for nobody and reassures whoever reads it.
-  const codeFiles = walkCode(
-    CODE_ROOTS.filter((d) => fs.existsSync(path.join(repoRoot, d))).map((d) => path.join(repoRoot, d)),
-    (dir) => fs.readdirSync(dir, { withFileTypes: true }),
-    (f) => fs.readFileSync(f, "utf8")
-  );
-  if (codeFiles.length === 0) {
-    // **وبحثٌ لا يجد ليس دليلَ غياب**: a search that scanned nothing proves
-    // nothing, and must not be read as "every declaration is dead".
-    console.error("X لم أقرأ ملفَّ شفرةٍ واحداً — لا يُحكَمُ على إعلانٍ ببحثٍ لم يقرأ شيئاً.");
+  // **وبحثٌ لا يجد ليس دليلَ غياب**: the one home raises instead of returning an
+  // empty list, so a search that scanned nothing can never read as "every
+  // declaration is dead".
+  let codeFiles;
+  try {
+    codeFiles = projectCodeFiles().files.map((f) => ({ file: f.rel, src: f.src }));
+  } catch (e) {
+    console.error(`X ${(e && e.message) || e}`);
     process.exit(1);
   }
   const unknocked = unknockedNames([...ALLOWED], codeFiles);
