@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-15T14:08:08.020Z
--- Routines: 1386
+-- Generated: 2026-08-15T16:22:16.601Z
+-- Routines: 1387
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -6752,6 +6752,115 @@ BEGIN
     RAISE EXCEPTION 'v3.75.37: المُرسِلُ run_all_integrity_checks ماتَ أو أُغلق أو لم يعُدْ يقرأُ الجدول.';
   END IF;
 END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_38_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_38_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  k_locked text[] := ARRAY[
+    'get_trial_balance(uuid,date)',
+    'get_trial_balance(uuid,date,date)',
+    'get_trial_balance(uuid,date,date,uuid,uuid)',
+    'get_dashboard_kpis(uuid,date,date)',
+    'reconcile_fifo_vs_gl(uuid)',
+    'search_audit_trail(uuid,text,integer)',
+    'check_period_lock_for_date(uuid,date)'
+  ];
+  v_missing text := ''; v_ungated text := ''; v_caller text := '';
+  v_open int; v_gateless int; s text;
+BEGIN
+  FOREACH s IN ARRAY k_locked LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.prosecdef
+        AND pg_get_userbyid(p.proowner) = 'postgres'
+        AND replace(p.oid::regprocedure::text, 'public.', '') = s
+    ) THEN
+      v_missing := v_missing || s || ' ';
+    END IF;
+  END LOOP;
+  IF v_missing <> '' THEN
+    RAISE EXCEPTION 'v3.75.38 (1): missing or changed: %', v_missing;
+  END IF;
+
+  SELECT string_agg(x.sig, ' ') INTO v_ungated
+  FROM (
+    SELECT replace(p.oid::regprocedure::text, 'public.', '') AS sig, p.oid
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND replace(p.oid::regprocedure::text, 'public.', '') = ANY(k_locked)
+  ) x
+  WHERE NOT EXISTS (
+    SELECT 1 FROM pg_proc caller
+    JOIN pg_namespace cn ON cn.oid = caller.pronamespace,
+         LATERAL regexp_matches(caller.prosrc, '([a-zA-Z_][a-zA-Z0-9_]*)\s*\(', 'g') m
+    JOIN pg_proc gate ON gate.proname = m[1]
+    JOIN pg_namespace gn ON gn.oid = gate.pronamespace AND gn.nspname = 'public'
+    WHERE caller.oid = x.oid AND cn.nspname = 'public'
+      AND gate.proname IN ('assert_company_access', 'assert_company_access_by_row')
+  );
+  IF v_ungated IS NOT NULL AND v_ungated <> '' THEN
+    RAISE EXCEPTION 'v3.75.38 (2): a door with no lock: %', v_ungated;
+  END IF;
+
+  BEGIN
+    PERFORM public.assert_company_access('00000000-0000-0000-0000-000000000001'::uuid);
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION 'v3.75.38 (3): the gate refuses a caller with no identity - this cuts every server path.';
+  END;
+
+  SELECT string_agg(DISTINCT q.place, ' ') INTO v_caller
+  FROM (
+    SELECT 'invoker:' || p.proname AS place, p.prosrc AS txt
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND NOT p.prosecdef
+    UNION ALL
+    SELECT 'default:' || cl.relname || '.' || a.attname, pg_get_expr(ad.adbin, ad.adrelid)
+      FROM pg_attrdef ad JOIN pg_class cl ON cl.oid = ad.adrelid
+      JOIN pg_attribute a ON a.attrelid = ad.adrelid AND a.attnum = ad.adnum
+    UNION ALL
+    SELECT 'check:' || con.conname, pg_get_constraintdef(con.oid)
+      FROM pg_constraint con WHERE con.contype = 'c'
+  ) q
+  WHERE q.txt ~ '(^|[^A-Za-z0-9_])(public\.)?(get_trial_balance|get_dashboard_kpis|reconcile_fifo_vs_gl|search_audit_trail|check_period_lock_for_date)\s*\(';
+  IF v_caller IS NOT NULL AND v_caller <> '' THEN
+    RAISE EXCEPTION 'v3.75.38 (4): a place evaluated with the caller rights calls a locked door: %', v_caller;
+  END IF;
+
+  WITH RECURSIVE fns AS (
+    SELECT p.oid, p.proname, p.prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.prokind = 'f'
+  ), tok AS (
+    SELECT f.oid AS caller, m[1] AS callee_name
+    FROM fns f, LATERAL regexp_matches(f.prosrc, '([a-zA-Z_][a-zA-Z0-9_]*)\s*\(', 'g') m
+  ), edges AS (
+    SELECT DISTINCT t.caller, f2.oid AS callee FROM tok t JOIN fns f2 ON f2.proname = t.callee_name
+  ), gates AS (
+    SELECT oid FROM fns WHERE proname IN ('assert_company_access', 'assert_company_access_by_row')
+  ), reach AS (
+    SELECT g.oid AS f, 0 AS d FROM gates g
+    UNION
+    SELECT e.caller, r.d + 1 FROM edges e JOIN reach r ON e.callee = r.f WHERE r.d < 4
+  ), target AS (
+    SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.prosecdef AND p.prokind = 'f'
+      AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
+      AND pg_get_function_arguments(p.oid) ~ 'p_company_id\s+uuid'
+  )
+  SELECT count(*), count(*) FILTER (WHERE t.oid NOT IN (SELECT f FROM reach))
+  INTO v_open, v_gateless
+  FROM target t;
+
+  RETURN format('v3.75.38 ok - 7 doors locked - %s company-scoped and reachable by a logged-in user - %s gateless - the server path passes.',
+                v_open, v_gateless);
+END
 $function$
 ;
 
@@ -14146,6 +14255,7 @@ CREATE OR REPLACE FUNCTION public.check_period_lock_for_date(p_company_id uuid, 
 AS $function$
 DECLARE v_period RECORD;
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   SELECT id, period_name, period_start, period_end, status, is_locked INTO v_period
   FROM public.accounting_periods
   WHERE company_id = p_company_id AND p_date BETWEEN period_start AND period_end
@@ -14156,7 +14266,8 @@ BEGIN
       'period_end', v_period.period_end, 'status', v_period.status);
   END IF;
   RETURN jsonb_build_object('is_locked', FALSE);
-END; $function$
+END;
+$function$
 ;
 
 -- ---------------------------------------------------------------
@@ -28464,10 +28575,13 @@ $function$
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_dashboard_kpis(p_company_id uuid, p_from_date date, p_to_date date)
  RETURNS jsonb
- LANGUAGE sql
+ LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
+DECLARE v_out jsonb;
+BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   WITH
   invoice_stats AS (
     SELECT
@@ -28512,7 +28626,10 @@ AS $function$
     'from_date',     p_from_date,
     'to_date',       p_to_date
   )
+  INTO v_out
   FROM invoice_stats i, bill_stats b, gl_stats g;
+  RETURN v_out;
+END;
 $function$
 ;
 
@@ -30547,8 +30664,9 @@ CREATE OR REPLACE FUNCTION public.get_trial_balance(p_company_id uuid, p_start_d
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   RETURN QUERY
-  SELECT 
+  SELECT
     coa.id as account_id,
     coa.code as account_code,
     coa.name as account_name,
@@ -30582,8 +30700,9 @@ CREATE OR REPLACE FUNCTION public.get_trial_balance(p_company_id uuid, p_start_d
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   RETURN QUERY
-  SELECT 
+  SELECT
     coa.id as account_id,
     coa.code as account_code,
     coa.name as account_name,
@@ -30614,10 +30733,13 @@ $function$
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_trial_balance(p_company_id uuid, p_as_of_date date DEFAULT CURRENT_DATE)
  RETURNS TABLE(account_code text, account_name text, account_type text, debit_balance numeric, credit_balance numeric)
- LANGUAGE sql
+ LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
+BEGIN
+  PERFORM public.assert_company_access(p_company_id);
+  RETURN QUERY
   WITH account_balances AS (
     SELECT
       coa.id,
@@ -30642,13 +30764,14 @@ AS $function$
     HAVING ABS(COALESCE(coa.opening_balance, 0) + COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0)) >= 0.01
   )
   SELECT
-    account_code,
-    account_name,
-    account_type,
-    CASE WHEN net_balance > 0 THEN ROUND(net_balance, 2) ELSE 0 END AS debit_balance,
-    CASE WHEN net_balance < 0 THEN ROUND(ABS(net_balance), 2) ELSE 0 END AS credit_balance
-  FROM account_balances
-  ORDER BY account_code;
+    ab.account_code,
+    ab.account_name,
+    ab.account_type,
+    CASE WHEN ab.net_balance > 0 THEN ROUND(ab.net_balance, 2) ELSE 0 END AS debit_balance,
+    CASE WHEN ab.net_balance < 0 THEN ROUND(ABS(ab.net_balance), 2) ELSE 0 END AS credit_balance
+  FROM account_balances ab
+  ORDER BY ab.account_code;
+END;
 $function$
 ;
 
@@ -51916,7 +52039,7 @@ DECLARE
   v_total_gl_inventory NUMERIC := 0;
   v_total_fifo         NUMERIC := 0;
 BEGIN
-  -- Get total GL inventory value for this company
+  PERFORM public.assert_company_access(p_company_id);
   SELECT COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0)
   INTO v_total_gl_inventory
   FROM journal_entry_lines jel
@@ -51927,20 +52050,17 @@ BEGIN
     AND coa.account_type = 'asset'
     AND (coa.sub_type = 'inventory' OR coa.account_name ILIKE '%مخزون%');
 
-  -- Get total FIFO value
   SELECT COALESCE(SUM(fcl.remaining_quantity * fcl.unit_cost), 0)
   INTO v_total_fifo
   FROM fifo_cost_lots fcl
   JOIN products p ON p.id = fcl.product_id
   WHERE p.company_id = p_company_id AND fcl.remaining_quantity > 0;
 
-  -- Return per-product FIFO breakdown vs total GL (GL is per company, not per product in GL)
   RETURN QUERY
   SELECT
     p.id::UUID as product_id,
     p.name::TEXT as product_name,
     COALESCE(SUM(fcl.remaining_quantity * fcl.unit_cost), 0)::NUMERIC as fifo_value,
-    -- Proportional GL allocation (since GL doesn't track per-product)
     CASE WHEN v_total_fifo > 0
       THEN ROUND((COALESCE(SUM(fcl.remaining_quantity * fcl.unit_cost), 0) / v_total_fifo) * v_total_gl_inventory, 4)
       ELSE 0 END::NUMERIC as gl_inventory_value,
@@ -51959,7 +52079,8 @@ BEGIN
   GROUP BY p.id, p.name
   HAVING COALESCE(SUM(fcl.remaining_quantity * fcl.unit_cost), 0) > 0
   ORDER BY fifo_value DESC;
-END; $function$
+END;
+$function$
 ;
 
 -- ---------------------------------------------------------------
@@ -56485,6 +56606,7 @@ CREATE OR REPLACE FUNCTION public.search_audit_trail(p_company_id uuid, p_search
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   RETURN QUERY
   SELECT
     al.id,
