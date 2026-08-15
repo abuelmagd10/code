@@ -56,8 +56,27 @@
  * ويسقطُ عندَ من يراجع**. فصارَ الجردُ يُقرأُ من `git ls-files` فى بيتٍ واحد
  * (`scripts/lib/repo-code-files.js`)، **ولا يُبنى بيتٌ ثانٍ**.
  *
- * مَن هو «الطارق»؟ أربعةٌ، لا واحد
- * --------------------------------
+ * ولماذا وُلد الطارقُ الخامسُ فى v3.75.36
+ * --------------------------------------
+ * عندَ أوّلِ خطوةٍ فى **سدادِ الـ١٩٩** قِيست الأبوابُ الباقيةُ ضدَّ سؤالٍ لم يُسألْ
+ * قطّ: **أينَ يُنادَى هذا الاسمُ بحقِّ صاحبِ العمليّةِ لا بحقِّ مالكِ الدالّة؟**
+ * فظهرَ أنّ **أحدَ عشرَ** منها مطروقةٌ فعلاً، وأخطرُها:
+ *
+ *     can_modify_transaction  ←  أربعةُ زناداتٍ تحرسُ الفترةَ المقفلة
+ *                                (prevent_invoice/journal/payment/inventory_in_closed_period)
+ *     ir_generate_reservation_number  ←  **قيمةٌ افتراضيّةٌ لعمود** فى inventory_reservations
+ *     next_po_number          ←  زنادُ ترقيمِ أمرِ الشراء
+ *     erp_is_company_owner / erp_is_company_senior / erp_company_senior_count  ←  erp_sod_guard
+ *     assert_company_access   ←  دالّتانِ بصلاحيّاتِ مُنادِيهما
+ *     regenerate_asset_schedules  ←  register_asset_addition و revalue_asset
+ *
+ * **ودوالُّ الزناداتِ هذه بصلاحيّاتِ مُنادِيها**، فتجرى بحقِّ المستخدِمِ الذى
+ * كتبَ الصفَّ. **فنزعُ منحةِ `can_modify_transaction` كان يوقفُ كلَّ كتابةٍ فى
+ * الفواتيرِ والقيودِ والمدفوعاتِ والمخزون.** وقِيس هذا **قبلَ أن يُنزَعَ سطرٌ
+ * واحد** — وهو ثالثُ لغمٍ يُنزَعُ من هذا الحارسِ نفسِه.
+ *
+ * مَن هو «الطارق»؟ خمسةٌ، لا واحد
+ * -------------------------------
  *   ١) **شاشةٌ أو مسارٌ فى المشروع** — بثلاثةِ أشكال:
  *        • `rpc("الاسم")` مكتوباً حرفاً،
  *        • `/rpc/الاسم` فى مسارِ REST،
@@ -71,10 +90,14 @@
  *      فعلاً** — منها `bill_money` وأخواتُها فى مسارِ حجبِ تكلفةِ الشراء.
  *      **وعرضُ `security_invoker` يجرى بحقِّ قارئِه.**
  *   ٤) **إعلانُ ما قبلَ الدخول** `anon_prelogin_exceptions()`.
+ *   ٥) **موضعٌ يُقيَّمُ بحقِّ صاحبِ العمليّة**: دالّةٌ بصلاحيّاتِ مُنادِيها (ومنها
+ *      دوالُّ الزنادات)، أو قيمةٌ افتراضيّةٌ لعمود، أو قيدُ تحقُّق، أو فهرسٌ
+ *      بتعبير، أو شرطُ زناد. **وهذه كلُّها تحتاجُ المنحةَ فعلاً.**
  *
  * وما لا يُعَدُّ طارقاً: **نداءٌ من داخلِ دالّةٍ أخرى بصلاحيّاتٍ كاملة**. فالنداءُ
  * الداخلىُّ يجرى **بحقِّ المالكِ لا بحقِّ المُنادى**، فلا يحتاجُ منحةً — وهذا
- * بعينُه ما بُرهنَ حيّاً فى v3.75.33 ثمّ فى v3.75.34.
+ * بعينُه ما بُرهنَ حيّاً فى v3.75.33 ثمّ فى v3.75.34. **والفرقُ بينَ هذا وبينَ
+ * الطارقِ الخامسِ هو صلاحيّةُ المُنادِى نفسِه، لا موضعُ النداء.**
  *
  * **وحارسٌ يصرخ على البرىء يُطفأ** — ولذلك يرفضُ هذا الحارسُ أن يحكمَ إن لم يجدْ
  * ملفَّ كودٍ واحداً، أو إن أعادتِ القاعدةُ قائمةً فارغة. **وبحثٌ لا يجد ليس دليلَ
@@ -95,11 +118,13 @@ const { keepPath, projectCodeFiles, NOT_SHIPPED } = require("./lib/repo-code-fil
  * **الرقمُ المُثبَّت.** قِيس ٢١٩ فى v3.75.33 بجردٍ ناقصِ الأرجاءِ وبطارقٍ أعمى عن
  * النداءِ بمتغيّر، فثُبِّت عندَ ٢١٧ بعدَ إغلاقِ بابَين. وفى v3.75.34 صُحِّح الجردُ
  * فظهرَ أنّ **خمسةَ عشرَ منها لم تكن يتيمةً قطّ** (٢١٧ ← ٢٠٢)، ثمّ أُغلقت ثلاثةُ
- * أسماءٍ (أربعةُ توقيعات) ببرهانٍ حىٍّ على الإنتاجِ فصارَ **١٩٩** — مقيسٌ بمنطقِ
- * هذا الحارسِ نفسِه لا محسوباً بيد. لا يزيد. وإن نقصَ فليُخفَضْ هنا فى دفعةِ من
- * خفضَه، **فمكسبٌ لا يُثبَّتُ يُلتَفُّ عليه**.
+ * أسماءٍ (أربعةُ توقيعات) ببرهانٍ حىٍّ على الإنتاجِ فصارَ ١٩٩. وفى v3.75.36 وُلد
+ * **الطارقُ الخامس** (موضعٌ يُقيَّمُ بحقِّ صاحبِ العمليّة) فظهرَ أنّ **أحدَ عشرَ
+ * منها مطروقةٌ فعلاً**، فصارَ **١٨٨** — مقيسٌ بمنطقِ هذا الحارسِ نفسِه لا محسوباً
+ * بيد. لا يزيد. وإن نقصَ فليُخفَضْ هنا فى دفعةِ من خفضَه، **فمكسبٌ لا يُثبَّتُ
+ * يُلتَفُّ عليه**.
  */
-const BASELINE = 199;
+const BASELINE = 188;
 
 // ── الجزءُ الخالصُ من المنطق: يُختبَرُ بلا قاعدة ──────────────────────────
 
@@ -156,19 +181,52 @@ function knockedByCode(files, name) {
  * السابقُ نقطةً لَما رأى الحارسُ طارقاً واحداً من العروضِ كلِّها — **ولصرخَ على
  * سبعةِ أبرياءَ منها مسارُ حجبِ تكلفةِ الشراء**.
  */
-function calledByView(viewDefs, name) {
+function referencedIn(texts, name) {
   const re = new RegExp(`(^|[^A-Za-z0-9_])(public\\.)?${escapeName(name)}\\s*\\(`);
-  return (viewDefs || []).some((d) => re.test(String(d || "")));
+  return (texts || []).some((d) => re.test(String(d || "")));
 }
 
-/** الأبوابُ التى لا يطرقُها أحدٌ من الأربعة. */
-function unknockedNames(open, files, policyNames, viewDefs, declared) {
+function calledByView(viewDefs, name) {
+  return referencedIn(viewDefs, name);
+}
+
+/**
+ * **موضعٌ يُقيَّمُ بحقِّ صاحبِ العمليّةِ لا بحقِّ مالكِ الدالّة** — الطارقُ الخامس.
+ *
+ * القاعدةُ كلُّها كانت مبنيّةً على أنّ «النداءَ الداخلىَّ يجرى بحقِّ المالكِ فلا
+ * يحتاجُ منحة». **وهذا صحيحٌ داخلَ دالّةِ صلاحيّاتٍ كاملةٍ وحدَها.** أمّا هذه
+ * المواضعُ فتجرى **بحقِّ من قامَ بالعمليّة**، فالنداءُ فيها يحتاجُ المنحةَ فعلاً:
+ *
+ *   • **دالّةٌ بصلاحيّاتِ مُنادِيها** (`SECURITY INVOKER`) — ومنها **دوالُّ
+ *     الزنادات**. وهذه أخطرُها: `can_modify_transaction` تُنادى من أربعةِ
+ *     زناداتٍ تحرسُ الفترةَ المقفلة، **فنزعُ منحتِها يوقفُ كلَّ كتابةٍ** فى
+ *     الفواتيرِ والقيودِ والمدفوعاتِ والمخزون.
+ *   • **قيمةٌ افتراضيّةٌ لعمود** — `ir_generate_reservation_number()` هى
+ *     القيمةُ الافتراضيّةُ لعمودٍ فى `inventory_reservations`، **وتُقيَّمُ
+ *     بحقِّ من يُدرِجُ الصفّ**.
+ *   • **قيدُ تحقُّقٍ** (`CHECK`) على جدولٍ أو نطاق، **وفهرسٌ بتعبير** أو بشرطٍ
+ *     جزئىّ، **وشرطُ زنادٍ** (`WHEN`).
+ *
+ * وقِيس هذا **قبلَ أن يُنزَعَ سطرٌ واحد**، فوُجد أنّ **أحدَ عشرَ** من الأبوابِ
+ * المعدودةِ «بلا طارق» لها طارقٌ من هذا النوع.
+ *
+ * **والنصُّ هنا لا تُقنَّعُ تعليقاتُه**: اسمٌ مذكورٌ فى تعليقٍ داخلَ جسمِ دالّةٍ
+ * يُعَدُّ طارقاً بلا حقّ. **وهذا مقبولٌ لأنّه يتركُ البابَ مفتوحاً**، والعكسُ
+ * يكسرُ كتابةً حيّة — **والميلُ الصحيحُ إلى تركِ البابِ مفتوحاً**.
+ */
+function evaluatedWithCallerRights(surfaces, name) {
+  return referencedIn(surfaces, name);
+}
+
+/** الأبوابُ التى لا يطرقُها أحدٌ من الخمسة. */
+function unknockedNames(open, files, policyNames, viewDefs, declared, callerRightsSurfaces) {
   const pol = new Set(policyNames || []);
   const dec = new Set(declared || []);
   return (open || [])
     .filter((n) => !pol.has(n))
     .filter((n) => !dec.has(n))
     .filter((n) => !calledByView(viewDefs || [], n))
+    .filter((n) => !evaluatedWithCallerRights(callerRightsSurfaces || [], n))
     .filter((n) => !knockedByCode(files || [], n))
     .sort();
 }
@@ -240,6 +298,21 @@ if (process.argv.includes("--selftest")) {
      unknockedNames(["byView"], F(""), [], ["SELECT byView(1)"], []), []);
   ok("ويمرُّ بابٌ مُعلَنٌ لِما قبلَ الدخول",
      unknockedNames(["declared"], F(""), [], [], ["declared"]), []);
+
+  // **والطارقُ الخامس**: موضعٌ يُقيَّمُ بحقِّ صاحبِ العمليّة — الاتّجاهُ الذى منعَ
+  // نزعَ منحةِ can_modify_transaction فى أوّلِ خطوةٍ من سدادِ الدَّين.
+  ok("ويرى دالّةً بصلاحيّاتِ مُنادِيها تنادِيه",
+     evaluatedWithCallerRights(["BEGIN PERFORM can_modify_transaction(x); END"], "can_modify_transaction"), true);
+  ok("ويراه فى قيمةٍ افتراضيّةٍ لعمود",
+     evaluatedWithCallerRights(["ir_generate_reservation_number()"], "ir_generate_reservation_number"), true);
+  ok("ويراه مؤهَّلاً بالمخطَّطِ فى قيدِ تحقُّق",
+     evaluatedWithCallerRights(["CHECK ((public.can_approve(role) IS TRUE))"], "can_approve"), true);
+  ok("ولا يخدعه اسمٌ يشبهُه", evaluatedWithCallerRights(["PERFORM can_approve_v2(x)"], "can_approve"), false);
+  ok("ولا اسمٌ بلا نداء", evaluatedWithCallerRights(["v_name := 'can_approve';"], "can_approve"), false);
+  ok("ويمرُّ بابٌ يُقيَّمُ بحقِّ صاحبِ العمليّة",
+     unknockedNames(["byCallerRights"], F(""), [], [], [], ["PERFORM byCallerRights(1)"]), []);
+  ok("ويسقطُ بابٌ لا موضعَ له فى تلك المواضع",
+     unknockedNames(["orphan"], F(""), [], [], [], ["PERFORM somethingElse(1)"]), ["orphan"]);
   ok("ويسقطُ بابٌ لا يطرقُه أحدٌ من الأربعة",
      unknockedNames(["orphan"], F('supabase.rpc("alive")'), [], [], []), ["orphan"]);
   ok("ويُسمّى كلَّ اليتامى مرتَّبين",
@@ -305,7 +378,7 @@ try { ({ Client } = require("./lib/live-db")); } catch {
 
   const client = new Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
   await client.connect();
-  let open = [], policyNames = [], viewDefs = [], declared = [];
+  let open = [], policyNames = [], viewDefs = [], declared = [], surfaces = [];
   try {
     const a = await client.query(
       `SELECT DISTINCT p.proname AS nm
@@ -326,6 +399,33 @@ try { ({ Client } = require("./lib/live-db")); } catch {
     viewDefs = c.rows.map((r) => r.def);
     const d = await client.query("SELECT public.anon_prelogin_exceptions() AS names");
     declared = (d.rows[0] && d.rows[0].names) || [];
+
+    // **الطارقُ الخامس**: كلُّ موضعٍ يُقيَّمُ بحقِّ صاحبِ العمليّةِ لا بحقِّ مالكِ الدالّة.
+    const e = await client.query(
+      `SELECT pg_get_expr(d.adbin, d.adrelid) AS txt
+         FROM pg_attrdef d JOIN pg_class c ON c.oid = d.adrelid
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+       UNION ALL
+       SELECT pg_get_constraintdef(k.oid)
+         FROM pg_constraint k JOIN pg_namespace n ON n.oid = k.connamespace
+        WHERE n.nspname = 'public' AND k.contype = 'c'
+       UNION ALL
+       SELECT pg_get_indexdef(i.indexrelid)
+         FROM pg_index i JOIN pg_class c ON c.oid = i.indrelid
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND (i.indexprs IS NOT NULL OR i.indpred IS NOT NULL)
+       UNION ALL
+       SELECT pg_get_triggerdef(t.oid)
+         FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND NOT t.tgisinternal AND t.tgqual IS NOT NULL
+       UNION ALL
+       SELECT p.prosrc
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public' AND NOT p.prosecdef`
+    );
+    surfaces = e.rows.map((r) => r.txt).filter(Boolean);
   } finally {
     await client.end();
   }
@@ -335,8 +435,16 @@ try { ({ Client } = require("./lib/live-db")); } catch {
     console.error("X القاعدةُ أعادت صفرَ دالّةٍ ممنوحةٍ للمستخدِم — قياسٌ مكسورٌ لا مطابقة.");
     process.exit(1);
   }
+  // **وطارقٌ لا يُقاسُ يُعَدُّ غائباً**: صفرُ مواضعَ تجرى بحقِّ صاحبِ العمليّةِ
+  // مستحيلٌ فى قاعدةٍ فيها مئاتُ الزنادات، فالصفرُ هنا قياسٌ مكسورٌ لا حقيقة.
+  if (surfaces.length === 0) {
+    console.error(
+      "X القاعدةُ أعادت صفرَ موضعٍ يُقيَّمُ بحقِّ صاحبِ العمليّة — قياسٌ مكسورٌ لا مطابقة."
+    );
+    process.exit(1);
+  }
 
-  const orphans = unknockedNames(open, codeFiles, policyNames, viewDefs, declared);
+  const orphans = unknockedNames(open, codeFiles, policyNames, viewDefs, declared, surfaces);
   const n = orphans.length;
   const mentioned = mentionedButNotCalled(orphans, codeFiles);
 
@@ -345,7 +453,8 @@ try { ({ Client } = require("./lib/live-db")); } catch {
       `   ·   ملفّاتُ شيفرةٍ فى المستودع: ${codeFiles.length}` +
       ` (منها ${indirectFiles.length} تنادى باسمٍ محسوب` +
       (skippedFiles.length ? `، و${skippedFiles.length} محذوفٌ لم يُرحَّلْ حذفُه` : "") +
-      `)   ·   عروضٌ قُرئت: ${viewDefs.length}`
+      `)   ·   عروضٌ قُرئت: ${viewDefs.length}` +
+      `   ·   مواضعُ تجرى بحقِّ صاحبِ العمليّة: ${surfaces.length}`
   );
   console.log(
     `  يطرقُها طارقٌ معروف: ${open.length - n}   ·   **بلا طارق**: ${n}   (المُثبَّت ${BASELINE})`
@@ -358,7 +467,7 @@ try { ({ Client } = require("./lib/live-db")); } catch {
     for (const s of orphans.slice(0, 30)) console.error(`    - ${s}`);
     if (n > 30) console.error(`    … و${n - 30} غيرُها`);
     console.error(
-      "\n  العلاج: إمّا يُنادى البابُ من شاشةٍ أو سياسةٍ أو عرضٍ فيصيرَ له طارق،\n" +
+      "\n  العلاج: إمّا يُنادى البابُ من شاشةٍ أو سياسةٍ أو عرضٍ أو موضعٍ يُقيَّمُ بحقِّ صاحبِ العمليّةِ فيصيرَ له طارق،\n" +
         "         وإمّا تُنزَعُ منحتُه: REVOKE ALL ON FUNCTION public.<name>(<args>) FROM PUBLIC, anon, authenticated;\n" +
         "         (والنداءُ من داخلِ غلافٍ بصلاحيّاتٍ كاملةٍ يبقى يعملُ بلا منحة.)\n" +
         "  **ولا تُنزَعُ منحةٌ قبلَ برهانٍ حىٍّ على الإنتاج**: نزعٌ داخلَ معاملةٍ تُلغى،\n" +
