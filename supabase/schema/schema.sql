@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-15T16:22:14.499Z
+-- Generated: 2026-08-15T17:30:08.656Z
 -- Tables: 256 | Policies: 784 | Triggers: 580 | Constraints: 1841
 -- =====================================================================
 
@@ -11044,6 +11044,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_37_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_37_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_38_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_38_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_39_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_39_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;
@@ -12195,9 +12197,6 @@ REVOKE ALL ON FUNCTION public.get_available_return_quantity(p_invoice_id uuid, p
 GRANT EXECUTE ON FUNCTION public.get_available_return_quantity(p_invoice_id uuid, p_product_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.get_available_return_quantity(p_invoice_id uuid, p_product_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_available_return_quantity(p_invoice_id uuid, p_product_id uuid) TO service_role;
-REVOKE ALL ON FUNCTION public.get_balance_sheet(p_company_id uuid, p_as_of_date date) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_balance_sheet(p_company_id uuid, p_as_of_date date) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_balance_sheet(p_company_id uuid, p_as_of_date date) TO service_role;
 REVOKE ALL ON FUNCTION public.get_bill_effective_outstanding(p_bill_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_bill_effective_outstanding(p_bill_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_bill_effective_outstanding(p_bill_id uuid) TO service_role;
@@ -12273,9 +12272,6 @@ GRANT EXECUTE ON FUNCTION public.get_enhanced_sales_report(p_company_id uuid, p_
 REVOKE ALL ON FUNCTION public.get_expired_seat_license_ids(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_expired_seat_license_ids(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_expired_seat_license_ids(p_company_id uuid) TO service_role;
-REVOKE ALL ON FUNCTION public.get_financial_summary(p_company_id uuid, p_start_date date, p_end_date date) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_financial_summary(p_company_id uuid, p_start_date date, p_end_date date) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_financial_summary(p_company_id uuid, p_start_date date, p_end_date date) TO service_role;
 REVOKE ALL ON FUNCTION public.get_gl_account_summary(p_company_id uuid, p_from_date date, p_to_date date, p_account_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_gl_account_summary(p_company_id uuid, p_from_date date, p_to_date date, p_account_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_gl_account_summary(p_company_id uuid, p_from_date date, p_to_date date, p_account_id uuid) TO service_role;
@@ -12285,9 +12281,6 @@ GRANT EXECUTE ON FUNCTION public.get_gl_ar_balance_per_invoice(p_company_id uuid
 REVOKE ALL ON FUNCTION public.get_gl_transactions_paginated(p_company_id uuid, p_account_id uuid, p_from_date date, p_to_date date, p_page integer, p_page_size integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_gl_transactions_paginated(p_company_id uuid, p_account_id uuid, p_from_date date, p_to_date date, p_page integer, p_page_size integer) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_gl_transactions_paginated(p_company_id uuid, p_account_id uuid, p_from_date date, p_to_date date, p_page integer, p_page_size integer) TO service_role;
-REVOKE ALL ON FUNCTION public.get_income_statement(p_company_id uuid, p_start_date date, p_end_date date) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_income_statement(p_company_id uuid, p_start_date date, p_end_date date) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_income_statement(p_company_id uuid, p_start_date date, p_end_date date) TO service_role;
 REVOKE ALL ON FUNCTION public.get_inventory_available_balance(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_product_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_inventory_available_balance(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_product_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_inventory_available_balance(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_product_id uuid) TO service_role;
@@ -12358,12 +12351,6 @@ GRANT EXECUTE ON FUNCTION public.get_transfer_scope_counts(p_transfer_id uuid) T
 REVOKE ALL ON FUNCTION public.get_trial_balance(p_company_id uuid, p_as_of_date date) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_trial_balance(p_company_id uuid, p_as_of_date date) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_trial_balance(p_company_id uuid, p_as_of_date date) TO service_role;
-REVOKE ALL ON FUNCTION public.get_trial_balance(p_company_id uuid, p_start_date date, p_end_date date) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_trial_balance(p_company_id uuid, p_start_date date, p_end_date date) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_trial_balance(p_company_id uuid, p_start_date date, p_end_date date) TO service_role;
-REVOKE ALL ON FUNCTION public.get_trial_balance(p_company_id uuid, p_start_date date, p_end_date date, p_branch_id uuid, p_cost_center_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_trial_balance(p_company_id uuid, p_start_date date, p_end_date date, p_branch_id uuid, p_cost_center_id uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_trial_balance(p_company_id uuid, p_start_date date, p_end_date date, p_branch_id uuid, p_cost_center_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.get_unprocessed_attendance_logs(p_company_id uuid, p_batch_size integer, p_worker_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_unprocessed_attendance_logs(p_company_id uuid, p_batch_size integer, p_worker_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_unprocessed_attendance_logs(p_company_id uuid, p_batch_size integer, p_worker_id uuid) TO service_role;

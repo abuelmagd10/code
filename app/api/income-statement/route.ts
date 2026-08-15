@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
     // ✅ جلب حسابات الإيرادات والمصروفات أولاً (بدون joins)
     const { data: accountsData, error: accountsError } = await supabase
       .from("chart_of_accounts")
-      .select("id, account_code, account_name, account_type")
+      .select("id, account_code, account_name, account_type, sub_type")
       .eq("company_id", companyId)
       .in("account_type", ["income", "expense"])
 
@@ -123,18 +123,23 @@ export async function GET(req: NextRequest) {
     }
 
     // ✅ إنشاء map للحسابات
-    const accountsMap: Record<string, { code: string; name: string; type: string }> = {}
+    // v3.75.39 — sub_type يُقرأ ويُعاد كما هو، **ولا يدخل فى أى حساب هنا**:
+    // صافى الدخل يبقى الإيرادات - المصروفات بلا تغيير. الغرض أن تستطيع الشاشة
+    // أن تفرز تكلفة المبيعات من دليل الحسابات الذى أعدّه صاحب الشركة، بدل أن
+    // تؤلّف لنفسها قاعدة محاسبية ثانية. **ولا يُبنى بيتٌ ثانٍ.**
+    const accountsMap: Record<string, { code: string; name: string; type: string; subType: string | null }> = {}
     for (const acc of accountsData || []) {
       accountsMap[acc.id] = {
         code: acc.account_code,
         name: acc.account_name,
-        type: acc.account_type
+        type: acc.account_type,
+        subType: acc.sub_type ?? null
       }
     }
 
     // ✅ تجميع البيانات حسب الحساب
-    const incomeAccounts: Record<string, { name: string; code: string; amount: number }> = {}
-    const expenseAccounts: Record<string, { name: string; code: string; amount: number }> = {}
+    const incomeAccounts: Record<string, { name: string; code: string; sub_type: string | null; amount: number }> = {}
+    const expenseAccounts: Record<string, { name: string; code: string; sub_type: string | null; amount: number }> = {}
 
     let totalIncome = 0
     let totalExpense = 0
@@ -157,7 +162,7 @@ export async function GET(req: NextRequest) {
         totalIncome += amount
 
         if (!incomeAccounts[accountCode]) {
-          incomeAccounts[accountCode] = { name: accountName, code: accountCode, amount: 0 }
+          incomeAccounts[accountCode] = { name: accountName, code: accountCode, sub_type: account.subType, amount: 0 }
         }
         incomeAccounts[accountCode].amount += amount
       } else if (type === 'expense') {
@@ -166,7 +171,7 @@ export async function GET(req: NextRequest) {
         totalExpense += amount
 
         if (!expenseAccounts[accountCode]) {
-          expenseAccounts[accountCode] = { name: accountName, code: accountCode, amount: 0 }
+          expenseAccounts[accountCode] = { name: accountName, code: accountCode, sub_type: account.subType, amount: 0 }
         }
         expenseAccounts[accountCode].amount += amount
       }
@@ -198,4 +203,4 @@ export async function GET(req: NextRequest) {
     console.error("Income statement error:", e)
     return serverError(`حدث خطأ أثناء إنشاء قائمة الدخل: ${e?.message || "unknown_error"}`)
   }
-}
+}

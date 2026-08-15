@@ -256,8 +256,11 @@ if (SELFTEST) {
 // ═══════════════════════════════ القياسُ الحىّ ═══════════════════════════════
 require("dotenv").config({ path: [".env.local", ".env", ".env.development.local"] })
 
-/** الدَّينُ المقيسُ على الإنتاجِ يومَ v3.75.38 — لا يزيد. */
-const PINNED = 142
+/**
+ * الدَّينُ المقيسُ على الإنتاج — لا يزيد.
+ * v3.75.38: 142 · v3.75.39: 139 (ثلاثُ قارئاتٍ بلا قفلٍ أُزيلت مع مسارِها البديل).
+ */
+const PINNED = 139
 
 const requireDb = process.argv.includes("--require-db")
 const verbose = process.argv.includes("--list")

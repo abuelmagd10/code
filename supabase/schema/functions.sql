@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-15T16:22:16.601Z
--- Routines: 1387
+-- Generated: 2026-08-15T17:30:11.078Z
+-- Routines: 1383
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -6765,10 +6765,10 @@ CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_38_check()
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
+  -- v3.75.39: صيغتانِ من get_trial_balance تقاعدتا (مكسورتانِ ومسارٌ بديل)،
+  -- **وبابٌ أُزيل لا يحتاجُ قفلاً** - فرُفعتا من القائمةِ فى الدفعةِ التى أزالتهما.
   k_locked text[] := ARRAY[
     'get_trial_balance(uuid,date)',
-    'get_trial_balance(uuid,date,date)',
-    'get_trial_balance(uuid,date,date,uuid,uuid)',
     'get_dashboard_kpis(uuid,date,date)',
     'reconcile_fifo_vs_gl(uuid)',
     'search_audit_trail(uuid,text,integer)',
@@ -6858,8 +6858,68 @@ BEGIN
   INTO v_open, v_gateless
   FROM target t;
 
-  RETURN format('v3.75.38 ok - 7 doors locked - %s company-scoped and reachable by a logged-in user - %s gateless - the server path passes.',
+  RETURN format('v3.75.38 ok - 5 doors locked - %s company-scoped and reachable by a logged-in user - %s gateless - the server path passes.',
                 v_open, v_gateless);
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_39_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_39_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  k_retired text[] := ARRAY[
+    'get_financial_summary(uuid,date,date)',
+    'get_balance_sheet(uuid,date)',
+    'get_income_statement(uuid,date,date)',
+    'get_trial_balance(uuid,date,date)',
+    'get_trial_balance(uuid,date,date,uuid,uuid)'
+  ];
+  v_back text := ''; v_ref text := ''; v_sum int;
+BEGIN
+  SELECT string_agg(replace(p.oid::regprocedure::text, 'public.', ''), ' ') INTO v_back
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND replace(p.oid::regprocedure::text, 'public.', '') = ANY(k_retired);
+  IF v_back IS NOT NULL AND v_back <> '' THEN
+    RAISE EXCEPTION 'v3.75.39 (1): a retired second path was born again: %', v_back;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND replace(p.oid::regprocedure::text, 'public.', '') = 'get_trial_balance(uuid,date)'
+      AND p.prosecdef AND p.prosrc ~ 'assert_company_access'
+  ) THEN
+    RAISE EXCEPTION 'v3.75.39 (2): the surviving trial balance is gone or lost its lock.';
+  END IF;
+
+  SELECT string_agg(DISTINCT q.place, ' ') INTO v_ref
+  FROM (
+    SELECT 'function:' || p.proname AS place, p.prosrc AS txt
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.proname NOT LIKE 'assert_baseline_%'
+    UNION ALL
+    SELECT 'view:' || c.relname, pg_get_viewdef(c.oid)
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind IN ('v','m')
+  ) q
+  WHERE q.txt ~ '(^|[^A-Za-z0-9_])(public\.)?(get_financial_summary|get_balance_sheet|get_income_statement)\s*\(';
+  IF v_ref IS NOT NULL AND v_ref <> '' THEN
+    RAISE EXCEPTION 'v3.75.39 (3): a place still calls a retired name: %', v_ref;
+  END IF;
+
+  SELECT count(*) INTO v_sum
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.prokind = 'f'
+    AND p.prosrc ~ 'journal_entry_lines' AND p.prosrc ~ 'account_type';
+
+  RETURN format('v3.75.39 ok - 5 second paths retired - the one home is alive and locked - %s function(s) still sum money from journal lines by account type (counted, not silenced).', v_sum);
 END
 $function$
 ;
@@ -28004,52 +28064,6 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
--- get_balance_sheet(p_company_id uuid, p_as_of_date date)
--- ---------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.get_balance_sheet(p_company_id uuid, p_as_of_date date)
- RETURNS TABLE(section text, account_id uuid, account_code text, account_name text, balance numeric)
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-BEGIN
-  RETURN QUERY
-  SELECT 
-    coa.account_type as section,
-    coa.id as account_id,
-    coa.code as account_code,
-    coa.name as account_name,
-    CASE 
-      WHEN coa.account_type = 'Asset' THEN 
-        (COALESCE(coa.opening_balance, 0) + COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0))
-      WHEN coa.account_type IN ('Liability', 'Equity') THEN 
-        (COALESCE(coa.opening_balance, 0) + COALESCE(SUM(jel.credit_amount - jel.debit_amount), 0))
-      ELSE 0
-    END as balance
-  FROM public.chart_of_accounts coa
-  LEFT JOIN public.journal_entry_lines jel ON jel.account_id = coa.id
-  LEFT JOIN public.journal_entries je ON jel.journal_entry_id = je.id
-  WHERE coa.company_id = p_company_id
-    AND coa.account_type IN ('Asset', 'Liability', 'Equity')
-    AND coa.is_active = TRUE
-    AND (je.id IS NULL OR (
-      je.entry_date <= p_as_of_date
-      AND je.status = 'posted'
-    ))
-  GROUP BY coa.id, coa.code, coa.name, coa.account_type, coa.opening_balance
-  HAVING (COALESCE(coa.opening_balance, 0) + COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0)) != 0
-  ORDER BY 
-    CASE coa.account_type
-      WHEN 'Asset' THEN 1
-      WHEN 'Liability' THEN 2
-      WHEN 'Equity' THEN 3
-    END,
-    coa.code;
-END;
-$function$
-;
-
--- ---------------------------------------------------------------
 -- get_bill_effective_outstanding(p_bill_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_bill_effective_outstanding(p_bill_id uuid)
@@ -29257,96 +29271,6 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
--- get_financial_summary(p_company_id uuid, p_start_date date, p_end_date date)
--- ---------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.get_financial_summary(p_company_id uuid, p_start_date date, p_end_date date)
- RETURNS TABLE(total_revenue numeric, total_cogs numeric, gross_profit numeric, total_expenses numeric, net_income numeric, total_assets numeric, total_liabilities numeric, total_equity numeric)
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE
-  v_revenue DECIMAL(15,2);
-  v_cogs DECIMAL(15,2);
-  v_expenses DECIMAL(15,2);
-  v_assets DECIMAL(15,2);
-  v_liabilities DECIMAL(15,2);
-  v_equity DECIMAL(15,2);
-BEGIN
-  -- Revenue
-  SELECT COALESCE(SUM(jel.credit_amount - jel.debit_amount), 0) INTO v_revenue
-  FROM journal_entry_lines jel
-  JOIN journal_entries je ON jel.journal_entry_id = je.id
-  JOIN chart_of_accounts coa ON jel.account_id = coa.id
-  WHERE je.company_id = p_company_id
-    AND coa.account_type = 'Revenue'
-    AND je.entry_date BETWEEN p_start_date AND p_end_date
-    AND je.status = 'posted';
-
-  -- COGS
-  SELECT COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0) INTO v_cogs
-  FROM journal_entry_lines jel
-  JOIN journal_entries je ON jel.journal_entry_id = je.id
-  JOIN chart_of_accounts coa ON jel.account_id = coa.id
-  WHERE je.company_id = p_company_id
-    AND coa.account_type = 'COGS'
-    AND je.entry_date BETWEEN p_start_date AND p_end_date
-    AND je.status = 'posted';
-
-  -- Expenses
-  SELECT COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0) INTO v_expenses
-  FROM journal_entry_lines jel
-  JOIN journal_entries je ON jel.journal_entry_id = je.id
-  JOIN chart_of_accounts coa ON jel.account_id = coa.id
-  WHERE je.company_id = p_company_id
-    AND coa.account_type = 'Expense'
-    AND je.entry_date BETWEEN p_start_date AND p_end_date
-    AND je.status = 'posted';
-
-  -- Assets (as of end date)
-  SELECT COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0) INTO v_assets
-  FROM journal_entry_lines jel
-  JOIN journal_entries je ON jel.journal_entry_id = je.id
-  JOIN chart_of_accounts coa ON jel.account_id = coa.id
-  WHERE je.company_id = p_company_id
-    AND coa.account_type = 'Asset'
-    AND je.entry_date <= p_end_date
-    AND je.status = 'posted';
-
-  -- Liabilities
-  SELECT COALESCE(SUM(jel.credit_amount - jel.debit_amount), 0) INTO v_liabilities
-  FROM journal_entry_lines jel
-  JOIN journal_entries je ON jel.journal_entry_id = je.id
-  JOIN chart_of_accounts coa ON jel.account_id = coa.id
-  WHERE je.company_id = p_company_id
-    AND coa.account_type = 'Liability'
-    AND je.entry_date <= p_end_date
-    AND je.status = 'posted';
-
-  -- Equity
-  SELECT COALESCE(SUM(jel.credit_amount - jel.debit_amount), 0) INTO v_equity
-  FROM journal_entry_lines jel
-  JOIN journal_entries je ON jel.journal_entry_id = je.id
-  JOIN chart_of_accounts coa ON jel.account_id = coa.id
-  WHERE je.company_id = p_company_id
-    AND coa.account_type = 'Equity'
-    AND je.entry_date <= p_end_date
-    AND je.status = 'posted';
-
-  RETURN QUERY SELECT 
-    v_revenue,
-    v_cogs,
-    v_revenue - v_cogs as gross_profit,
-    v_expenses,
-    v_revenue - v_cogs - v_expenses as net_income,
-    v_assets,
-    v_liabilities,
-    v_equity;
-END;
-$function$
-;
-
--- ---------------------------------------------------------------
 -- get_gl_account_summary(p_company_id uuid, p_from_date date, p_to_date date, p_account_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_gl_account_summary(p_company_id uuid, p_from_date date DEFAULT '0001-01-01'::date, p_to_date date DEFAULT '9999-12-31'::date, p_account_id uuid DEFAULT NULL::uuid)
@@ -29629,52 +29553,6 @@ BEGIN
     ),
     'period', jsonb_build_object('from', p_from_date, 'to', p_to_date)
   );
-END;
-$function$
-;
-
--- ---------------------------------------------------------------
--- get_income_statement(p_company_id uuid, p_start_date date, p_end_date date)
--- ---------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.get_income_statement(p_company_id uuid, p_start_date date, p_end_date date)
- RETURNS TABLE(section text, account_id uuid, account_code text, account_name text, amount numeric)
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-BEGIN
-  RETURN QUERY
-  SELECT 
-    coa.account_type as section,
-    coa.id as account_id,
-    coa.code as account_code,
-    coa.name as account_name,
-    CASE 
-      WHEN coa.account_type = 'Revenue' THEN 
-        (COALESCE(coa.opening_balance, 0) + COALESCE(SUM(jel.credit_amount - jel.debit_amount), 0))
-      WHEN coa.account_type IN ('Expense', 'COGS') THEN 
-        (COALESCE(coa.opening_balance, 0) + COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0))
-      ELSE 0
-    END as amount
-  FROM public.chart_of_accounts coa
-  LEFT JOIN public.journal_entry_lines jel ON jel.account_id = coa.id
-  LEFT JOIN public.journal_entries je ON jel.journal_entry_id = je.id
-  WHERE coa.company_id = p_company_id
-    AND coa.account_type IN ('Revenue', 'Expense', 'COGS')
-    AND coa.is_active = TRUE
-    AND (je.id IS NULL OR (
-      je.entry_date BETWEEN p_start_date AND p_end_date
-      AND je.status = 'posted'
-    ))
-  GROUP BY coa.id, coa.code, coa.name, coa.account_type, coa.opening_balance
-  HAVING (COALESCE(coa.opening_balance, 0) + SUM(jel.debit_amount)) != 0 OR (COALESCE(coa.opening_balance, 0) + SUM(jel.credit_amount)) != 0
-  ORDER BY 
-    CASE coa.account_type
-      WHEN 'Revenue' THEN 1
-      WHEN 'COGS' THEN 2
-      WHEN 'Expense' THEN 3
-    END,
-    coa.code;
 END;
 $function$
 ;
@@ -30650,80 +30528,6 @@ BEGIN
     'resource_type',         t.resource_type,
     'branch_id',             v_branch
   );
-END;
-$function$
-;
-
--- ---------------------------------------------------------------
--- get_trial_balance(p_company_id uuid, p_start_date date, p_end_date date)
--- ---------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.get_trial_balance(p_company_id uuid, p_start_date date, p_end_date date)
- RETURNS TABLE(account_id uuid, account_code text, account_name text, account_type text, total_debit numeric, total_credit numeric, balance numeric)
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-BEGIN
-  PERFORM public.assert_company_access(p_company_id);
-  RETURN QUERY
-  SELECT
-    coa.id as account_id,
-    coa.code as account_code,
-    coa.name as account_name,
-    coa.account_type,
-    COALESCE(SUM(jel.debit_amount), 0) as total_debit,
-    COALESCE(SUM(jel.credit_amount), 0) as total_credit,
-    (COALESCE(coa.opening_balance, 0) + COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0)) as balance
-  FROM public.chart_of_accounts coa
-  LEFT JOIN public.journal_entry_lines jel ON jel.account_id = coa.id
-  LEFT JOIN public.journal_entries je ON jel.journal_entry_id = je.id
-  WHERE coa.company_id = p_company_id
-    AND coa.is_active = TRUE
-    AND (je.id IS NULL OR (
-      je.entry_date BETWEEN p_start_date AND p_end_date
-      AND je.status = 'posted'
-    ))
-  GROUP BY coa.id, coa.code, coa.name, coa.account_type, coa.opening_balance
-  HAVING (COALESCE(coa.opening_balance, 0) + COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0)) != 0 OR COUNT(jel.id) > 0
-  ORDER BY coa.code;
-END;
-$function$
-;
-
--- ---------------------------------------------------------------
--- get_trial_balance(p_company_id uuid, p_start_date date, p_end_date date, p_branch_id uuid, p_cost_center_id uuid)
--- ---------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.get_trial_balance(p_company_id uuid, p_start_date date, p_end_date date, p_branch_id uuid DEFAULT NULL::uuid, p_cost_center_id uuid DEFAULT NULL::uuid)
- RETURNS TABLE(account_id uuid, account_code text, account_name text, account_type text, total_debit numeric, total_credit numeric, balance numeric)
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-BEGIN
-  PERFORM public.assert_company_access(p_company_id);
-  RETURN QUERY
-  SELECT
-    coa.id as account_id,
-    coa.code as account_code,
-    coa.name as account_name,
-    coa.account_type,
-    COALESCE(SUM(jel.debit_amount), 0) as total_debit,
-    COALESCE(SUM(jel.credit_amount), 0) as total_credit,
-    COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0) as balance
-  FROM public.chart_of_accounts coa
-  LEFT JOIN public.journal_entry_lines jel ON jel.account_id = coa.id
-  LEFT JOIN public.journal_entries je ON jel.journal_entry_id = je.id
-  WHERE coa.company_id = p_company_id
-    AND coa.is_active = TRUE
-    AND (je.id IS NULL OR (
-      je.entry_date BETWEEN p_start_date AND p_end_date
-      AND je.status = 'posted'
-      AND (p_branch_id IS NULL OR je.branch_id = p_branch_id)
-      AND (p_cost_center_id IS NULL OR jel.cost_center_id = p_cost_center_id)
-    ))
-  GROUP BY coa.id, coa.code, coa.name, coa.account_type
-  HAVING SUM(jel.debit_amount - jel.credit_amount) != 0 OR COUNT(jel.id) > 0
-  ORDER BY coa.code;
 END;
 $function$
 ;
