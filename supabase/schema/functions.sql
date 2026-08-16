@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-16T13:53:45.583Z
--- Routines: 1384
+-- Generated: 2026-08-16T14:36:45.581Z
+-- Routines: 1388
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -7106,7 +7106,7 @@ CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_42_check()
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
-  k_pinned constant int := 1;   -- INV-00005 لدى notniche — تُصحَّحُ فى دفعةٍ تالية
+  k_pinned constant int := 0;   -- v3.75.43: صُحِّحَ الأثرُ، فبلغَ العددُ الصفر
   v_dup int;
 BEGIN
   -- (١) الشرطُ حىٌّ فى المُشغِّل، ويحكمُ بالأثرِ لا بالاسم
@@ -7127,38 +7127,98 @@ BEGIN
     RAISE EXCEPTION 'v3.75.42 (2): the cancellation trigger is no longer attached to invoices.';
   END IF;
 
-  -- (٣) ومعدودٌ لا مسكوتٌ عنه: فواتيرُ لها أكثرُ من عكسٍ مطابقٍ بالأثر
+  -- (٣) **ومعدودٌ لا مسكوتٌ عنه** — والعددُ الآنَ هو الأثرُ لا السجلّ:
+  --     فواتيرُ عُكِست أكثرَ من مرّةٍ **ولم يُعوَّضْ عن الزيادة**.
+  --     السجلُّ يبقى كما كان — والقيدُ المكرَّرُ لا يُمحى — لكنَّ الأثرَ يبلغُ الصفر.
   SELECT count(*) INTO v_dup FROM (
     SELECT o.reference_id
-    FROM journal_entries o
-    WHERE o.status = 'posted' AND o.reference_type IN ('invoice', 'invoice_cogs')
-      AND (o.is_deleted IS NULL OR o.is_deleted = false)
-      AND (
-        SELECT count(*) FROM journal_entries r
-        WHERE r.company_id = o.company_id AND r.reference_id = o.reference_id
-          AND r.id <> o.id AND r.status = 'posted'
-          AND (r.is_deleted IS NULL OR r.is_deleted = false)
-          AND NOT EXISTS (
-            SELECT 1 FROM (
-              SELECT l.account_id, l.debit_amount AS d, l.credit_amount AS c FROM journal_entry_lines l WHERE l.journal_entry_id = o.id
-              EXCEPT ALL
-              SELECT l.account_id, l.credit_amount, l.debit_amount FROM journal_entry_lines l WHERE l.journal_entry_id = r.id
-            ) q1)
-          AND NOT EXISTS (
-            SELECT 1 FROM (
-              SELECT l.account_id, l.credit_amount AS d, l.debit_amount AS c FROM journal_entry_lines l WHERE l.journal_entry_id = r.id
-              EXCEPT ALL
-              SELECT l.account_id, l.debit_amount, l.credit_amount FROM journal_entry_lines l WHERE l.journal_entry_id = o.id
-            ) q2)
-      ) > 1
-    GROUP BY o.reference_id
-  ) dup;
+      FROM journal_entries o
+     WHERE o.status = 'posted' AND o.reference_type IN ('invoice', 'invoice_cogs')
+       AND o.reference_id IS NOT NULL
+       AND (o.is_deleted IS NULL OR o.is_deleted = false)
+       AND (SELECT count(*) FROM journal_entries r
+             WHERE r.company_id = o.company_id AND r.reference_id = o.reference_id
+               AND r.id <> o.id AND r.status = 'posted'
+               AND (r.is_deleted IS NULL OR r.is_deleted = false)
+               AND public.je_lines_mirror(o.id, r.id))
+         - (SELECT count(*) FROM journal_entries c
+             WHERE c.company_id = o.company_id AND c.reference_id = o.reference_id
+               AND c.id <> o.id AND c.status = 'posted'
+               AND (c.is_deleted IS NULL OR c.is_deleted = false)
+               AND public.je_lines_identical(o.id, c.id)) > 1
+     GROUP BY o.reference_id) dup;
 
   IF v_dup > k_pinned THEN
-    RAISE EXCEPTION 'v3.75.42 (3): % invoice(s) carry more than one mirror reversal, pinned at % - a debt that is written and not paid becomes a habit.', v_dup, k_pinned;
+    RAISE EXCEPTION 'v3.75.42 (3): % invoice(s) carry an uncompensated duplicate reversal, pinned at % - a debt that is written and not paid becomes a habit.', v_dup, k_pinned;
   END IF;
 
-  RETURN format('v3.75.42 ok - a cancelled invoice is never reversed twice (judged by effect, not by name; proven by a live write that was rolled back) - %s invoice(s) still carry a duplicate reversal, pinned at %s and corrected in a later release.', v_dup, k_pinned);
+  RETURN format('v3.75.42 ok - a cancelled invoice is never reversed twice, and %s invoice(s) carry an uncompensated duplicate reversal (pinned at %s; the record is kept, the effect is repaired).', v_dup, k_pinned);
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_43_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_43_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  k_handwritten constant int := 1;  -- جسدُ مُشغِّلِ الإلغاء — يُحوَّلُ بأداةِ الإدراجِ الداخلىِّ لاحقاً
+  v_residue int;
+  v_hand    int;
+  v_open    int;
+BEGIN
+  -- (١) **فاتورةٌ مُلغاةٌ لا تتركُ أثراً**: صافى كلِّ حسابٍ عبرَ قيودِها صفر
+  SELECT count(DISTINCT n.id) INTO v_residue FROM (
+    SELECT i.id, l.account_id, round(sum(l.debit_amount - l.credit_amount), 2) AS net
+      FROM invoices i
+      JOIN journal_entries je ON je.reference_id = i.id AND je.company_id = i.company_id
+       AND je.status = 'posted' AND (je.is_deleted IS NULL OR je.is_deleted = false)
+      JOIN journal_entry_lines l ON l.journal_entry_id = je.id
+     WHERE i.status = 'cancelled'
+     GROUP BY i.id, l.account_id) n
+   WHERE n.net <> 0;
+
+  IF v_residue > 0 THEN
+    RAISE EXCEPTION 'v3.75.43 (1): % cancelled invoice(s) leave a residue on some account - a cancelled invoice must leave nothing behind.', v_residue;
+  END IF;
+
+  -- (٢) **وللسؤالِ بيتٌ واحد**: من يكتبُ شرطَ المرآةِ بيدِه معدودٌ ومُثبَّت.
+  --     **والذِّكرُ ليس صنعاً**، وسقطَ الفحصُ فى ذلك مرّتَينِ قبلَ أن يُطبَّق:
+  --     عدَّ أوّلاً كلَّ دالّةٍ يردُ فيها اسمُ `missing_from_the_mirror` فعدَّ
+  --     نفسَه وأختَه، ثمّ عدَّ كلَّ دالّةٍ يردُ فيها `EXCEPT ALL` **فعدَّ نفسَه
+  --     مرّةً أخرى** — لأنّ نصَّ البحثِ يقعُ داخلَ نصِّ الباحث.
+  --     **ونصُّ الفحصِ مواصفةٌ لا صنعة**: فتُستثنى الفحوصُ المرجعيّةُ بالاسم،
+  --     ويبقى المقياسُ على من يقارنُ سطورَ قيدَينِ فعلاً.
+  SELECT count(*) INTO v_hand
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.prosrc ~ 'EXCEPT ALL'
+     AND p.prosrc ~ 'journal_entry_lines'
+     AND p.proname NOT IN ('je_lines_mirror', 'je_lines_identical')
+     AND p.proname NOT LIKE 'assert_baseline_%';
+
+  IF v_hand > k_handwritten THEN
+    RAISE EXCEPTION 'v3.75.43 (2): % function(s) write the mirror test by hand, pinned at % - no second house is built.', v_hand, k_handwritten;
+  END IF;
+
+  -- (٣) **ولا يُسلَّمُ البيتُ لمن لا يحتاجُه**: لا يبلغُ هذه الأبوابَ مستخدِمٌ مسجَّل
+  SELECT count(*) INTO v_open
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname IN ('je_lines_mirror', 'je_lines_identical', 'repair_uncompensated_duplicate_reversals')
+     AND (has_function_privilege('authenticated', p.oid, 'EXECUTE')
+       OR has_function_privilege('anon', p.oid, 'EXECUTE'));
+
+  IF v_open > 0 THEN
+    RAISE EXCEPTION 'v3.75.43 (3): % door(s) of this batch are reachable by a logged-in or anonymous user.', v_open;
+  END IF;
+
+  RETURN format('v3.75.43 ok - no cancelled invoice leaves a residue, the mirror test has one home (%s place(s) still write it by hand, pinned at %s), and its doors are service-role only.', v_hand, k_handwritten);
 END
 $function$
 ;
@@ -36721,6 +36781,64 @@ AS '$libdir/vector', $function$jaccard_distance$function$
 ;
 
 -- ---------------------------------------------------------------
+-- je_lines_identical(p_a uuid, p_b uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.je_lines_identical(p_a uuid, p_b uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT EXISTS (SELECT 1 FROM journal_entry_lines l WHERE l.journal_entry_id = p_a)
+     AND NOT EXISTS (
+       SELECT 1 FROM (
+         SELECT l.account_id, l.debit_amount AS d, l.credit_amount AS c
+           FROM journal_entry_lines l WHERE l.journal_entry_id = p_a
+         EXCEPT ALL
+         SELECT l.account_id, l.debit_amount, l.credit_amount
+           FROM journal_entry_lines l WHERE l.journal_entry_id = p_b
+       ) missing_from_the_copy)
+     AND NOT EXISTS (
+       SELECT 1 FROM (
+         SELECT l.account_id, l.debit_amount AS d, l.credit_amount AS c
+           FROM journal_entry_lines l WHERE l.journal_entry_id = p_b
+         EXCEPT ALL
+         SELECT l.account_id, l.debit_amount, l.credit_amount
+           FROM journal_entry_lines l WHERE l.journal_entry_id = p_a
+       ) extra_in_the_copy);
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- je_lines_mirror(p_a uuid, p_b uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.je_lines_mirror(p_a uuid, p_b uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT EXISTS (SELECT 1 FROM journal_entry_lines l WHERE l.journal_entry_id = p_a)
+     AND NOT EXISTS (
+       SELECT 1 FROM (
+         SELECT l.account_id, l.debit_amount AS d, l.credit_amount AS c
+           FROM journal_entry_lines l WHERE l.journal_entry_id = p_a
+         EXCEPT ALL
+         SELECT l.account_id, l.credit_amount, l.debit_amount
+           FROM journal_entry_lines l WHERE l.journal_entry_id = p_b
+       ) missing_from_the_mirror)
+     AND NOT EXISTS (
+       SELECT 1 FROM (
+         SELECT l.account_id, l.credit_amount AS d, l.debit_amount AS c
+           FROM journal_entry_lines l WHERE l.journal_entry_id = p_b
+         EXCEPT ALL
+         SELECT l.account_id, l.debit_amount, l.credit_amount
+           FROM journal_entry_lines l WHERE l.journal_entry_id = p_a
+       ) extra_in_the_mirror);
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- l1_distance(vector, vector)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.l1_distance(vector, vector)
@@ -53718,6 +53836,101 @@ BEGIN
   );
   RETURN v_id;
 END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- repair_uncompensated_duplicate_reversals()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.repair_uncompensated_duplicate_reversals()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_row      record;
+  v_lines    jsonb;
+  v_res      jsonb;
+  v_label    text;
+  v_done     int := 0;
+  v_names    text[] := ARRAY[]::text[];
+  v_companies uuid[] := ARRAY[]::uuid[];
+BEGIN
+  FOR v_row IN
+    SELECT o.id AS orig_id, o.company_id, o.reference_id, o.reference_type,
+           o.branch_id, o.cost_center_id,
+           (SELECT count(*) FROM journal_entries r
+             WHERE r.company_id = o.company_id AND r.reference_id = o.reference_id
+               AND r.id <> o.id AND r.status = 'posted'
+               AND (r.is_deleted IS NULL OR r.is_deleted = false)
+               AND public.je_lines_mirror(o.id, r.id)) AS mirrors,
+           (SELECT count(*) FROM journal_entries c
+             WHERE c.company_id = o.company_id AND c.reference_id = o.reference_id
+               AND c.id <> o.id AND c.status = 'posted'
+               AND (c.is_deleted IS NULL OR c.is_deleted = false)
+               AND public.je_lines_identical(o.id, c.id)) AS copies
+    FROM journal_entries o
+    WHERE o.status = 'posted'
+      AND o.reference_type IN ('invoice', 'invoice_cogs')
+      AND o.reference_id IS NOT NULL
+      AND (o.is_deleted IS NULL OR o.is_deleted = false)
+    ORDER BY o.company_id, o.reference_id, o.id
+  LOOP
+    CONTINUE WHEN v_row.mirrors - v_row.copies <= 1;
+
+    IF v_row.mirrors - v_row.copies > 2 THEN
+      RAISE EXCEPTION
+        'v3.75.43: entry % of company % carries % mirror reversal(s) and % compensation(s) - more than one surplus, and I do not guess.',
+        v_row.orig_id, v_row.company_id, v_row.mirrors, v_row.copies;
+    END IF;
+
+    SELECT coalesce(i.invoice_number, v_row.reference_id::text) INTO v_label
+      FROM invoices i WHERE i.id = v_row.reference_id;
+    v_label := coalesce(v_label, v_row.reference_id::text);
+
+    -- **ولا يُؤلَّفُ رقم**: سطورُ التصحيحِ هى سطورُ القيدِ الأصلىِّ بعينِها.
+    SELECT jsonb_agg(jsonb_build_object(
+             'account_id',    l.account_id,
+             'debit_amount',  l.debit_amount,
+             'credit_amount', l.credit_amount,
+             'description',   'تصحيح عكس مكرر - ' || v_label,
+             'branch_id',     l.branch_id,
+             'cost_center_id', l.cost_center_id)
+           ORDER BY l.account_id)
+      INTO v_lines
+      FROM journal_entry_lines l
+     WHERE l.journal_entry_id = v_row.orig_id;
+
+    IF v_lines IS NULL OR jsonb_array_length(v_lines) = 0 THEN
+      RAISE EXCEPTION 'v3.75.43: the original entry % has no lines - nothing to compensate with.', v_row.orig_id;
+    END IF;
+
+    v_res := public.create_journal_entry_atomic(
+               v_row.company_id,
+               'invoice_duplicate_reversal_correction',
+               v_row.reference_id,
+               CURRENT_DATE,
+               'تصحيح عكس مكرر - ' || v_label,
+               v_row.branch_id,
+               v_row.cost_center_id,
+               NULL,
+               v_lines);
+
+    IF coalesce((v_res->>'success')::boolean, false) IS NOT TRUE THEN
+      RAISE EXCEPTION 'v3.75.43: the one home refused to create the correcting entry for % : %',
+        v_label, coalesce(v_res->>'error', '(no error text)');
+    END IF;
+
+    v_done      := v_done + 1;
+    v_names     := v_names || v_label;
+    v_companies := v_companies || v_row.company_id;
+  END LOOP;
+
+  RETURN jsonb_build_object('corrected', v_done,
+                            'labels', to_jsonb(v_names),
+                            'companies', to_jsonb(v_companies));
+END
 $function$
 ;
 

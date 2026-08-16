@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-16T13:53:44.429Z
+-- Generated: 2026-08-16T14:36:44.354Z
 -- Tables: 256 | Policies: 784 | Triggers: 580 | Constraints: 1841
 -- =====================================================================
 
@@ -11052,6 +11052,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_41_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_41_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_42_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_42_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_43_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_43_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;
@@ -12846,6 +12848,10 @@ REVOKE ALL ON FUNCTION public.jaccard_distance(bit, bit) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.jaccard_distance(bit, bit) TO anon;
 GRANT EXECUTE ON FUNCTION public.jaccard_distance(bit, bit) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.jaccard_distance(bit, bit) TO service_role;
+REVOKE ALL ON FUNCTION public.je_lines_identical(p_a uuid, p_b uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.je_lines_identical(p_a uuid, p_b uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.je_lines_mirror(p_a uuid, p_b uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.je_lines_mirror(p_a uuid, p_b uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.l1_distance(halfvec, halfvec) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.l1_distance(halfvec, halfvec) TO anon;
 GRANT EXECUTE ON FUNCTION public.l1_distance(halfvec, halfvec) TO authenticated;
@@ -13908,6 +13914,8 @@ REVOKE ALL ON FUNCTION public.reopen_commission_advances_on_payroll_delete() FRO
 GRANT EXECUTE ON FUNCTION public.reopen_commission_advances_on_payroll_delete() TO service_role;
 REVOKE ALL ON FUNCTION public.reopen_fiscal_period(p_company_id uuid, p_year smallint, p_month smallint, p_reopened_by uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.reopen_fiscal_period(p_company_id uuid, p_year smallint, p_month smallint, p_reopened_by uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.repair_uncompensated_duplicate_reversals() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.repair_uncompensated_duplicate_reversals() TO service_role;
 REVOKE ALL ON FUNCTION public.request_booking_stock_withdrawal(p_company_id uuid, p_booking_id uuid, p_bundle_item_id uuid, p_reason text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.request_booking_stock_withdrawal(p_company_id uuid, p_booking_id uuid, p_bundle_item_id uuid, p_reason text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.request_booking_stock_withdrawal(p_company_id uuid, p_booking_id uuid, p_bundle_item_id uuid, p_reason text) TO service_role;
