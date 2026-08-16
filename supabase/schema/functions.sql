@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-16T16:37:33.772Z
--- Routines: 1392
+-- Generated: 2026-08-16T17:20:39.132Z
+-- Routines: 1393
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -7319,6 +7319,85 @@ BEGIN
   END IF;
 
   RETURN format('v3.75.45 ok - the payment-per-document rule has one home (%s place(s) write it by hand, pinned at %s) and no legitimate payment group is reported as a double-booking.', v_hand, k_hand);
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_46_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_46_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  k_held constant int := 2;   -- المُبقاتانِ بعذرٍ مكتوب
+  k_closed constant text[] := ARRAY['erp_payment_privileged', 'erp_creator_needs_no_approval',
+                                    'expense_actor_may_approve', 'company_role_has_holder'];
+  k_hold   constant text[] := ARRAY['erp_is_company_owner', 'erp_is_company_senior'];
+  v_open int;
+  v_held int;
+  v_reason int;
+  v_borrowed int;
+BEGIN
+  -- (١) الأربعُ المُغلَقة: لا يبلغُها زائرٌ ولا مستخدِمٌ مسجَّل
+  SELECT count(*) INTO v_open
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = ANY (k_closed)
+     AND (has_function_privilege('authenticated', p.oid, 'EXECUTE')
+       OR has_function_privilege('anon', p.oid, 'EXECUTE'));
+
+  IF v_open > 0 THEN
+    RAISE EXCEPTION 'v3.75.46 (1): % permission oracle(s) are reachable by a logged-in user again - a gain that is not pinned gets walked around.', v_open;
+  END IF;
+
+  -- (٢) **ولا يُغلَقُ بابٌ يمرُّ منه عمل**: المُبقاتانِ يجبُ أن تبقيا مفتوحتَين،
+  --     وإلّا سقطَ فصلُ المهامِّ على كلِّ كتابةٍ يحرسُها `erp_sod_guard`.
+  SELECT count(*) INTO v_held
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = ANY (k_hold)
+     AND has_function_privilege('authenticated', p.oid, 'EXECUTE');
+
+  IF v_held <> k_held THEN
+    RAISE EXCEPTION 'v3.75.46 (2): only % of % held-open oracle(s) still answer the logged-in user - separation of duties runs by the writer''s right and will fail.', v_held, k_held;
+  END IF;
+
+  -- (٣) **وعذرٌ لا ينقضى ليس عذراً**: العذرُ هو وجودُ مُنادٍ يجرى بحقِّ مُنادِيه.
+  --     فإن لم يبقَ واحدٌ، فالإذنُ صارَ بلا سبب — ويُنزَع.
+  SELECT count(*) INTO v_reason
+    FROM pg_proc caller JOIN pg_namespace n ON n.oid = caller.pronamespace
+   WHERE n.nspname = 'public' AND NOT caller.prosecdef
+     AND caller.proname <> ALL (k_hold)
+     AND caller.proname NOT LIKE 'assert_baseline_%'
+     AND EXISTS (SELECT 1 FROM unnest(k_hold) h WHERE caller.prosrc ~ ('\m' || h || '\M'));
+
+  IF v_reason = 0 THEN
+    RAISE EXCEPTION 'v3.75.46 (3): no caller running by the invoker''s right is left - the excuse has expired, revoke the two held-open oracles and lower the debt.';
+  END IF;
+
+  -- (٤) **ولا تُستعارُ منزوعةٌ إلى موضعٍ يجرى بحقِّ المستخدِم**: لا سياسةَ ولا
+  --     عرضٌ ولا دالّةٌ بحقِّ مُنادِيها تنادى واحدةً من الأربعِ المُغلَقة، وإلّا
+  --     انكسرت عندَ أوّلِ مستخدِم.
+  SELECT (SELECT count(*) FROM pg_policies pol
+           WHERE EXISTS (SELECT 1 FROM unnest(k_closed) c
+                          WHERE coalesce(pol.qual, '') || ' ' || coalesce(pol.with_check, '') ~ ('\m' || c || '\M')))
+       + (SELECT count(*) FROM pg_views v
+           WHERE v.schemaname = 'public'
+             AND EXISTS (SELECT 1 FROM unnest(k_closed) c WHERE v.definition ~ ('\m' || c || '\M')))
+       + (SELECT count(*) FROM pg_proc p2 JOIN pg_namespace n2 ON n2.oid = p2.pronamespace
+           WHERE n2.nspname = 'public' AND NOT p2.prosecdef
+             AND p2.proname <> ALL (k_closed)
+             AND p2.proname NOT LIKE 'assert_baseline_%'
+             AND EXISTS (SELECT 1 FROM unnest(k_closed) c WHERE p2.prosrc ~ ('\m' || c || '\M')))
+    INTO v_borrowed;
+
+  IF v_borrowed > 0 THEN
+    RAISE EXCEPTION 'v3.75.46 (4): % place(s) that run by the user''s own right now call a revoked oracle - it will fail for the first real user.', v_borrowed;
+  END IF;
+
+  RETURN format('v3.75.46 ok - 4 permission oracle(s) answer no logged-in user, %s held open by a live excuse (%s caller(s) still run by the invoker''s right), and nothing that runs by the user''s right borrows a revoked one.', v_held, v_reason);
 END
 $function$
 ;

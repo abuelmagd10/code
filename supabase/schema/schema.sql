@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-16T16:37:32.394Z
+-- Generated: 2026-08-16T17:20:37.651Z
 -- Tables: 256 | Policies: 784 | Triggers: 581 | Constraints: 1841
 -- =====================================================================
 
@@ -11059,6 +11059,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_44_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_44_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_45_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_45_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_46_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_46_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;
@@ -11680,7 +11682,6 @@ GRANT EXECUTE ON FUNCTION public.commission_run_transition_allowed(p_old text, p
 REVOKE ALL ON FUNCTION public.companies_subscription_status_transitions_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.companies_subscription_status_transitions_trg() TO service_role;
 REVOKE ALL ON FUNCTION public.company_role_has_holder(p_company_id uuid, p_role text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.company_role_has_holder(p_company_id uuid, p_role text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.company_role_has_holder(p_company_id uuid, p_role text) TO service_role;
 REVOKE ALL ON FUNCTION public.company_seat_license_auto_reactivate_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.company_seat_license_auto_reactivate_trg() TO service_role;
@@ -11978,7 +11979,6 @@ REVOKE ALL ON FUNCTION public.erp_company_senior_count(p_company_id uuid) FROM P
 GRANT EXECUTE ON FUNCTION public.erp_company_senior_count(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_company_senior_count(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_creator_needs_no_approval(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.erp_creator_needs_no_approval(p_company_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_creator_needs_no_approval(p_company_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_doors_that_do_not_ask() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_doors_that_do_not_ask() TO authenticated;
@@ -12009,7 +12009,6 @@ GRANT EXECUTE ON FUNCTION public.erp_notice_close_orphans(p_company_id uuid) TO 
 REVOKE ALL ON FUNCTION public.erp_notice_follows_its_document() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_notice_follows_its_document() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_payment_privileged(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.erp_payment_privileged(p_company_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_payment_privileged(p_company_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_policy_role_groups() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_policy_role_groups() TO anon;
@@ -12053,7 +12052,6 @@ GRANT EXECUTE ON FUNCTION public.execute_vendor_payment_correction(p_request_id 
 REVOKE ALL ON FUNCTION public.expense_account_type_guard() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.expense_account_type_guard() TO service_role;
 REVOKE ALL ON FUNCTION public.expense_actor_may_approve(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.expense_actor_may_approve(p_company_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.expense_actor_may_approve(p_company_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.expense_paid_requires_journal_guard() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.expense_paid_requires_journal_guard() TO service_role;

@@ -264,7 +264,7 @@ require("dotenv").config({ path: [".env.local", ".env", ".env.development.local"
  * v3.75.41: 104 — ستَّ عشرةَ باباً أخرى قُفلت بنداءٍ حىٍّ بوسائطَ حقيقيّة،
  *            وبابانِ لم يعملا قطُّ أُزيلا.
  */
-const PINNED = 104
+const PINNED = 100
 
 const requireDb = process.argv.includes("--require-db")
 const verbose = process.argv.includes("--list")
