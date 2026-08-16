@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-16T18:03:56.413Z
+-- Generated: 2026-08-16T19:10:59.201Z
 -- Routines: 1394
 -- =====================================================================
 
