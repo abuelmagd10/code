@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-16T17:20:39.132Z
--- Routines: 1393
+-- Generated: 2026-08-16T18:03:56.413Z
+-- Routines: 1394
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -7113,7 +7113,8 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
     WHERE n.nspname = 'public' AND p.proname = 'handle_invoice_cancellation_reversal'
-      AND p.prosrc ~ 'missing_from_the_mirror' AND p.prosrc ~ 'extra_in_the_mirror'
+      AND (p.prosrc ~ 'je_lines_mirror'
+           OR (p.prosrc ~ 'missing_from_the_mirror' AND p.prosrc ~ 'extra_in_the_mirror'))
   ) THEN
     RAISE EXCEPTION 'v3.75.42 (1): the cancellation trigger no longer refuses to reverse what is already reversed.';
   END IF;
@@ -7167,7 +7168,7 @@ CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_43_check()
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
-  k_handwritten constant int := 1;  -- جسدُ مُشغِّلِ الإلغاء — يُحوَّلُ بأداةِ الإدراجِ الداخلىِّ لاحقاً
+  k_handwritten constant int := 0;  -- جسدُ مُشغِّلِ الإلغاء — يُحوَّلُ بأداةِ الإدراجِ الداخلىِّ لاحقاً
   v_residue int;
   v_hand    int;
   v_open    int;
@@ -7283,7 +7284,7 @@ CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_45_check()
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 DECLARE
-  k_hand constant int := 2;   -- بابا v3.75.44: يُحوَّلانِ فى دفعةٍ تُقاسُ وحدَها
+  k_hand constant int := 0;   -- بابا v3.75.44: يُحوَّلانِ فى دفعةٍ تُقاسُ وحدَها
   v_hand int;
   v_types text[];
   v_alerts int;
@@ -7398,6 +7399,72 @@ BEGIN
   END IF;
 
   RETURN format('v3.75.46 ok - 4 permission oracle(s) answer no logged-in user, %s held open by a live excuse (%s caller(s) still run by the invoker''s right), and nothing that runs by the user''s right borrows a revoked one.', v_held, v_reason);
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_47_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_47_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_hand_list int;
+  v_hand_mirror int;
+  v_callers_list int;
+  v_caller_mirror int;
+BEGIN
+  -- (١) لا موضعَ يكتبُ قائمةَ أنواعِ الدفعاتِ بيدِه — **الصفرُ لا ما دونَ سقف**
+  --     **ونصُّ الفحصِ مواصفةٌ لا صنعة** — فتُستثنى الفحوصُ المرجعيّةُ بالاسم.
+  SELECT count(*) INTO v_hand_list
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.prosrc ~ 'reference_type IN \(''invoice_payment'', ''bill_payment''\)'
+     AND p.proname NOT LIKE 'assert_baseline_%';
+
+  IF v_hand_list <> 0 THEN
+    RAISE EXCEPTION 'v3.75.47 (1): % place(s) write the payment-reference list by hand again - the debt was paid to zero and must stay there.', v_hand_list;
+  END IF;
+
+  -- (٢) ولا موضعَ يكتبُ شرطَ المرآةِ بيدِه
+  SELECT count(*) INTO v_hand_mirror
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.prosrc ~ 'EXCEPT ALL' AND p.prosrc ~ 'journal_entry_lines'
+     AND p.proname NOT IN ('je_lines_mirror', 'je_lines_identical')
+     AND p.proname NOT LIKE 'assert_baseline_%';
+
+  IF v_hand_mirror <> 0 THEN
+    RAISE EXCEPTION 'v3.75.47 (2): % place(s) write the mirror test by hand again - the debt was paid to zero and must stay there.', v_hand_mirror;
+  END IF;
+
+  -- (٣) **وغيابُ النصِّ ليس حضورَ النداء**: يُقاسُ أنّ البيوتَ تُنادى فعلاً،
+  --     وإلّا كان الصفرُ أعلاه صفرَ حذفٍ لا صفرَ تحويل.
+  SELECT count(*) INTO v_callers_list
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname IN ('enforce_payment_reference_resolves', 'repair_unresolved_payment_references',
+                       'prevent_duplicate_journal_entry_v2', 'ic_duplicate_journals')
+     AND p.prosrc ~ 'payment_journal_reference_types';
+
+  IF v_callers_list <> 4 THEN
+    RAISE EXCEPTION 'v3.75.47 (3): only % of 4 doors call the payment-reference home - a zero by deletion is not a zero by conversion.', v_callers_list;
+  END IF;
+
+  SELECT count(*) INTO v_caller_mirror
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname = 'handle_invoice_cancellation_reversal'
+     AND p.prosrc ~ 'je_lines_mirror';
+
+  IF v_caller_mirror <> 1 THEN
+    RAISE EXCEPTION 'v3.75.47 (4): the cancellation reversal no longer calls the mirror home - a zero by deletion is not a zero by conversion.';
+  END IF;
+
+  RETURN 'v3.75.47 ok - the payment-reference list and the mirror test are each written in exactly one home, 4 door(s) and 1 door call them, and nothing writes either by hand.';
 END
 $function$
 ;
@@ -23014,7 +23081,7 @@ CREATE OR REPLACE FUNCTION public.enforce_payment_reference_resolves()
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 BEGIN
-  IF NEW.reference_type IN ('invoice_payment', 'bill_payment')
+  IF NEW.reference_type = ANY (public.payment_journal_reference_types())
      AND NEW.reference_id IS NOT NULL
      AND NOT public.payment_reference_resolves(NEW.company_id, NEW.reference_type, NEW.reference_id)
   THEN
@@ -31858,24 +31925,7 @@ BEGIN
           AND r.id <> v_original_je.id
           AND r.status = 'posted'
           AND (r.is_deleted IS NULL OR r.is_deleted = false)
-          AND NOT EXISTS (
-            SELECT 1 FROM (
-              SELECT l.account_id, l.debit_amount AS d, l.credit_amount AS c
-                FROM journal_entry_lines l WHERE l.journal_entry_id = v_original_je.id
-              EXCEPT ALL
-              SELECT l.account_id, l.credit_amount, l.debit_amount
-                FROM journal_entry_lines l WHERE l.journal_entry_id = r.id
-            ) missing_from_the_mirror
-          )
-          AND NOT EXISTS (
-            SELECT 1 FROM (
-              SELECT l.account_id, l.credit_amount AS d, l.debit_amount AS c
-                FROM journal_entry_lines l WHERE l.journal_entry_id = r.id
-              EXCEPT ALL
-              SELECT l.account_id, l.debit_amount, l.credit_amount
-                FROM journal_entry_lines l WHERE l.journal_entry_id = v_original_je.id
-            ) extra_in_the_mirror
-          )
+          AND public.je_lines_mirror(v_original_je.id, r.id)
       ) THEN
         CONTINUE;   -- عُكِسَ سلفاً بالأثر — فلا يُعكَسُ ثانية
       END IF;
@@ -54006,7 +54056,7 @@ BEGIN
   FOR v_row IN
     SELECT je.id, je.company_id, je.reference_type, je.reference_id, je.entry_number
       FROM journal_entries je
-     WHERE je.reference_type IN ('invoice_payment', 'bill_payment')
+     WHERE je.reference_type = ANY (public.payment_journal_reference_types())
        AND je.reference_id IS NOT NULL
        AND (je.is_deleted IS NULL OR je.is_deleted = false)
        AND NOT public.payment_reference_resolves(je.company_id, je.reference_type, je.reference_id)
