@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-16T15:21:46.983Z
+-- Generated: 2026-08-16T16:37:32.394Z
 -- Tables: 256 | Policies: 784 | Triggers: 581 | Constraints: 1841
 -- =====================================================================
 
@@ -11057,6 +11057,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_43_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_43_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_44_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_44_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_45_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_45_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;
@@ -13516,6 +13518,10 @@ REVOKE ALL ON FUNCTION public.payment_branch_manager_notify_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.payment_branch_manager_notify_trg() TO service_role;
 REVOKE ALL ON FUNCTION public.payment_customer_branch_manager_notify_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.payment_customer_branch_manager_notify_trg() TO service_role;
+REVOKE ALL ON FUNCTION public.payment_journal_reference_types() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.payment_journal_reference_types() TO anon;
+GRANT EXECUTE ON FUNCTION public.payment_journal_reference_types() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.payment_journal_reference_types() TO service_role;
 REVOKE ALL ON FUNCTION public.payment_reference_resolves(p_company_id uuid, p_reference_type text, p_reference_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.payment_reference_resolves(p_company_id uuid, p_reference_type text, p_reference_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.payment_requires_revenue_je_trg() FROM PUBLIC;

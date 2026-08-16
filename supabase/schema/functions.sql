@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-16T15:21:48.862Z
--- Routines: 1390
+-- Generated: 2026-08-16T16:37:33.772Z
+-- Routines: 1392
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -7269,6 +7269,56 @@ BEGIN
   END IF;
 
   RETURN format('v3.75.44 ok - every payment entry references the document it pays (%s unresolved, pinned at %s), the guard is attached, and the two doors that meant the payment id are gone.', v_broken, k_pinned);
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_45_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_45_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  k_hand constant int := 2;   -- بابا v3.75.44: يُحوَّلانِ فى دفعةٍ تُقاسُ وحدَها
+  v_hand int;
+  v_types text[];
+  v_alerts int;
+BEGIN
+  -- (١) البيتُ الواحدُ قائمٌ ويقولُ ما يقول
+  SELECT public.payment_journal_reference_types() INTO v_types;
+  IF v_types IS NULL OR NOT ('invoice_payment' = ANY (v_types)) OR NOT ('bill_payment' = ANY (v_types)) THEN
+    RAISE EXCEPTION 'v3.75.45 (1): the one home no longer names both payment reference types.';
+  END IF;
+
+  -- (٢) **ومعدودٌ لا مسكوتٌ عنه**: من يكتبُ صيغةَ الاستثناءِ بيدِه بدلَ نداءِ
+  --     البيت. الاثنانِ الباقيانِ من v3.75.44 (`enforce_payment_reference_resolves`
+  --     و`repair_unresolved_payment_references`) يُحوَّلانِ فى دفعةٍ تُقاسُ وحدَها.
+  --     **ونصُّ الفحصِ مواصفةٌ لا صنعة** — فتُستثنى الفحوصُ المرجعيّةُ بالاسم.
+  SELECT count(*) INTO v_hand
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.prosrc ~ 'reference_type IN \(''invoice_payment'', ''bill_payment''\)'
+     AND p.proname NOT LIKE 'assert_baseline_%';
+
+  IF v_hand > k_hand THEN
+    RAISE EXCEPTION 'v3.75.45 (2): % function(s) still write the payment-reference list by hand, pinned at % - a rule with two houses says two things.', v_hand, k_hand;
+  END IF;
+
+  -- (٣) **والحكمُ بالأثر**: لا فاتورةَ شراءٍ أو مبيعاتٍ يُنذَرُ عنها لمجرّدِ أنّ
+  --     لها أكثرَ من دفعة — يُقاسُ على كلِّ شركةٍ بدالّةِ اللوحةِ نفسِها.
+  SELECT count(*) INTO v_alerts FROM (
+    SELECT c.id FROM companies c, LATERAL public.ic_duplicate_journals(c.id) d
+     WHERE d.detail->>'reference_type' = ANY (public.payment_journal_reference_types())) q;
+
+  IF v_alerts > 0 THEN
+    RAISE EXCEPTION 'v3.75.45 (3): % payment group(s) are still reported as a double-booking.', v_alerts;
+  END IF;
+
+  RETURN format('v3.75.45 ok - the payment-per-document rule has one home (%s place(s) write it by hand, pinned at %s) and no legitimate payment group is reported as a double-booking.', v_hand, k_hand);
 END
 $function$
 ;
@@ -33048,6 +33098,7 @@ BEGIN
       AND COALESCE(is_deleted, false) = false
       AND reference_type IS NOT NULL
       AND reference_id IS NOT NULL
+      AND NOT (reference_type = ANY (public.payment_journal_reference_types()))
     GROUP BY reference_type, reference_id
     HAVING COUNT(*) > 1
     LIMIT 20
@@ -43745,6 +43796,18 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- payment_journal_reference_types()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.payment_journal_reference_types()
+ RETURNS text[]
+ LANGUAGE sql
+ IMMUTABLE
+AS $function$
+  SELECT ARRAY['invoice_payment', 'bill_payment']::text[];
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- payment_reference_resolves(p_company_id uuid, p_reference_type text, p_reference_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.payment_reference_resolves(p_company_id uuid, p_reference_type text, p_reference_id uuid)
@@ -47735,7 +47798,7 @@ BEGIN
 
   -- Payment journals are naturally one-per-payment, not one-per-invoice.
   -- Multiple payments on the same invoice create multiple valid journals.
-  IF NEW.reference_type IN ('invoice_payment', 'bill_payment') THEN
+  IF NEW.reference_type = ANY (public.payment_journal_reference_types()) THEN
     RETURN NEW;
   END IF;
 
