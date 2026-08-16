@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-16T14:36:45.581Z
--- Routines: 1388
+-- Generated: 2026-08-16T15:21:48.862Z
+-- Routines: 1390
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -7219,6 +7219,56 @@ BEGIN
   END IF;
 
   RETURN format('v3.75.43 ok - no cancelled invoice leaves a residue, the mirror test has one home (%s place(s) still write it by hand, pinned at %s), and its doors are service-role only.', v_hand, k_handwritten);
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_44_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_44_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  k_pinned constant int := 0;
+  v_broken int;
+  v_dead   int;
+BEGIN
+  -- (١) لا قيدَ دفعةٍ مرجعُه لا يُشيرُ إلى مستندٍ فى شركتِه
+  SELECT count(*) INTO v_broken
+    FROM journal_entries je
+   WHERE je.reference_type IN ('invoice_payment', 'bill_payment')
+     AND je.reference_id IS NOT NULL
+     AND (je.is_deleted IS NULL OR je.is_deleted = false)
+     AND NOT public.payment_reference_resolves(je.company_id, je.reference_type, je.reference_id);
+
+  IF v_broken > k_pinned THEN
+    RAISE EXCEPTION 'v3.75.44 (1): % payment entry/entries reference a document that does not exist, pinned at %.', v_broken, k_pinned;
+  END IF;
+
+  -- (٢) والفخُّ معلَّقٌ على الجدولِ نفسِه — **وفحصٌ يمكن تخطّيه ليس فحصاً**
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
+     WHERE p.proname = 'enforce_payment_reference_resolves' AND NOT t.tgisinternal
+       AND t.tgrelid = 'public.journal_entries'::regclass
+  ) THEN
+    RAISE EXCEPTION 'v3.75.44 (2): the guard that refuses an unresolvable payment reference is no longer attached.';
+  END IF;
+
+  -- (٣) والبابانِ اللذانِ كانا يكتبانِ رقمَ الدفعةِ مرجعاً لم يعودا
+  SELECT count(*) INTO v_dead
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public'
+     AND p.proname IN ('create_invoice_payment_entry', 'create_bill_payment_entry');
+
+  IF v_dead > 0 THEN
+    RAISE EXCEPTION 'v3.75.44 (3): % door(s) that write the payment id as the reference are back.', v_dead;
+  END IF;
+
+  RETURN format('v3.75.44 ok - every payment entry references the document it pays (%s unresolved, pinned at %s), the guard is attached, and the two doors that meant the payment id are gone.', v_broken, k_pinned);
 END
 $function$
 ;
@@ -17862,101 +17912,6 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
--- create_bill_payment_entry(p_bill_id uuid, p_payment_id uuid, p_company_id uuid, p_entry_date date, p_amount numeric, p_payment_method text, p_description text)
--- ---------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.create_bill_payment_entry(p_bill_id uuid, p_payment_id uuid, p_company_id uuid, p_entry_date date, p_amount numeric, p_payment_method text, p_description text)
- RETURNS uuid
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE
-  v_entry_id UUID;
-  v_accounts RECORD;
-  v_bill RECORD;
-  v_cash_bank_account_id UUID;
-BEGIN
-  -- جلب بيانات فاتورة الشراء
-  SELECT bill_number INTO v_bill
-  FROM bills
-  WHERE id = p_bill_id;
-  
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'فاتورة الشراء غير موجودة: %', p_bill_id;
-  END IF;
-  
-  -- إيجاد الحسابات المطلوبة
-  SELECT * INTO v_accounts FROM find_company_accounts(p_company_id);
-  
-  IF v_accounts.ap_account_id IS NULL THEN
-    RAISE EXCEPTION 'حساب AP غير موجود للشركة: %', p_company_id;
-  END IF;
-  
-  -- تحديد حساب النقد/البنك
-  IF p_payment_method ILIKE '%bank%' OR p_payment_method ILIKE '%بنك%' OR p_payment_method ILIKE '%transfer%' THEN
-    v_cash_bank_account_id := v_accounts.bank_account_id;
-  ELSE
-    v_cash_bank_account_id := v_accounts.cash_account_id;
-  END IF;
-  
-  IF v_cash_bank_account_id IS NULL THEN
-    RAISE EXCEPTION 'حساب النقد/البنك غير موجود للشركة: %', p_company_id;
-  END IF;
-  
-  -- إنشاء القيد
-  INSERT INTO journal_entries (
-    company_id,
-    reference_type,
-    reference_id,
-    entry_date,
-    description,
-    status
-  ) VALUES (
-    p_company_id,
-    'bill_payment',
-    COALESCE(p_payment_id, p_bill_id),
-    p_entry_date,
-    COALESCE(p_description, 'قيد دفع فاتورة شراء: ' || v_bill.bill_number),
-    'posted'
-  ) RETURNING id INTO v_entry_id;
-  
-  -- إنشاء سطور القيد
-  -- 1. AP (Debit)
-  INSERT INTO journal_entry_lines (
-    journal_entry_id,
-    account_id,
-    debit_amount,
-    credit_amount,
-    description
-  ) VALUES (
-    v_entry_id,
-    v_accounts.ap_account_id,
-    p_amount,
-    0,
-    'الذمم الدائنة'
-  );
-  
-  -- 2. Cash/Bank (Credit)
-  INSERT INTO journal_entry_lines (
-    journal_entry_id,
-    account_id,
-    debit_amount,
-    credit_amount,
-    description
-  ) VALUES (
-    v_entry_id,
-    v_cash_bank_account_id,
-    0,
-    p_amount,
-    'النقد/البنك'
-  );
-  
-  RETURN v_entry_id;
-END;
-$function$
-;
-
--- ---------------------------------------------------------------
 -- create_booking_atomic(p_company_id uuid, p_branch_id uuid, p_service_id uuid, p_customer_id uuid, p_created_by uuid, p_booking_date date, p_start_time time without time zone, p_quantity numeric, p_staff_user_id uuid, p_discount_amount numeric, p_booking_source text, p_notes text, p_cost_center_id uuid, p_skip_schedule_check boolean, p_staff_user_ids uuid[])
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.create_booking_atomic(p_company_id uuid, p_branch_id uuid, p_service_id uuid, p_customer_id uuid, p_created_by uuid, p_booking_date date, p_start_time time without time zone, p_quantity numeric DEFAULT 1, p_staff_user_id uuid DEFAULT NULL::uuid, p_discount_amount numeric DEFAULT 0, p_booking_source text DEFAULT 'manual'::text, p_notes text DEFAULT NULL::text, p_cost_center_id uuid DEFAULT NULL::uuid, p_skip_schedule_check boolean DEFAULT false, p_staff_user_ids uuid[] DEFAULT NULL::uuid[])
@@ -18825,101 +18780,6 @@ BEGIN
       AND account_id = v_accounts.revenue_account_id;
     END IF;
   END IF;
-  
-  RETURN v_entry_id;
-END;
-$function$
-;
-
--- ---------------------------------------------------------------
--- create_invoice_payment_entry(p_invoice_id uuid, p_payment_id uuid, p_company_id uuid, p_entry_date date, p_amount numeric, p_payment_method text, p_description text)
--- ---------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.create_invoice_payment_entry(p_invoice_id uuid, p_payment_id uuid, p_company_id uuid, p_entry_date date, p_amount numeric, p_payment_method text, p_description text)
- RETURNS uuid
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE
-  v_entry_id UUID;
-  v_accounts RECORD;
-  v_invoice RECORD;
-  v_cash_bank_account_id UUID;
-BEGIN
-  -- جلب بيانات الفاتورة
-  SELECT invoice_number INTO v_invoice
-  FROM invoices
-  WHERE id = p_invoice_id;
-  
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'الفاتورة غير موجودة: %', p_invoice_id;
-  END IF;
-  
-  -- إيجاد الحسابات المطلوبة
-  SELECT * INTO v_accounts FROM find_company_accounts(p_company_id);
-  
-  IF v_accounts.ar_account_id IS NULL THEN
-    RAISE EXCEPTION 'حساب AR غير موجود للشركة: %', p_company_id;
-  END IF;
-  
-  -- تحديد حساب النقد/البنك
-  IF p_payment_method ILIKE '%bank%' OR p_payment_method ILIKE '%بنك%' OR p_payment_method ILIKE '%transfer%' THEN
-    v_cash_bank_account_id := v_accounts.bank_account_id;
-  ELSE
-    v_cash_bank_account_id := v_accounts.cash_account_id;
-  END IF;
-  
-  IF v_cash_bank_account_id IS NULL THEN
-    RAISE EXCEPTION 'حساب النقد/البنك غير موجود للشركة: %', p_company_id;
-  END IF;
-  
-  -- إنشاء القيد
-  INSERT INTO journal_entries (
-    company_id,
-    reference_type,
-    reference_id,
-    entry_date,
-    description,
-    status
-  ) VALUES (
-    p_company_id,
-    'invoice_payment',
-    COALESCE(p_payment_id, p_invoice_id),
-    p_entry_date,
-    COALESCE(p_description, 'قيد دفع فاتورة: ' || v_invoice.invoice_number),
-    'posted'
-  ) RETURNING id INTO v_entry_id;
-  
-  -- إنشاء سطور القيد
-  -- 1. Cash/Bank (Debit)
-  INSERT INTO journal_entry_lines (
-    journal_entry_id,
-    account_id,
-    debit_amount,
-    credit_amount,
-    description
-  ) VALUES (
-    v_entry_id,
-    v_cash_bank_account_id,
-    p_amount,
-    0,
-    'النقد/البنك'
-  );
-  
-  -- 2. AR (Credit)
-  INSERT INTO journal_entry_lines (
-    journal_entry_id,
-    account_id,
-    debit_amount,
-    credit_amount,
-    description
-  ) VALUES (
-    v_entry_id,
-    v_accounts.ar_account_id,
-    0,
-    p_amount,
-    'الذمم المدينة'
-  );
   
   RETURN v_entry_id;
 END;
@@ -23012,6 +22872,30 @@ BEGIN
   RAISE EXCEPTION 'دفعةٌ بلا اسمِ من صنعها لا تُكتب — سَمِّ الفاعل (created_by). ومن يكتب من الخادم يسمّيه بنفسه، فلا جلسةَ تسمّيه عنه.'
     USING ERRCODE = 'P0001';
 END;
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- enforce_payment_reference_resolves()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.enforce_payment_reference_resolves()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+BEGIN
+  IF NEW.reference_type IN ('invoice_payment', 'bill_payment')
+     AND NEW.reference_id IS NOT NULL
+     AND NOT public.payment_reference_resolves(NEW.company_id, NEW.reference_type, NEW.reference_id)
+  THEN
+    RAISE EXCEPTION
+      'UNRESOLVED_PAYMENT_REFERENCE: a % entry must reference the document it pays; % is not a document of this company.',
+      NEW.reference_type, NEW.reference_id
+      USING HINT = 'Set reference_id to the invoice_id (or bill_id) - not to the payment id.';
+  END IF;
+  RETURN NEW;
+END
 $function$
 ;
 
@@ -43861,6 +43745,26 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- payment_reference_resolves(p_company_id uuid, p_reference_type text, p_reference_id uuid)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.payment_reference_resolves(p_company_id uuid, p_reference_type text, p_reference_id uuid)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+  SELECT CASE
+    WHEN p_reference_id IS NULL THEN true
+    WHEN p_reference_type = 'invoice_payment' THEN
+      EXISTS (SELECT 1 FROM invoices i WHERE i.id = p_reference_id AND i.company_id = p_company_id)
+    WHEN p_reference_type = 'bill_payment' THEN
+      EXISTS (SELECT 1 FROM bills b WHERE b.id = p_reference_id AND b.company_id = p_company_id)
+    ELSE true
+  END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- payment_requires_revenue_je_trg()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.payment_requires_revenue_je_trg()
@@ -53930,6 +53834,121 @@ BEGIN
   RETURN jsonb_build_object('corrected', v_done,
                             'labels', to_jsonb(v_names),
                             'companies', to_jsonb(v_companies));
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- repair_unresolved_payment_references()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.repair_unresolved_payment_references()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  v_row     record;
+  v_pay     record;
+  v_n       int;
+  v_target  uuid;
+  v_debits  numeric;
+  v_fp_a    text;
+  v_fp_b    text;
+  v_lines_a text;
+  v_lines_b text;
+  v_ref     uuid;
+  v_done    int := 0;
+  v_names   text[] := ARRAY[]::text[];
+BEGIN
+  FOR v_row IN
+    SELECT je.id, je.company_id, je.reference_type, je.reference_id, je.entry_number
+      FROM journal_entries je
+     WHERE je.reference_type IN ('invoice_payment', 'bill_payment')
+       AND je.reference_id IS NOT NULL
+       AND (je.is_deleted IS NULL OR je.is_deleted = false)
+       AND NOT public.payment_reference_resolves(je.company_id, je.reference_type, je.reference_id)
+     ORDER BY je.company_id, je.entry_number
+  LOOP
+    SELECT count(*) INTO v_n
+      FROM payments p
+     WHERE p.journal_entry_id = v_row.id
+       AND p.company_id = v_row.company_id
+       AND coalesce(p.is_deleted, false) = false;
+
+    IF v_n <> 1 THEN
+      RAISE EXCEPTION
+        'v3.75.44: entry % has % payment row(s) pointing at it - the link cannot be read from the database, and I do not guess.',
+        v_row.entry_number, v_n;
+    END IF;
+
+    SELECT p.invoice_id, p.bill_id, p.amount, p.base_currency_amount
+      INTO v_pay
+      FROM payments p
+     WHERE p.journal_entry_id = v_row.id
+       AND p.company_id = v_row.company_id
+       AND coalesce(p.is_deleted, false) = false;
+
+    v_target := CASE WHEN v_row.reference_type = 'invoice_payment' THEN v_pay.invoice_id ELSE v_pay.bill_id END;
+
+    IF v_target IS NULL THEN
+      RAISE EXCEPTION 'v3.75.44: the payment row of entry % names no document of type % - refusing.',
+        v_row.entry_number, v_row.reference_type;
+    END IF;
+
+    IF NOT public.payment_reference_resolves(v_row.company_id, v_row.reference_type, v_target) THEN
+      RAISE EXCEPTION 'v3.75.44: the document % named by the payment row of entry % is not in that company - refusing.',
+        v_target, v_row.entry_number;
+    END IF;
+
+    -- **والمبلغُ يشهد**: مجموعُ مدينِ القيدِ يساوى مبلغَ الدفعة
+    SELECT coalesce(round(sum(l.debit_amount), 2), -1) INTO v_debits
+      FROM journal_entry_lines l WHERE l.journal_entry_id = v_row.id;
+
+    IF v_debits NOT IN (round(v_pay.amount, 2), round(coalesce(v_pay.base_currency_amount, v_pay.amount), 2)) THEN
+      RAISE EXCEPTION
+        'v3.75.44: entry % debits % but its payment row says % - not the same event, refusing.',
+        v_row.entry_number, v_debits, v_pay.amount;
+    END IF;
+
+    -- **ولا يُفتَحُ البابُ إلّا بقدرِ ما يمرّ**: يُبصَمُ القيدُ وسطورُه قبلَ اللمس،
+    -- ويُعادُ قياسُهما بعدَه. فما عدا `reference_id` يجبُ أن يعودَ حرفاً بحرف.
+    SELECT md5(row(je.company_id, je.branch_id, je.cost_center_id, je.warehouse_id,
+                   je.entry_number, je.entry_date, je.description, je.reference_type,
+                   je.status, je.is_deleted)::text)
+      INTO v_fp_a FROM journal_entries je WHERE je.id = v_row.id;
+    SELECT coalesce(md5(string_agg(l.account_id::text || '|' || l.debit_amount || '|' || l.credit_amount,
+                                   E'\n' ORDER BY l.account_id, l.debit_amount, l.credit_amount)), '')
+      INTO v_lines_a FROM journal_entry_lines l WHERE l.journal_entry_id = v_row.id;
+
+    -- الرايةُ نفسُها التى يرفعُها البيتُ الواحدُ لإنشاءِ القيود، ولعمودٍ واحدٍ فقط
+    PERFORM set_config('app.allow_direct_post', 'true', true);
+    UPDATE journal_entries SET reference_id = v_target WHERE id = v_row.id;
+    PERFORM set_config('app.allow_direct_post', 'false', true);
+
+    SELECT md5(row(je.company_id, je.branch_id, je.cost_center_id, je.warehouse_id,
+                   je.entry_number, je.entry_date, je.description, je.reference_type,
+                   je.status, je.is_deleted)::text), je.reference_id
+      INTO v_fp_b, v_ref FROM journal_entries je WHERE je.id = v_row.id;
+    SELECT coalesce(md5(string_agg(l.account_id::text || '|' || l.debit_amount || '|' || l.credit_amount,
+                                   E'\n' ORDER BY l.account_id, l.debit_amount, l.credit_amount)), '')
+      INTO v_lines_b FROM journal_entry_lines l WHERE l.journal_entry_id = v_row.id;
+
+    IF v_fp_a IS DISTINCT FROM v_fp_b OR v_lines_a IS DISTINCT FROM v_lines_b THEN
+      RAISE EXCEPTION 'v3.75.44: entry % changed in more than its reference - refusing.', v_row.entry_number;
+    END IF;
+    IF v_ref IS DISTINCT FROM v_target THEN
+      RAISE EXCEPTION 'v3.75.44: entry % did not take the reference it was given.', v_row.entry_number;
+    END IF;
+
+    v_done  := v_done + 1;
+    v_names := v_names || v_row.entry_number;
+  END LOOP;
+
+  RETURN jsonb_build_object('repaired', v_done, 'entries', to_jsonb(v_names));
+EXCEPTION WHEN OTHERS THEN
+  PERFORM set_config('app.allow_direct_post', 'false', true);
+  RAISE;
 END
 $function$
 ;

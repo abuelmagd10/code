@@ -9,8 +9,8 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-16T14:36:44.354Z
--- Tables: 256 | Policies: 784 | Triggers: 580 | Constraints: 1841
+-- Generated: 2026-08-16T15:21:46.983Z
+-- Tables: 256 | Policies: 784 | Triggers: 581 | Constraints: 1841
 -- =====================================================================
 
 
@@ -7888,6 +7888,7 @@ CREATE TRIGGER trg_enforce_je_has_lines BEFORE UPDATE ON public.journal_entries 
 CREATE TRIGGER trg_enforce_je_integrity BEFORE INSERT OR UPDATE OF status ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION enforce_je_integrity();
 CREATE TRIGGER trg_ensure_balance_on_post BEFORE UPDATE ON public.journal_entries FOR EACH ROW WHEN ((new.status = 'posted'::text)) EXECUTE FUNCTION ensure_journal_entry_balanced();
 CREATE TRIGGER trg_inherit_branch_cost_center_journal BEFORE INSERT ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION inherit_branch_cost_center_for_journal();
+CREATE TRIGGER trg_payment_reference_resolves BEFORE INSERT OR UPDATE OF reference_id, reference_type, company_id ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION enforce_payment_reference_resolves();
 CREATE TRIGGER trg_period_lock_header BEFORE INSERT OR DELETE OR UPDATE ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION enforce_period_lock_header();
 CREATE TRIGGER trg_posted_entry_no_edit BEFORE DELETE OR UPDATE ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION enforce_posted_entry_no_edit();
 CREATE TRIGGER trg_prevent_duplicate_journal_entry BEFORE INSERT ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION prevent_duplicate_journal_entry_v2();
@@ -11054,6 +11055,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_42_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_42_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_43_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_43_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_44_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_44_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;
@@ -11739,8 +11742,6 @@ GRANT EXECUTE ON FUNCTION public.create_auto_invoice_from_sales_order(p_sales_or
 GRANT EXECUTE ON FUNCTION public.create_auto_invoice_from_sales_order(p_sales_order_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.create_bill_ap_expense_entry(p_bill_id uuid, p_company_id uuid, p_entry_date date, p_description text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_bill_ap_expense_entry(p_bill_id uuid, p_company_id uuid, p_entry_date date, p_description text) TO service_role;
-REVOKE ALL ON FUNCTION public.create_bill_payment_entry(p_bill_id uuid, p_payment_id uuid, p_company_id uuid, p_entry_date date, p_amount numeric, p_payment_method text, p_description text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.create_bill_payment_entry(p_bill_id uuid, p_payment_id uuid, p_company_id uuid, p_entry_date date, p_amount numeric, p_payment_method text, p_description text) TO service_role;
 REVOKE ALL ON FUNCTION public.create_booking_atomic(p_company_id uuid, p_branch_id uuid, p_service_id uuid, p_customer_id uuid, p_created_by uuid, p_booking_date date, p_start_time time without time zone, p_quantity numeric, p_staff_user_id uuid, p_discount_amount numeric, p_booking_source text, p_notes text, p_cost_center_id uuid, p_skip_schedule_check boolean, p_staff_user_ids uuid[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_booking_atomic(p_company_id uuid, p_branch_id uuid, p_service_id uuid, p_customer_id uuid, p_created_by uuid, p_booking_date date, p_start_time time without time zone, p_quantity numeric, p_staff_user_id uuid, p_discount_amount numeric, p_booking_source text, p_notes text, p_cost_center_id uuid, p_skip_schedule_check boolean, p_staff_user_ids uuid[]) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_booking_atomic(p_company_id uuid, p_branch_id uuid, p_service_id uuid, p_customer_id uuid, p_created_by uuid, p_booking_date date, p_start_time time without time zone, p_quantity numeric, p_staff_user_id uuid, p_discount_amount numeric, p_booking_source text, p_notes text, p_cost_center_id uuid, p_skip_schedule_check boolean, p_staff_user_ids uuid[]) TO service_role;
@@ -11777,8 +11778,6 @@ REVOKE ALL ON FUNCTION public.create_generic_payment_entry(p_payment_id uuid, p_
 GRANT EXECUTE ON FUNCTION public.create_generic_payment_entry(p_payment_id uuid, p_company_id uuid, p_entry_date date, p_amount numeric, p_payment_method text, p_customer_id uuid, p_supplier_id uuid, p_description text) TO service_role;
 REVOKE ALL ON FUNCTION public.create_invoice_ar_revenue_entry(p_invoice_id uuid, p_company_id uuid, p_entry_date date, p_description text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_invoice_ar_revenue_entry(p_invoice_id uuid, p_company_id uuid, p_entry_date date, p_description text) TO service_role;
-REVOKE ALL ON FUNCTION public.create_invoice_payment_entry(p_invoice_id uuid, p_payment_id uuid, p_company_id uuid, p_entry_date date, p_amount numeric, p_payment_method text, p_description text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.create_invoice_payment_entry(p_invoice_id uuid, p_payment_id uuid, p_company_id uuid, p_entry_date date, p_amount numeric, p_payment_method text, p_description text) TO service_role;
 REVOKE ALL ON FUNCTION public.create_journal_entry_atomic(p_company_id uuid, p_reference_type text, p_reference_id uuid, p_entry_date date, p_description text, p_branch_id uuid, p_cost_center_id uuid, p_warehouse_id uuid, p_lines jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_journal_entry_atomic(p_company_id uuid, p_reference_type text, p_reference_id uuid, p_entry_date date, p_description text, p_branch_id uuid, p_cost_center_id uuid, p_warehouse_id uuid, p_lines jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_journal_entry_atomic(p_company_id uuid, p_reference_type text, p_reference_id uuid, p_entry_date date, p_description text, p_branch_id uuid, p_cost_center_id uuid, p_warehouse_id uuid, p_lines jsonb) TO service_role;
@@ -11941,6 +11940,8 @@ REVOKE ALL ON FUNCTION public.enforce_payment_approver_is_real() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.enforce_payment_approver_is_real() TO service_role;
 REVOKE ALL ON FUNCTION public.enforce_payment_names_its_author() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.enforce_payment_names_its_author() TO service_role;
+REVOKE ALL ON FUNCTION public.enforce_payment_reference_resolves() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.enforce_payment_reference_resolves() TO service_role;
 REVOKE ALL ON FUNCTION public.enforce_period_lock_header() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.enforce_period_lock_header() TO service_role;
 REVOKE ALL ON FUNCTION public.enforce_period_lock_lines() FROM PUBLIC;
@@ -13515,6 +13516,8 @@ REVOKE ALL ON FUNCTION public.payment_branch_manager_notify_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.payment_branch_manager_notify_trg() TO service_role;
 REVOKE ALL ON FUNCTION public.payment_customer_branch_manager_notify_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.payment_customer_branch_manager_notify_trg() TO service_role;
+REVOKE ALL ON FUNCTION public.payment_reference_resolves(p_company_id uuid, p_reference_type text, p_reference_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.payment_reference_resolves(p_company_id uuid, p_reference_type text, p_reference_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.payment_requires_revenue_je_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.payment_requires_revenue_je_trg() TO service_role;
 REVOKE ALL ON FUNCTION public.payment_self_approval_error(p_company_id uuid, p_created_by uuid, p_approved_by uuid) FROM PUBLIC;
@@ -13916,6 +13919,8 @@ REVOKE ALL ON FUNCTION public.reopen_fiscal_period(p_company_id uuid, p_year sma
 GRANT EXECUTE ON FUNCTION public.reopen_fiscal_period(p_company_id uuid, p_year smallint, p_month smallint, p_reopened_by uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.repair_uncompensated_duplicate_reversals() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.repair_uncompensated_duplicate_reversals() TO service_role;
+REVOKE ALL ON FUNCTION public.repair_unresolved_payment_references() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.repair_unresolved_payment_references() TO service_role;
 REVOKE ALL ON FUNCTION public.request_booking_stock_withdrawal(p_company_id uuid, p_booking_id uuid, p_bundle_item_id uuid, p_reason text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.request_booking_stock_withdrawal(p_company_id uuid, p_booking_id uuid, p_bundle_item_id uuid, p_reason text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.request_booking_stock_withdrawal(p_company_id uuid, p_booking_id uuid, p_bundle_item_id uuid, p_reason text) TO service_role;
