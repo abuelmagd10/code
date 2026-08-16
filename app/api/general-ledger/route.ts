@@ -70,42 +70,18 @@ export async function GET(req: NextRequest) {
     // المسار 1: حساب واحد مع Pagination كامل (Phase 4)
     // ══════════════════════════════════════════════════════
     if (accountId && !summaryOnly) {
-      const { data: rpcData, error: rpcErr } = await supabase.rpc(
-        "get_gl_transactions_paginated",
-        {
-          p_company_id: companyId,
-          p_account_id: accountId,
-          p_from_date:  from,
-          p_to_date:    to,
-          p_page:       page,
-          p_page_size:  pageSize
-        }
-      )
-
-      if (rpcErr) {
-        // fallback إذا لم تكن الدالة موجودة بعد (backward compatibility)
-        // PGRST202: PostgREST "Could not find the function"
-        // 42883:    PostgreSQL "undefined_function"
-        const isFunctionMissing =
-          rpcErr.code === "PGRST202" ||
-          rpcErr.code === "42883"    ||
-          rpcErr.message?.includes("Could not find the function") ||
-          rpcErr.message?.includes("does not exist")
-        if (isFunctionMissing) {
-          return legacySingleAccountGL(supabase, companyId, accountId, from, to)
-        }
-        return serverError(`خطأ في جلب دفتر الأستاذ: ${rpcErr.message}`)
-      }
-
-      const result = rpcData as any
-      return apiSuccess({
-        mode: "paginated",
-        account: result?.account,
-        openingBalance: result?.opening_balance ?? 0,
-        transactions: result?.transactions ?? [],
-        pagination: result?.pagination,
-        period: result?.period ?? { from, to }
-      })
+      // v3.75.41 — **ولا نداءَ لما لا وجودَ له.**
+      //
+      // كان هنا نداءٌ لـ`get_gl_transactions_paginated`، وقِيس على الإنتاج
+      // فسقطَ بـ42P01 `missing FROM-clause entry for table "jel"` — **على شركةِ
+      // صاحبِ العملِ نفسِه**، أى أنّه لم يعملْ قطُّ لأحد. وخطّةُ التراجعِ هنا
+      // كانت تلتقطُ «الدالّةُ غير موجودة» لا «الدالّةُ معطوبة»، فكانت الشاشةُ
+      // ترى رسالةَ خطأٍ بدل الدفتر.
+      //
+      // فأُزيلت الدالّةُ فى v3.75.41 — **وبيتٌ لا يُسكَنُ ليس بيتاً** — وصارَ
+      // هذا المسارُ ينادى الطريقَ الذى يعملُ فعلاً مباشرةً، بلا نداءٍ لاسمٍ
+      // لا وجودَ له وبلا خطّةِ تراجعٍ تُخفى عطباً.
+      return legacySingleAccountGL(supabase, companyId, accountId, from, to)
     }
 
     // ══════════════════════════════════════════════════════

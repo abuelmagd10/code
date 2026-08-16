@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-16T11:21:31.125Z
+-- Generated: 2026-08-16T13:53:44.429Z
 -- Tables: 256 | Policies: 784 | Triggers: 580 | Constraints: 1841
 -- =====================================================================
 
@@ -11048,6 +11048,10 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_39_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_39_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_40_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_40_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_41_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_41_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_42_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_42_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;
@@ -12280,9 +12284,6 @@ GRANT EXECUTE ON FUNCTION public.get_gl_account_summary(p_company_id uuid, p_fro
 REVOKE ALL ON FUNCTION public.get_gl_ar_balance_per_invoice(p_company_id uuid, p_as_of_date date) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_gl_ar_balance_per_invoice(p_company_id uuid, p_as_of_date date) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_gl_ar_balance_per_invoice(p_company_id uuid, p_as_of_date date) TO service_role;
-REVOKE ALL ON FUNCTION public.get_gl_transactions_paginated(p_company_id uuid, p_account_id uuid, p_from_date date, p_to_date date, p_page integer, p_page_size integer) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_gl_transactions_paginated(p_company_id uuid, p_account_id uuid, p_from_date date, p_to_date date, p_page integer, p_page_size integer) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_gl_transactions_paginated(p_company_id uuid, p_account_id uuid, p_from_date date, p_to_date date, p_page integer, p_page_size integer) TO service_role;
 REVOKE ALL ON FUNCTION public.get_inventory_available_balance(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_product_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_inventory_available_balance(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_product_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_inventory_available_balance(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_product_id uuid) TO service_role;
@@ -12372,9 +12373,6 @@ GRANT EXECUTE ON FUNCTION public.get_user_company_status(p_user_id uuid) TO serv
 REVOKE ALL ON FUNCTION public.get_user_dependencies(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_user_dependencies(p_company_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_user_dependencies(p_company_id uuid, p_user_id uuid) TO service_role;
-REVOKE ALL ON FUNCTION public.get_user_display_currency(p_user_id uuid, p_company_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_user_display_currency(p_user_id uuid, p_company_id uuid) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.get_user_display_currency(p_user_id uuid, p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.get_user_notifications(p_user_id uuid, p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_status character varying, p_severity character varying, p_category character varying, p_search_query text, p_priority character varying, p_reference_type character varying) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_user_notifications(p_user_id uuid, p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_status character varying, p_severity character varying, p_category character varying, p_search_query text, p_priority character varying, p_reference_type character varying) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_user_notifications(p_user_id uuid, p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_status character varying, p_severity character varying, p_category character varying, p_search_query text, p_priority character varying, p_reference_type character varying) TO service_role;

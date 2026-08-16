@@ -261,8 +261,10 @@ require("dotenv").config({ path: [".env.local", ".env", ".env.development.local"
  * v3.75.38: 142 · v3.75.39: 139 (ثلاثُ قارئاتٍ بلا قفلٍ أُزيلت مع مسارِها البديل).
  * v3.75.40: 122 — أربعةَ عشرَ باباً قُفلت بنداءٍ حىٍّ مُلغى، فوصلَ سبعةَ عشرَ
  *            إلى بوّابةِ سؤالٍ (أربعةَ عشرَ بنفسِها وثلاثةٌ عبرَ من تُفوِّضُ إليه).
+ * v3.75.41: 104 — ستَّ عشرةَ باباً أخرى قُفلت بنداءٍ حىٍّ بوسائطَ حقيقيّة،
+ *            وبابانِ لم يعملا قطُّ أُزيلا.
  */
-const PINNED = 122
+const PINNED = 104
 
 const requireDb = process.argv.includes("--require-db")
 const verbose = process.argv.includes("--list")

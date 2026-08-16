@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-16T11:21:32.369Z
+-- Generated: 2026-08-16T13:53:45.583Z
 -- Routines: 1384
 -- =====================================================================
 
@@ -7007,6 +7007,163 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- assert_baseline_v3_75_41_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_41_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  k_locked text[] := ARRAY[
+    'get_closing_preview(uuid,integer)',
+    'can_close_accounting_year(uuid,integer)',
+    'check_bill_quantities(uuid,uuid,uuid)',
+    'get_effective_available_stock(uuid,uuid,uuid)',
+    'preview_next_product_sku(uuid,uuid,text,text)',
+    'get_employee_available_commission(uuid,uuid,date,date)',
+    'get_employee_commission_summary_for_payroll(uuid,uuid,integer,integer,uuid)',
+    'get_unread_notification_count(uuid,uuid,uuid,uuid)',
+    'get_user_dependencies(uuid,uuid)',
+    'get_user_record_counts(uuid,uuid)',
+    'get_user_approval_badges(uuid,uuid)',
+    'check_user_role(uuid,uuid,text[])',
+    'check_user_access_to_record(uuid,uuid,text,uuid)',
+    'check_user_access_to_record(uuid,uuid,text,uuid,uuid)',
+    'get_journal_entry_id_for_bill_receipt(uuid,uuid)'
+  ];
+  k_dead text[] := ARRAY['get_gl_transactions_paginated', 'get_user_display_currency'];
+  v_missing text := ''; v_back text := ''; v_held int;
+BEGIN
+  -- (١) كلُّ بابٍ مقفولٍ لا يزالُ بصلاحيّاتٍ كاملةٍ ولا يزالُ يسألُ البيتَ الواحد
+  SELECT string_agg(k, ' ') INTO v_missing
+  FROM unnest(k_locked) AS k
+  WHERE NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND replace(p.oid::regprocedure::text, 'public.', '') = k
+      AND p.prosecdef
+      AND p.prosrc ~ '\massert_company_access\M'
+  );
+  IF v_missing IS NOT NULL AND v_missing <> '' THEN
+    RAISE EXCEPTION 'v3.75.41 (1): a door lost its lock or its full rights: %', v_missing;
+  END IF;
+
+  -- والسادسةَ عشرةَ يُسمّيها اسمُها وحدَه (عشرةُ وسائطَ لا تُكتَبُ هنا)
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'get_user_notifications'
+      AND p.prosecdef AND p.prosrc ~ '\massert_company_access\M'
+  ) THEN
+    RAISE EXCEPTION 'v3.75.41 (1b): get_user_notifications lost its lock or its full rights.';
+  END IF;
+
+  -- (٢) والبابانِ الميّتانِ لم يُبعَثا
+  SELECT string_agg(DISTINCT p.proname, ' ') INTO v_back
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.proname = ANY(k_dead);
+  IF v_back IS NOT NULL AND v_back <> '' THEN
+    RAISE EXCEPTION 'v3.75.41 (2): a door that never worked was born again: %', v_back;
+  END IF;
+
+  -- (٣) ولا مكانَ فى القاعدةِ ينادى ميّتاً
+  SELECT string_agg(DISTINCT q.place, ' ') INTO v_back
+  FROM (
+    SELECT 'function:' || p.proname AS place, p.prosrc AS txt
+      FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'public' AND p.proname NOT LIKE 'assert_baseline_%'
+    UNION ALL
+    SELECT 'view:' || c.relname, pg_get_viewdef(c.oid)
+      FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind IN ('v','m')
+  ) q
+  WHERE q.txt ~ ('(^|[^A-Za-z0-9_])(public\.)?(' || array_to_string(k_dead, '|') || ')\s*\(');
+  IF v_back IS NOT NULL AND v_back <> '' THEN
+    RAISE EXCEPTION 'v3.75.41 (3): a place still calls a dead door: %', v_back;
+  END IF;
+
+  -- معدودٌ لا مسكوتٌ عنه: الستُّ المؤجَّلاتُ ما زلن بلا قفل، ولا يُسكَتُ عنهنّ
+  SELECT count(*) INTO v_held
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public'
+    AND p.proname IN ('erp_is_company_owner','erp_is_company_senior','erp_payment_privileged',
+                      'erp_creator_needs_no_approval','expense_actor_may_approve','company_role_has_holder')
+    AND p.prosecdef AND p.prosrc !~ '\massert_company_access\M';
+
+  RETURN format('v3.75.41 ok - 16 measured doors locked - 2 doors that never worked are gone - %s trigger-called permission oracle(s) still open, held for a batch proven by a live write (counted, not silenced).', v_held);
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_42_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_42_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  k_pinned constant int := 1;   -- INV-00005 لدى notniche — تُصحَّحُ فى دفعةٍ تالية
+  v_dup int;
+BEGIN
+  -- (١) الشرطُ حىٌّ فى المُشغِّل، ويحكمُ بالأثرِ لا بالاسم
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'handle_invoice_cancellation_reversal'
+      AND p.prosrc ~ 'missing_from_the_mirror' AND p.prosrc ~ 'extra_in_the_mirror'
+  ) THEN
+    RAISE EXCEPTION 'v3.75.42 (1): the cancellation trigger no longer refuses to reverse what is already reversed.';
+  END IF;
+
+  -- (٢) والمُشغِّلُ نفسُه ما زال معلّقاً على الفواتير
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
+    WHERE p.proname = 'handle_invoice_cancellation_reversal' AND NOT t.tgisinternal
+      AND t.tgrelid = 'public.invoices'::regclass
+  ) THEN
+    RAISE EXCEPTION 'v3.75.42 (2): the cancellation trigger is no longer attached to invoices.';
+  END IF;
+
+  -- (٣) ومعدودٌ لا مسكوتٌ عنه: فواتيرُ لها أكثرُ من عكسٍ مطابقٍ بالأثر
+  SELECT count(*) INTO v_dup FROM (
+    SELECT o.reference_id
+    FROM journal_entries o
+    WHERE o.status = 'posted' AND o.reference_type IN ('invoice', 'invoice_cogs')
+      AND (o.is_deleted IS NULL OR o.is_deleted = false)
+      AND (
+        SELECT count(*) FROM journal_entries r
+        WHERE r.company_id = o.company_id AND r.reference_id = o.reference_id
+          AND r.id <> o.id AND r.status = 'posted'
+          AND (r.is_deleted IS NULL OR r.is_deleted = false)
+          AND NOT EXISTS (
+            SELECT 1 FROM (
+              SELECT l.account_id, l.debit_amount AS d, l.credit_amount AS c FROM journal_entry_lines l WHERE l.journal_entry_id = o.id
+              EXCEPT ALL
+              SELECT l.account_id, l.credit_amount, l.debit_amount FROM journal_entry_lines l WHERE l.journal_entry_id = r.id
+            ) q1)
+          AND NOT EXISTS (
+            SELECT 1 FROM (
+              SELECT l.account_id, l.credit_amount AS d, l.debit_amount AS c FROM journal_entry_lines l WHERE l.journal_entry_id = r.id
+              EXCEPT ALL
+              SELECT l.account_id, l.debit_amount, l.credit_amount FROM journal_entry_lines l WHERE l.journal_entry_id = o.id
+            ) q2)
+      ) > 1
+    GROUP BY o.reference_id
+  ) dup;
+
+  IF v_dup > k_pinned THEN
+    RAISE EXCEPTION 'v3.75.42 (3): % invoice(s) carry more than one mirror reversal, pinned at % - a debt that is written and not paid becomes a habit.', v_dup, k_pinned;
+  END IF;
+
+  RETURN format('v3.75.42 ok - a cancelled invoice is never reversed twice (judged by effect, not by name; proven by a live write that was rolled back) - %s invoice(s) still carry a duplicate reversal, pinned at %s and corrected in a later release.', v_dup, k_pinned);
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- assert_baseline_v3_75_6_check()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_6_check()
@@ -12400,6 +12557,7 @@ DECLARE
   v_open_periods_count INT := 0;
   v_blocking_issues    JSONB[] := '{}';
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   -- اختبار 1: قيود غير متوازنة
   SELECT COUNT(*) INTO v_unbalanced_count FROM (
     SELECT je.id FROM public.journal_entries je
@@ -13510,6 +13668,7 @@ DECLARE
   v_mismatch JSONB;
   v_valid BOOLEAN := true;
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   FOR v_bill_item IN 
     SELECT bi.*, p.name as product_name
     FROM bill_items bi
@@ -14850,6 +15009,7 @@ DECLARE
   v_has_sharing BOOLEAN;
   v_has_branch_access BOOLEAN;
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   SELECT role, branch_id INTO v_user_role, v_user_branch_id
   FROM company_members
   WHERE company_id = p_company_id AND user_id = p_user_id;
@@ -14918,6 +15078,7 @@ DECLARE
   v_sharing RECORD;
   v_result JSONB;
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   -- الحصول على معلومات العضوية
   SELECT * INTO v_member FROM company_members 
   WHERE company_id = p_company_id AND user_id = p_user_id;
@@ -14967,6 +15128,7 @@ CREATE OR REPLACE FUNCTION public.check_user_role(p_company_id uuid, p_user_id u
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   RETURN EXISTS (
     SELECT 1 FROM company_members cm
     WHERE cm.company_id = p_company_id
@@ -28409,6 +28571,7 @@ DECLARE
   v_already_closed BOOLEAN := FALSE;
   v_account        RECORD;
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   SELECT TRUE INTO v_already_closed
     FROM public.fiscal_year_closings
    WHERE company_id = p_company_id
@@ -28790,6 +28953,7 @@ DECLARE
   v_pending_wo     numeric := 0;
   v_pending_mi     numeric := 0;
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   IF p_company_id IS NULL OR p_warehouse_id IS NULL OR p_product_id IS NULL THEN
     RETURN 0;
   END IF;
@@ -28884,6 +29048,7 @@ DECLARE
     v_period_start DATE;
     v_period_end DATE;
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
     SET search_path = public, pg_temp;
 
     v_period_start := COALESCE(p_period_start, date_trunc('month', CURRENT_DATE)::DATE);
@@ -28945,6 +29110,7 @@ DECLARE
     v_advance_already_deducted DECIMAL(15,2) := 0;
     v_net_payable DECIMAL(15,2) := 0;
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
     SET search_path = public, pg_temp;
 
     v_period_start := make_date(p_period_year, p_period_month, 1);
@@ -29534,132 +29700,6 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
--- get_gl_transactions_paginated(p_company_id uuid, p_account_id uuid, p_from_date date, p_to_date date, p_page integer, p_page_size integer)
--- ---------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.get_gl_transactions_paginated(p_company_id uuid, p_account_id uuid, p_from_date date DEFAULT '0001-01-01'::date, p_to_date date DEFAULT '9999-12-31'::date, p_page integer DEFAULT 1, p_page_size integer DEFAULT 50)
- RETURNS jsonb
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE
-  v_offset         INT;
-  v_total_count    BIGINT := 0;
-  v_opening_bal    NUMERIC(15,2) := 0;
-  v_page_opening   NUMERIC(15,2) := 0;
-  v_account_info   JSONB;
-  v_transactions   JSONB;
-BEGIN
-  p_page      := GREATEST(1, p_page);
-  p_page_size := LEAST(200, GREATEST(10, p_page_size));
-  v_offset    := (p_page - 1) * p_page_size;
-
-  -- معلومات الحساب
-  SELECT jsonb_build_object(
-    'id',       coa.id,
-    'code',     coa.account_code,
-    'name',     coa.account_name,
-    'type',     coa.account_type,
-    'sub_type', coa.sub_type
-  ) INTO v_account_info
-  FROM public.chart_of_accounts coa
-  WHERE coa.id = p_account_id AND coa.company_id = p_company_id;
-
-  IF v_account_info IS NULL THEN
-    RAISE EXCEPTION 'ACCOUNT_NOT_FOUND: %', p_account_id;
-  END IF;
-
-  -- الرصيد الافتتاحي: opening_balance + حركات قبل فترة الطلب
-  SELECT ROUND((
-    COALESCE((
-      SELECT opening_balance FROM public.chart_of_accounts
-      WHERE id = p_account_id AND company_id = p_company_id
-    ), 0) +
-    COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0)
-  )::NUMERIC, 2) INTO v_opening_bal
-  FROM public.journal_entry_lines jel
-  JOIN public.journal_entries je ON je.id = jel.journal_entry_id
-  WHERE jel.account_id = p_account_id
-    AND je.company_id = p_company_id
-    AND je.status = 'posted'
-    AND (je.is_deleted IS NULL OR je.is_deleted = FALSE)
-    AND je.deleted_at IS NULL
-    AND je.entry_date < p_from_date;
-
-  -- إجمالي عدد السطور في الفترة
-  SELECT COUNT(*) INTO v_total_count
-  FROM public.journal_entry_lines jel
-  JOIN public.journal_entries je ON je.id = jel.journal_entry_id
-  WHERE jel.account_id = p_account_id
-    AND je.company_id = p_company_id
-    AND je.status = 'posted'
-    AND (je.is_deleted IS NULL OR je.is_deleted = FALSE)
-    AND je.deleted_at IS NULL
-    AND je.entry_date BETWEEN p_from_date AND p_to_date;
-
-  -- الرصيد عند بداية الصفحة الحالية (مجموع كل السطور قبل OFFSET)
-  SELECT ROUND((
-    v_opening_bal +
-    COALESCE(SUM(jel.debit_amount - jel.credit_amount), 0)
-  )::NUMERIC, 2) INTO v_page_opening
-  FROM (
-    SELECT jel.debit_amount, jel.credit_amount
-    FROM public.journal_entry_lines jel
-    JOIN public.journal_entries je ON je.id = jel.journal_entry_id
-    WHERE jel.account_id = p_account_id
-      AND je.company_id = p_company_id
-      AND je.status = 'posted'
-      AND (je.is_deleted IS NULL OR je.is_deleted = FALSE)
-      AND je.deleted_at IS NULL
-      AND je.entry_date BETWEEN p_from_date AND p_to_date
-    ORDER BY je.entry_date, je.entry_number, jel.id
-    LIMIT v_offset
-  ) pre_page;
-
-  -- جلب سطور الصفحة المطلوبة
-  SELECT jsonb_agg(row_data ORDER BY row_data->>'date', row_data->>'entry_number') INTO v_transactions
-  FROM (
-    SELECT jsonb_build_object(
-      'line_id',       jel.id,
-      'date',          je.entry_date,
-      'entry_number',  COALESCE(je.entry_number, 'JE-' || LEFT(je.id::TEXT, 8)),
-      'description',   COALESCE(jel.description, je.description, ''),
-      'reference_type', je.reference_type,
-      'debit',         ROUND(COALESCE(jel.debit_amount,  0)::NUMERIC, 2),
-      'credit',        ROUND(COALESCE(jel.credit_amount, 0)::NUMERIC, 2)
-    ) AS row_data
-    FROM public.journal_entry_lines jel
-    JOIN public.journal_entries je ON je.id = jel.journal_entry_id
-    WHERE jel.account_id = p_account_id
-      AND je.company_id = p_company_id
-      AND je.status = 'posted'
-      AND (je.is_deleted IS NULL OR je.is_deleted = FALSE)
-      AND je.deleted_at IS NULL
-      AND je.entry_date BETWEEN p_from_date AND p_to_date
-    ORDER BY je.entry_date, je.entry_number, jel.id
-    LIMIT p_page_size OFFSET v_offset
-  ) page_rows;
-
-  RETURN jsonb_build_object(
-    'account',         v_account_info,
-    'opening_balance', v_opening_bal,
-    'page_opening_balance', COALESCE(v_page_opening, v_opening_bal),
-    'transactions',    COALESCE(v_transactions, '[]'::JSONB),
-    'pagination', jsonb_build_object(
-      'page',      p_page,
-      'page_size', p_page_size,
-      'total',     v_total_count,
-      'pages',     CEIL(v_total_count::NUMERIC / p_page_size),
-      'has_next',  v_offset + p_page_size < v_total_count,
-      'has_prev',  p_page > 1
-    ),
-    'period', jsonb_build_object('from', p_from_date, 'to', p_to_date)
-  );
-END;
-$function$
-;
-
--- ---------------------------------------------------------------
 -- get_inventory_available_balance(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_product_id uuid)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_inventory_available_balance(p_company_id uuid, p_branch_id uuid DEFAULT NULL::uuid, p_warehouse_id uuid DEFAULT NULL::uuid, p_cost_center_id uuid DEFAULT NULL::uuid, p_product_id uuid DEFAULT NULL::uuid)
@@ -29984,16 +30024,21 @@ $function$
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_journal_entry_id_for_bill_receipt(p_company_id uuid, p_bill_id uuid)
  RETURNS uuid
- LANGUAGE sql
+ LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
+BEGIN
+  PERFORM public.assert_company_access(p_company_id);
+  RETURN (
   SELECT je.id
   FROM public.journal_entries je
   WHERE je.company_id = p_company_id
     AND je.reference_id = p_bill_id
   ORDER BY je.created_at DESC NULLS LAST
-  LIMIT 1;
+  LIMIT 1
+  );
+END;
 $function$
 ;
 
@@ -30732,6 +30777,7 @@ DECLARE
   v_user_role VARCHAR(50);
   v_count INTEGER;
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   -- Get user role
   SELECT cm.role INTO v_user_role
   FROM company_members cm
@@ -30781,6 +30827,7 @@ DECLARE
   v_n            int;
   v_is_admin     boolean;
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   IF p_user_id IS NULL OR p_company_id IS NULL THEN RETURN '{}'::jsonb; END IF;
   SELECT role, branch_id, warehouse_id INTO v_role, v_branch_id, v_warehouse_id
   FROM company_members WHERE user_id = p_user_id AND company_id = p_company_id;
@@ -31081,6 +31128,7 @@ DECLARE
     v_count INT;
     v_total INT := 0;
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
     -- Check Invoices
     SELECT count(*) INTO v_count FROM invoices WHERE company_id = p_company_id AND created_by_user_id = p_user_id;
     IF v_count > 0 THEN v_result := jsonb_set(v_result, '{invoices}', to_jsonb(v_count)); v_total := v_total + v_count; END IF;
@@ -31118,51 +31166,6 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
--- get_user_display_currency(p_user_id uuid, p_company_id uuid)
--- ---------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.get_user_display_currency(p_user_id uuid, p_company_id uuid)
- RETURNS text
- LANGUAGE plpgsql
- SECURITY DEFINER
- SET search_path TO 'public', 'pg_catalog'
-AS $function$
-DECLARE
-  v_is_owner BOOLEAN;
-  v_preferred_currency TEXT;
-  v_sync_enabled BOOLEAN;
-  v_company_currency TEXT;
-BEGIN
-  SELECT (user_id = p_user_id) INTO v_is_owner
-  FROM companies
-  WHERE id = p_company_id;
-
-  SELECT COALESCE(base_currency, currency, 'EGP') INTO v_company_currency
-  FROM companies
-  WHERE id = p_company_id;
-
-  IF v_is_owner THEN
-    SELECT preferred_currency INTO v_preferred_currency
-    FROM company_members
-    WHERE user_id = p_user_id AND company_id = p_company_id;
-    
-    RETURN COALESCE(v_preferred_currency, v_company_currency);
-  END IF;
-
-  SELECT preferred_currency, COALESCE(currency_sync_enabled, TRUE)
-  INTO v_preferred_currency, v_sync_enabled
-  FROM company_members
-  WHERE user_id = p_user_id AND company_id = p_company_id;
-
-  IF v_sync_enabled THEN
-    RETURN v_company_currency;
-  END IF;
-
-  RETURN COALESCE(v_preferred_currency, v_company_currency);
-END;
-$function$
-;
-
--- ---------------------------------------------------------------
 -- get_user_notifications(p_user_id uuid, p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_status character varying, p_severity character varying, p_category character varying, p_search_query text, p_priority character varying, p_reference_type character varying)
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_user_notifications(p_user_id uuid, p_company_id uuid, p_branch_id uuid DEFAULT NULL::uuid, p_warehouse_id uuid DEFAULT NULL::uuid, p_status character varying DEFAULT NULL::character varying, p_severity character varying DEFAULT NULL::character varying, p_category character varying DEFAULT NULL::character varying, p_search_query text DEFAULT NULL::text, p_priority character varying DEFAULT NULL::character varying, p_reference_type character varying DEFAULT NULL::character varying)
@@ -31176,6 +31179,7 @@ DECLARE
   v_role_norm  TEXT;
   v_exec_bypass BOOLEAN;
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   SELECT cm.role INTO v_user_role
   FROM company_members cm
   WHERE cm.user_id = p_user_id
@@ -31264,10 +31268,13 @@ $function$
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_user_record_counts(p_company_id uuid, p_user_id uuid)
  RETURNS jsonb
- LANGUAGE sql
+ LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
+BEGIN
+  PERFORM public.assert_company_access(p_company_id);
+  RETURN (
   SELECT jsonb_build_object(
     'customers',
       (SELECT count(*)::int FROM public.customers
@@ -31281,7 +31288,9 @@ AS $function$
     'bookings',
       (SELECT count(*)::int FROM public.bookings
        WHERE company_id = p_company_id AND created_by_user_id = p_user_id)
+  )
   );
+END;
 $function$
 ;
 
@@ -31758,6 +31767,46 @@ BEGIN
         AND je.reference_type IN ('invoice', 'invoice_cogs')
         AND (je.is_deleted IS NULL OR je.is_deleted = false)
     LOOP
+      -- v3.75.42 — **ولا يُعكَسُ قيدٌ عُكِسَ مرّة.**
+      --
+      -- مسارُ «الاسترداد قبلَ الشحن» يعكسُ الإيرادَ بنفسِه، ثمّ تتحوّلُ الحالةُ
+      -- إلى ملغاة فيعكسُ هذا المُشغِّلُ القيدَ الأصلىَّ ثانيةً — فيصيرُ للفاتورةِ
+      -- عكسان: الذممُ سالبةٌ والإيرادُ ناقصٌ بلا سبب (قِيس على عميلٍ حقيقىّ).
+      --
+      -- **والحكمُ بالأثرِ لا بالاسم**: لا يُنظَرُ إلى نوعِ القيدِ الآخرِ ولا إلى
+      -- مَن كتبَه، بل هل يعكسُ هذا الأصلَ **سطراً بسطر** — نفسُ الحسابات ونفسُ
+      -- المبالغ ومدينٌ مكانَ دائن. فمسارُ عكسٍ ثالثٌ يُولَدُ غداً بأىِّ اسمٍ
+      -- يراه هذا الشرطُ كما يرى الاثنَين.
+      IF EXISTS (
+        SELECT 1
+        FROM journal_entries r
+        WHERE r.company_id = NEW.company_id
+          AND r.reference_id = NEW.id
+          AND r.id <> v_original_je.id
+          AND r.status = 'posted'
+          AND (r.is_deleted IS NULL OR r.is_deleted = false)
+          AND NOT EXISTS (
+            SELECT 1 FROM (
+              SELECT l.account_id, l.debit_amount AS d, l.credit_amount AS c
+                FROM journal_entry_lines l WHERE l.journal_entry_id = v_original_je.id
+              EXCEPT ALL
+              SELECT l.account_id, l.credit_amount, l.debit_amount
+                FROM journal_entry_lines l WHERE l.journal_entry_id = r.id
+            ) missing_from_the_mirror
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM (
+              SELECT l.account_id, l.credit_amount AS d, l.debit_amount AS c
+                FROM journal_entry_lines l WHERE l.journal_entry_id = r.id
+              EXCEPT ALL
+              SELECT l.account_id, l.debit_amount, l.credit_amount
+                FROM journal_entry_lines l WHERE l.journal_entry_id = v_original_je.id
+            ) extra_in_the_mirror
+          )
+      ) THEN
+        CONTINUE;   -- عُكِسَ سلفاً بالأثر — فلا يُعكَسُ ثانية
+      END IF;
+
       -- Create reversal JE as draft
       INSERT INTO journal_entries (
         company_id, branch_id, reference_type, reference_id,
@@ -48405,6 +48454,7 @@ CREATE OR REPLACE FUNCTION public.preview_next_product_sku(p_company_id uuid, p_
 AS $function$
 DECLARE v_prefix text; v_branch text; v_pat text; v_max integer;
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   v_prefix := public.erp_product_sku_prefix(p_item_type, p_product_type);
   v_branch := coalesce(public.erp_branch_sku_code(p_branch_id), 'HO');
   v_pat := '^' || v_branch || '-' || v_prefix || '-([0-9]+)$';

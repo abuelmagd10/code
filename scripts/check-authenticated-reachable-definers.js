@@ -132,7 +132,7 @@ const { keepPath, projectCodeFiles, NOT_SHIPPED } = require("./lib/repo-code-fil
  * لا يزيد. وإن نقصَ فليُخفَضْ هنا فى دفعةِ من خفضَه، **فمكسبٌ لا يُثبَّتُ
  * يُلتَفُّ عليه**.
  */
-const BASELINE = 131;
+const BASELINE = 130;
 
 // ── الجزءُ الخالصُ من المنطق: يُختبَرُ بلا قاعدة ──────────────────────────
 
