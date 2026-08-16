@@ -259,8 +259,10 @@ require("dotenv").config({ path: [".env.local", ".env", ".env.development.local"
 /**
  * الدَّينُ المقيسُ على الإنتاج — لا يزيد.
  * v3.75.38: 142 · v3.75.39: 139 (ثلاثُ قارئاتٍ بلا قفلٍ أُزيلت مع مسارِها البديل).
+ * v3.75.40: 122 — أربعةَ عشرَ باباً قُفلت بنداءٍ حىٍّ مُلغى، فوصلَ سبعةَ عشرَ
+ *            إلى بوّابةِ سؤالٍ (أربعةَ عشرَ بنفسِها وثلاثةٌ عبرَ من تُفوِّضُ إليه).
  */
-const PINNED = 139
+const PINNED = 122
 
 const requireDb = process.argv.includes("--require-db")
 const verbose = process.argv.includes("--list")

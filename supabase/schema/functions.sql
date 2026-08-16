@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-15T17:30:11.078Z
--- Routines: 1383
+-- Generated: 2026-08-16T11:21:32.369Z
+-- Routines: 1384
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -6925,6 +6925,88 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- assert_baseline_v3_75_40_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_40_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog'
+AS $function$
+DECLARE
+  k_locked text[] := ARRAY[
+    'calculate_cogs_total(uuid,date,date,uuid,uuid,uuid)',
+    'check_gl_balance_integrity(uuid,date,date)',
+    'erp_company_senior_count(uuid)',
+    'find_company_accounts(uuid)',
+    'get_ar_reconciliation_report(uuid)',
+    'get_audit_trail_report(uuid,timestamp with time zone,timestamp with time zone,text,text)',
+    'get_gl_account_summary(uuid,date,date,uuid)',
+    'get_gl_ar_balance_per_invoice(uuid,date)',
+    'get_permission_stats(uuid)',
+    'get_privileged_manager_user_ids(uuid)',
+    'get_reconciliation_status(uuid)',
+    'get_retained_earnings_balance(uuid)',
+    'next_po_number(uuid)',
+    'assert_company_access_or_bootstrap(uuid)'
+  ];
+  v_missing text := ''; v_homes int;
+BEGIN
+  -- (١) كلُّ بابٍ مقفولٍ لا يزالُ بصلاحيّاتٍ كاملةٍ ولا يزالُ يسألُ البيتَ الواحد
+  SELECT string_agg(k, ' ') INTO v_missing
+  FROM unnest(k_locked) AS k
+  WHERE NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND replace(p.oid::regprocedure::text, 'public.', '') = k
+      AND p.prosecdef
+      AND p.prosrc ~ '\massert_company_access\M'
+  );
+  IF v_missing IS NOT NULL AND v_missing <> '' THEN
+    RAISE EXCEPTION 'v3.75.40 (1): a door lost its lock or its full rights: %', v_missing;
+  END IF;
+
+  -- (٢) ولا بيتَ ثانياً لسؤالِ الانتماء: لا فحصَ يدوىٌّ عادَ إلى الاثنَين
+  IF EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname IN ('next_po_number', 'assert_company_access_or_bootstrap')
+      AND p.prosrc ~ '\mget_user_company_ids\M'
+  ) THEN
+    RAISE EXCEPTION 'v3.75.40 (2): a hand-written membership check was born again.';
+  END IF;
+
+  -- (٣) واستثناءُ التأسيسِ المشروعُ باقٍ — فلا يُكسَرُ إنشاءُ شركةٍ جديدة
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'assert_company_access_or_bootstrap'
+      AND p.prosrc ~ 'NOT EXISTS \(SELECT 1 FROM company_members WHERE company_id = p_company_id\)'
+  ) THEN
+    RAISE EXCEPTION 'v3.75.40 (3): the genuine bootstrap exemption is gone - a new company can no longer be born.';
+  END IF;
+
+  -- (٤) والبيتُ الواحدُ نفسُه حىٌّ ويرفعُ رمزاً لا يُبتلَع
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'assert_company_access'
+      AND p.prosecdef AND p.prosrc ~ '57014'
+  ) THEN
+    RAISE EXCEPTION 'v3.75.40 (4): the one home is gone or no longer raises an unswallowable code.';
+  END IF;
+
+  -- معدودٌ لا مسكوتٌ عنه: كم بيتاً يجيبُ سؤالَ الانتماءِ اليوم؟
+  SELECT count(*) INTO v_homes
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+  WHERE n.nspname = 'public' AND p.prokind = 'f'
+    AND p.proname LIKE 'assert_company_access%';
+
+  RETURN format('v3.75.40 ok - 12 measured doors locked - 2 second homes now delegate to the one home - the genuine bootstrap exemption is intact - %s assert_company_access* function(s) exist.', v_homes);
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- assert_baseline_v3_75_6_check()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_6_check()
@@ -7460,14 +7542,10 @@ BEGIN
     RETURN;
   END IF;
 
-  IF NOT EXISTS (
-    SELECT 1 FROM company_members
-    WHERE company_id = p_company_id AND user_id = v_uid
-  ) THEN
-    -- 57014, not 42501 — see v3.74.730: WHEN OTHERS swallows 42501.
-    RAISE EXCEPTION 'غير مصرح: هذه العملية تخص شركة أخرى'
-      USING ERRCODE = '57014';
-  END IF;
+  -- v3.75.40 — ولا يُبنى بيتٌ ثانٍ: كان هنا نسخةٌ ثانيةٌ من سؤالِ الانتماء
+  -- تعرفُ company_members ولا تعرفُ companies.user_id، فترفضُ المالكَ عن
+  -- بيتِه. والسؤالُ الآنَ يُطرحُ فى بيتِه الواحد.
+  PERFORM public.assert_company_access(p_company_id);
 END;
 $function$
 ;
@@ -11575,6 +11653,7 @@ AS $function$
 DECLARE
   v_total NUMERIC := 0;
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   SELECT COALESCE(SUM(total_cost), 0)
   INTO v_total
   FROM cogs_transactions
@@ -11584,7 +11663,7 @@ BEGIN
     AND (p_branch_id IS NULL OR branch_id = p_branch_id)
     AND (p_cost_center_id IS NULL OR cost_center_id = p_cost_center_id)
     AND (p_warehouse_id IS NULL OR warehouse_id = p_warehouse_id);
-  
+
   RETURN v_total;
 END;
 $function$
@@ -13892,10 +13971,13 @@ $function$
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.check_gl_balance_integrity(p_company_id uuid, p_from_date date DEFAULT NULL::date, p_to_date date DEFAULT CURRENT_DATE)
  RETURNS TABLE(check_name text, result text, total_debit numeric, total_credit numeric, difference numeric, unbalanced_count bigint, status text)
- LANGUAGE sql
+ LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
+BEGIN
+  PERFORM public.assert_company_access(p_company_id);
+  RETURN QUERY
   WITH posted_entries AS (
     SELECT je.id, je.entry_date
     FROM journal_entries je
@@ -13935,6 +14017,7 @@ AS $function$
          ELSE 'GL غير متوازن - يوجد خطأ في القيود المحاسبية'
     END                                              AS status
   FROM company_totals;
+END;
 $function$
 ;
 
@@ -23230,19 +23313,24 @@ $function$
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.erp_company_senior_count(p_company_id uuid)
  RETURNS integer
- LANGUAGE sql
+ LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
-  SELECT count(*)::int FROM (
-    SELECT user_id FROM company_members
-      WHERE company_id = p_company_id
-        AND user_id IS NOT NULL
-        AND lower(role) IN ('owner','admin')
-    UNION
-    SELECT user_id FROM companies
-      WHERE id = p_company_id AND user_id IS NOT NULL
-  ) s;
+BEGIN
+  PERFORM public.assert_company_access(p_company_id);
+  RETURN (
+    SELECT count(*)::int FROM (
+      SELECT user_id FROM company_members
+        WHERE company_id = p_company_id
+          AND user_id IS NOT NULL
+          AND lower(role) IN ('owner','admin')
+      UNION
+      SELECT user_id FROM companies
+        WHERE id = p_company_id AND user_id IS NOT NULL
+    ) s
+  );
+END;
 $function$
 ;
 
@@ -25383,65 +25471,66 @@ CREATE OR REPLACE FUNCTION public.find_company_accounts(p_company_id uuid)
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   RETURN QUERY
-  SELECT 
+  SELECT
     -- AR (Accounts Receivable)
-    (SELECT id FROM chart_of_accounts 
-     WHERE company_id = p_company_id 
-     AND sub_type = 'accounts_receivable' 
-     AND is_active = true 
+    (SELECT id FROM chart_of_accounts
+     WHERE company_id = p_company_id
+     AND sub_type = 'accounts_receivable'
+     AND is_active = true
      LIMIT 1) as ar_account_id,
-    
+
     -- AP (Accounts Payable)
-    (SELECT id FROM chart_of_accounts 
-     WHERE company_id = p_company_id 
-     AND sub_type = 'accounts_payable' 
-     AND is_active = true 
+    (SELECT id FROM chart_of_accounts
+     WHERE company_id = p_company_id
+     AND sub_type = 'accounts_payable'
+     AND is_active = true
      LIMIT 1) as ap_account_id,
-    
+
     -- Revenue
-    (SELECT id FROM chart_of_accounts 
-     WHERE company_id = p_company_id 
-     AND account_type = 'income' 
-     AND is_active = true 
-     ORDER BY account_code 
+    (SELECT id FROM chart_of_accounts
+     WHERE company_id = p_company_id
+     AND account_type = 'income'
+     AND is_active = true
+     ORDER BY account_code
      LIMIT 1) as revenue_account_id,
-    
+
     -- Expense
-    (SELECT id FROM chart_of_accounts 
-     WHERE company_id = p_company_id 
-     AND account_type = 'expense' 
-     AND is_active = true 
-     ORDER BY account_code 
+    (SELECT id FROM chart_of_accounts
+     WHERE company_id = p_company_id
+     AND account_type = 'expense'
+     AND is_active = true
+     ORDER BY account_code
      LIMIT 1) as expense_account_id,
-    
+
     -- Cash
-    (SELECT id FROM chart_of_accounts 
-     WHERE company_id = p_company_id 
-     AND sub_type = 'cash' 
-     AND is_active = true 
+    (SELECT id FROM chart_of_accounts
+     WHERE company_id = p_company_id
+     AND sub_type = 'cash'
+     AND is_active = true
      LIMIT 1) as cash_account_id,
-    
+
     -- Bank
-    (SELECT id FROM chart_of_accounts 
-     WHERE company_id = p_company_id 
-     AND sub_type IN ('bank', 'checking', 'savings') 
-     AND is_active = true 
+    (SELECT id FROM chart_of_accounts
+     WHERE company_id = p_company_id
+     AND sub_type IN ('bank', 'checking', 'savings')
+     AND is_active = true
      LIMIT 1) as bank_account_id,
-    
+
     -- VAT Payable
-    (SELECT id FROM chart_of_accounts 
-     WHERE company_id = p_company_id 
+    (SELECT id FROM chart_of_accounts
+     WHERE company_id = p_company_id
      AND (account_name ILIKE '%vat%' OR account_name ILIKE '%ضريبة%' OR account_name ILIKE '%tax%')
      AND account_type = 'liability'
-     AND is_active = true 
+     AND is_active = true
      LIMIT 1) as vat_payable_account_id,
-    
+
     -- Shipping
-    (SELECT id FROM chart_of_accounts 
-     WHERE company_id = p_company_id 
+    (SELECT id FROM chart_of_accounts
+     WHERE company_id = p_company_id
      AND (account_name ILIKE '%shipping%' OR account_name ILIKE '%شحن%' OR account_name ILIKE '%freight%')
-     AND is_active = true 
+     AND is_active = true
      LIMIT 1) as shipping_account_id;
 END;
 $function$
@@ -27771,10 +27860,13 @@ $function$
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_ar_reconciliation_report(p_company_id uuid)
  RETURNS TABLE(source text, total_outstanding numeric, invoice_count bigint, note text)
- LANGUAGE sql
+ LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
+BEGIN
+  PERFORM public.assert_company_access(p_company_id);
+  RETURN QUERY
   SELECT
     'GL (journal_entry_lines)'::TEXT AS source,
     ROUND(SUM(GREATEST(0,
@@ -27834,6 +27926,7 @@ AS $function$
   WHERE i.company_id = p_company_id
     AND i.status IN ('sent', 'partially_paid')
     AND (i.is_deleted IS NULL OR i.is_deleted = false);
+END;
 $function$
 ;
 
@@ -27912,6 +28005,7 @@ CREATE OR REPLACE FUNCTION public.get_audit_trail_report(p_company_id uuid, p_st
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   RETURN QUERY
   SELECT
     al.id,
@@ -29275,10 +29369,13 @@ $function$
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_gl_account_summary(p_company_id uuid, p_from_date date DEFAULT '0001-01-01'::date, p_to_date date DEFAULT '9999-12-31'::date, p_account_id uuid DEFAULT NULL::uuid)
  RETURNS TABLE(account_id uuid, account_code text, account_name text, account_type text, sub_type text, opening_balance numeric, total_debit numeric, total_credit numeric, closing_balance numeric, transaction_count bigint)
- LANGUAGE sql
+ LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
+BEGIN
+  PERFORM public.assert_company_access(p_company_id);
+  RETURN QUERY
   WITH period_movements AS (
     SELECT
       jel.account_id,
@@ -29336,6 +29433,7 @@ AS $function$
       OR ABS(COALESCE(coa.opening_balance, 0) + COALESCE(pp.pre_net, 0)) >= 0.01
     )
   ORDER BY coa.account_code;
+END;
 $function$
 ;
 
@@ -29344,10 +29442,13 @@ $function$
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_gl_ar_balance_per_invoice(p_company_id uuid, p_as_of_date date DEFAULT CURRENT_DATE)
  RETURNS TABLE(invoice_id text, customer_id uuid, invoice_number text, invoice_date date, due_date date, ar_debit numeric, ar_credit numeric, outstanding numeric)
- LANGUAGE sql
+ LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'pg_catalog'
 AS $function$
+BEGIN
+  PERFORM public.assert_company_access(p_company_id);
+  RETURN QUERY
   WITH ar_accounts AS (
     SELECT id
     FROM chart_of_accounts
@@ -29428,6 +29529,7 @@ AS $function$
     AND (i.is_deleted IS NULL OR i.is_deleted = false)
     AND COALESCE(d.amount, 0) > 0
   ORDER BY i.due_date ASC NULLS LAST;
+END;
 $function$
 ;
 
@@ -30108,15 +30210,16 @@ DECLARE
   v_total_transfers INTEGER;
   v_branch_access INTEGER;
 BEGIN
-  SELECT COUNT(*) INTO v_active_sharing FROM permission_sharing 
+  PERFORM public.assert_company_access(p_company_id);
+  SELECT COUNT(*) INTO v_active_sharing FROM permission_sharing
   WHERE company_id = p_company_id AND is_active = TRUE;
-  
-  SELECT COUNT(*) INTO v_total_transfers FROM permission_transfers 
+
+  SELECT COUNT(*) INTO v_total_transfers FROM permission_transfers
   WHERE company_id = p_company_id;
-  
-  SELECT COUNT(*) INTO v_branch_access FROM user_branch_access 
+
+  SELECT COUNT(*) INTO v_branch_access FROM user_branch_access
   WHERE company_id = p_company_id AND is_active = TRUE;
-  
+
   RETURN jsonb_build_object(
     'active_sharing', v_active_sharing,
     'total_transfers', v_total_transfers,
@@ -30131,10 +30234,13 @@ $function$
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.get_privileged_manager_user_ids(p_company_id uuid)
  RETURNS TABLE(user_id uuid)
- LANGUAGE sql
+ LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO 'public'
 AS $function$
+BEGIN
+  PERFORM public.assert_company_access(p_company_id);
+  RETURN QUERY
   SELECT DISTINCT cm.user_id
   FROM public.company_members cm
   WHERE cm.company_id = p_company_id
@@ -30142,6 +30248,7 @@ AS $function$
       'owner',
       'admin'
     );
+END;
 $function$
 ;
 
@@ -30156,6 +30263,7 @@ CREATE OR REPLACE FUNCTION public.get_reconciliation_status(p_company_id uuid)
 AS $function$
 DECLARE v_result JSONB; v_last_run DATE; v_critical INTEGER; v_warnings INTEGER;
 BEGIN
+  PERFORM public.assert_company_access(p_company_id);
   SELECT MAX(run_date) INTO v_last_run FROM daily_reconciliation_log WHERE company_id = p_company_id;
   SELECT COUNT(CASE WHEN severity='critical' AND NOT is_ok THEN 1 END),
          COUNT(CASE WHEN severity='warning' AND NOT is_ok THEN 1 END)
@@ -30223,40 +30331,41 @@ CREATE OR REPLACE FUNCTION public.get_retained_earnings_balance(p_company_id uui
 AS $function$
 DECLARE
   v_re  DECIMAL := 0;
-    v_inc DECIMAL := 0;
-      v_exp DECIMAL := 0;
-      BEGIN
-        SELECT COALESCE(SUM(jel.credit_amount) - SUM(jel.debit_amount), 0)
-            INTO v_re
-              FROM journal_entry_lines jel
-                JOIN journal_entries je ON je.id = jel.journal_entry_id
-                  JOIN chart_of_accounts coa ON coa.id = jel.account_id
-                    WHERE coa.company_id = p_company_id
-                        AND coa.account_type = 'equity'
-                            AND (coa.sub_type = 'retained_earnings' OR coa.account_code = '3200')
-                                AND je.company_id = p_company_id
-                                    AND COALESCE(je.status, 'posted') NOT IN ('cancelled', 'draft');
-                                      SELECT COALESCE(SUM(jel.credit_amount) - SUM(jel.debit_amount), 0)
-                                          INTO v_inc
-                                            FROM journal_entry_lines jel
-                                              JOIN journal_entries je ON je.id = jel.journal_entry_id
-                                                JOIN chart_of_accounts coa ON coa.id = jel.account_id
-                                                  WHERE coa.company_id = p_company_id
-                                                      AND coa.account_type IN ('income', 'revenue')
-                                                          AND je.company_id = p_company_id
-                                                              AND je.status = 'posted';
-                                                                SELECT COALESCE(SUM(jel.debit_amount) - SUM(jel.credit_amount), 0)
-                                                                    INTO v_exp
-                                                                      FROM journal_entry_lines jel
-                                                                        JOIN journal_entries je ON je.id = jel.journal_entry_id
-                                                                          JOIN chart_of_accounts coa ON coa.id = jel.account_id
-                                                                            WHERE coa.company_id = p_company_id
-                                                                                AND coa.account_type = 'expense'
-                                                                                    AND je.company_id = p_company_id
-                                                                                        AND je.status = 'posted';
-                                                                                          RETURN v_re + (v_inc - v_exp);
-                                                                                          END;
-                                                                                          $function$
+  v_inc DECIMAL := 0;
+  v_exp DECIMAL := 0;
+BEGIN
+  PERFORM public.assert_company_access(p_company_id);
+  SELECT COALESCE(SUM(jel.credit_amount) - SUM(jel.debit_amount), 0)
+    INTO v_re
+    FROM journal_entry_lines jel
+    JOIN journal_entries je ON je.id = jel.journal_entry_id
+    JOIN chart_of_accounts coa ON coa.id = jel.account_id
+    WHERE coa.company_id = p_company_id
+      AND coa.account_type = 'equity'
+      AND (coa.sub_type = 'retained_earnings' OR coa.account_code = '3200')
+      AND je.company_id = p_company_id
+      AND COALESCE(je.status, 'posted') NOT IN ('cancelled', 'draft');
+  SELECT COALESCE(SUM(jel.credit_amount) - SUM(jel.debit_amount), 0)
+    INTO v_inc
+    FROM journal_entry_lines jel
+    JOIN journal_entries je ON je.id = jel.journal_entry_id
+    JOIN chart_of_accounts coa ON coa.id = jel.account_id
+    WHERE coa.company_id = p_company_id
+      AND coa.account_type IN ('income', 'revenue')
+      AND je.company_id = p_company_id
+      AND je.status = 'posted';
+  SELECT COALESCE(SUM(jel.debit_amount) - SUM(jel.credit_amount), 0)
+    INTO v_exp
+    FROM journal_entry_lines jel
+    JOIN journal_entries je ON je.id = jel.journal_entry_id
+    JOIN chart_of_accounts coa ON coa.id = jel.account_id
+    WHERE coa.company_id = p_company_id
+      AND coa.account_type = 'expense'
+      AND je.company_id = p_company_id
+      AND je.status = 'posted';
+  RETURN v_re + (v_inc - v_exp);
+END;
+$function$
 ;
 
 -- ---------------------------------------------------------------
@@ -42478,12 +42587,11 @@ BEGIN
     RAISE EXCEPTION 'v3.74.952: لا يُولَّد رقمُ أمرِ شراءٍ بلا شركة.';
   END IF;
 
-  -- صلاحيةٌ مرتفعةٌ لا تعنى بابًا مفتوحاً: جلسةُ مستخدمٍ لا تسأل عن شركةٍ
-  -- ليست له. وغيابُ الجلسة (خادمٌ موثوق) يمرّ.
-  IF auth.uid() IS NOT NULL
-     AND p_company_id NOT IN (SELECT public.get_user_company_ids()) THEN
-    RAISE EXCEPTION 'v3.74.952: لا صلةَ لك بهذه الشركة.';
-  END IF;
+  -- v3.75.40 — كان هنا فحصٌ مكتوبٌ بيدِه يرفعُ الرفضَ برمزٍ عامٍّ يبتلعُه
+  -- WHEN OTHERS. والمجموعةُ نفسُها (عضويّةٌ ∪ ملكيّة) هى ما تفحصُه البوّابةُ
+  -- الواحدة، ورمزُها لا يُبتلَع. (ولا يُذكَرُ هنا اسمُ الفحصِ القديم: فحصٌ
+  -- يُسمّى ما يحرسُه ليس مُنادِياً له، لكنّ الباحثَ النصّىَّ لا يعرفُ ذلك.)
+  PERFORM public.assert_company_access(p_company_id);
 
   SELECT COALESCE(MAX(CAST(SUBSTRING(po_number FROM 'PO-([0-9]+)') AS INTEGER)), 0)
     INTO v_max
