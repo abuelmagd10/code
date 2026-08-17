@@ -1,0 +1,348 @@
+#!/usr/bin/env node
+/**
+ * check-a-currency-is-not-invented-in-the-database.js
+ * ---------------------------------------------------------------------------
+ * v3.75.52 — **«ولا تُخترَعُ عملةٌ، بل تُقرأُ من صاحبِها».**
+ *
+ * لماذا وُلد هذا الحارس
+ * ---------------------
+ * حارسُ v3.75.50 يمنعُ أن تُكتَبَ عملةٌ حرفاً **فى شيفرةِ الشاشات**. وكانت
+ * القاعدةُ نفسُها بلا عين: قِيست فوُجدَ فيها **٤٨ موضعاً** تُسمّى عملةً
+ * بعينِها داخلَ دوالِّها، و**٣٣ عموداً** فى جداولِ الشركاتِ تحملُ عملةً
+ * مكتوبةً كقيمةٍ افتراضيّة — ثلاثةٌ منها لا تقولُ حتى الجنيه:
+ * `purchase_orders.currency = 'SAR'`، و`approval_workflows.currency_code = 'USD'`،
+ * و`company_seats.display_currency = 'USD'`.
+ *
+ * وثلاثةٌ من تلك المواضعِ لم تكن تسميةً بل **قرارَ مال**: مُشغِّلاتٌ تقسمُ
+ * المبلغَ على سعرِ صرفٍ إن لم تكنِ العملةُ «جنيهاً» مكتوباً حرفاً. فسُدِّدت
+ * فى v3.75.52، ووُلدَ لها بيتٌ واحد: `erp_company_base_currency(uuid)`.
+ *
+ * **ومكسبٌ لا يُثبَّتُ يُلتَفُّ عليه.** فهذا الحارسُ يُثبِّتُ ما بقى ويرفضُ
+ * فى الاتّجاهَين: لا موضعَ جديدٌ يُسمّى عملةً فى القاعدة، ولا عمودَ جديدٌ
+ * يخترعُ عملةً لشركةٍ لم تُسجَّلْ بعد — **ومن سدَّد يُثبِّتُ رقمَه الجديدَ فى
+ * الدفعةِ التى سدَّدت**، وإلّا رفضَ الحارسُ أيضاً.
+ *
+ * ما يفحصه — بالأثرِ لا بالاسم
+ * -----------------------------
+ *   (١) دوالُّ القاعدةِ التى تُسمّى عملةً بعينِها **بعدَ حجبِ التعليقات** —
+ *       فـ**التعليقُ ليس تعليمة**. وتُستثنى `assert_baseline_%` بالاسم، لأنّ
+ *       الفحوصَ المرجعيّةَ تحملُ نصَّ المواصفةِ نفسِه — **وفحصٌ يعدُّ نفسَه
+ *       ليس فحصاً**.
+ *   (٢) أعمدةُ جداولِ الشركاتِ (التى تحملُ `company_id`) وقيمُها الافتراضيّةُ
+ *       التى تُسمّى عملة. وما ليس من جداولِ الشركاتِ يُعلَنُ بسببِه وشرطِ رفعِه.
+ *   (٣) المُشغِّلاتُ الثلاثةُ التى سُدِّدت: لا تُسمّى عملةً، **وتنادى البيتَ
+ *       الواحدَ فعلاً** — والذِّكرُ ليس نداءً، فيُقاسُ نصُّ النداءِ لا نصُّ الاسم.
+ *   (٤) البيتُ الواحدُ قائمٌ، **بصلاحيّاتِ مُنادِيه** لا بصلاحيّاتٍ كاملة،
+ *       ولا يبلغُه زائرٌ ولا مستخدِمٌ مسجَّل.
+ *   (٥) الفحصُ المرجعىُّ `assert_baseline_v3_75_52_check` قائمٌ ومغلَقٌ —
+ *       **وحارسٌ يُفتَحُ بابُه ليس حارساً**.
+ *
+ * ويُصنَّفُ كلُّ موضعٍ باقٍ بأثرِه: **قرارُ مالٍ** إن كانتِ العملةُ فى موضعِ
+ * مقارنةٍ يتفرّعُ عليها حساب، و**وسمٌ يُكتَبُ أو يُرسَل** إن كانت قيمةً تُسجَّلُ
+ * أو تُعرَض. والأوّلُ أثقل، ويُسدَّدُ أوّلاً — **الاهمُّ ثمّ الاهمّ**.
+ *
+ * الاستعمال
+ * ---------
+ *   node scripts/check-a-currency-is-not-invented-in-the-database.js [--require-db]
+ *   node scripts/check-a-currency-is-not-invented-in-the-database.js --selftest
+ * ---------------------------------------------------------------------------
+ */
+"use strict"
+
+const { withLiveDatabase } = require("./lib/live-db")
+
+/** الأرقامُ المُثبَّتة — قِيست حيّةً على البيتَين يومَ v3.75.52. */
+const PINNED_FUNCS = 35
+const PINNED_SITES = 37
+const PINNED_DEFAULTS = 30
+
+/** البيتُ الواحدُ وعنوانُ السداد. */
+const HOME = "erp_company_base_currency"
+const BASELINE = "assert_baseline_v3_75_52_check"
+
+/** المُشغِّلاتُ الثلاثةُ التى سُدِّدت فى v3.75.52. */
+const HEALED = [
+  "fill_customer_credit_fx_from_source",
+  "fill_customer_credit_ledger_fx_from_source",
+  "fill_vendor_credit_fx_from_source",
+]
+
+/**
+ * أعمدةٌ تُسمّى عملةً ولا تخصُّ شركةً بعينِها — **ومعلومٌ يُعلَنُ لا يُسكَتُ عنه**.
+ * كلُّ إعلانٍ يحملُ سببَه وشرطَ رفعِه، ويُقاسُ أنّه ما زال حيّاً فى كلِّ تشغيل.
+ */
+const DECLARED = {
+  "companies.base_currency": {
+    why: "هذا هو **موضعُ الاختيارِ نفسُه**: العمودُ الذى يُسألُ عنه كلُّ ما سواه. وقيمتُه الافتراضيّةُ لا تُقرَأُ فى الواقع، فمسارُ التسجيلِ يكتبُها صراحةً من اختيارِ المالك",
+    lift: "يُرفَع حين يصيرُ العمودُ بلا افتراضٍ أصلاً — وذلك يحتاجُ قياسَ كلِّ مسارِ إنشاءِ شركةٍ أنّه يقولُ العملةَ صراحةً",
+  },
+  "pending_companies.currency": {
+    why: "التسجيلُ يقعُ **قبلَ وجودِ شركة**، فلا صفَّ تُقرأُ منه العملة. والقيمةُ الافتراضيّةُ هنا اختيارٌ أوّلىٌّ تُبدِّلُه الشاشةُ قبلَ الإرسال",
+    lift: "يُرفَع حين تُجبِرُ شاشةُ التسجيلِ على اختيارٍ صريحٍ فيصيرُ العمودُ بلا افتراض",
+  },
+  "subscription_plans.base_currency": {
+    why: "**عملةُ المشروعِ نفسِه** فى تسعيرِ الاشتراكات، لا عملةَ عميل. وهى قرارُ صاحبِ المنصّةِ لا قرارُ الشركةِ المشتركة",
+    lift: "يُرفَع حين تُنقَلُ عملةُ التسعيرِ إلى إعداداتِ المنصّةِ فيصيرُ العمودُ بلا افتراض",
+  },
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// الأحكامُ الخالصة — تُقاسُ فى الفخِّ الذاتىِّ بلا قاعدة
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** **ويرفضُ فى الاتّجاهَين**: زيادةٌ عطبٌ جديد، ونقصانٌ مكسبٌ لم يُثبَّت. */
+function judgePin(found, pinned) {
+  if (found > pinned) return "grew"
+  if (found < pinned) return "shrank"
+  return "ok"
+}
+
+/**
+ * **ويُسمّى الأثرَ لا الشكل**: عملةٌ فى موضعِ مقارنةٍ يتفرّعُ عليها حسابٌ
+ * قرارُ مال، وعملةٌ فى موضعِ قيمةٍ وسمٌ يُكتَبُ أو يُرسَل.
+ */
+function classifySite(line) {
+  const s = String(line || "")
+  const q = "'(?:EGP|USD|SAR|EUR|GBP|AED|KWD|JOD|QAR|BHD|OMR)'"
+  const compared = new RegExp("(?:=|<>|!=|IN\\s*\\()\\s*" + q, "i").test(s) ||
+                   new RegExp(q + "\\s*(?:=|<>|!=)", "i").test(s)
+  const branching = /\b(CASE\s+WHEN|IF|ELSIF|AND|OR|WHERE)\b/i.test(s)
+  return compared && branching ? "قرارُ مالٍ" : "وسمٌ يُكتَبُ أو يُرسَل"
+}
+
+/** ولا إعلانٌ ميّت: كلُّ عمودٍ مُعلَنٍ يجبُ أن يكونَ حيّاً فى القاعدة. */
+function judgeDeadDeclarations(liveCols) {
+  const live = new Set(liveCols || [])
+  return Object.keys(DECLARED).filter((k) => !live.has(k)).sort()
+}
+
+/** والبيتُ الواحدُ يُحاكَمُ بخاصّيّتِه: قائمٌ، بصلاحيّاتِ مُنادِيه، ومغلَق. */
+function judgeHome(row) {
+  const out = []
+  const r = row || {}
+  if (!Number(r.exists_)) out.push("البيتُ الواحدُ " + HOME + " غائبٌ من القاعدة — **وبحثٌ لا يجد ليس دليلَ غياب**، فهذا غيابٌ مقيس")
+  else {
+    if (Number(r.secdef)) out.push(HOME + " صارَ بصلاحيّاتٍ كاملة — وكان بصلاحيّاتِ مُنادِيه عن قصد، فحمايةُ الصفوفِ تحرسُه")
+    if (Number(r.open_)) out.push(HOME + " صارَ يبلغُه زائرٌ أو مستخدِمٌ مسجَّل (" + r.open_ + " صلاحيّة)")
+  }
+  return out
+}
+
+/** والمُشغِّلاتُ المُسدَّدةُ تُحاكَمُ بالنداءِ لا بالاسم. */
+function judgeHealed(rows) {
+  const out = []
+  const seen = new Map((rows || []).map((r) => [r.proname, r]))
+  for (const name of HEALED) {
+    const r = seen.get(name)
+    if (!r) { out.push(name + " اختفى من القاعدة") ; continue }
+    if (Number(r.names_currency)) out.push(name + " عادَ يُسمّى عملةً بعينِها")
+    if (!Number(r.calls_home)) out.push(name + " لم يعُدْ ينادى " + HOME + "(NEW.company_id) — **والذِّكرُ ليس نداءً**")
+  }
+  return out
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// الفخُّ الذاتىّ
+// ═══════════════════════════════════════════════════════════════════════════
+if (process.argv.includes("--selftest")) {
+  const cases = []
+  const t = (name, got, exp) => cases.push([name, JSON.stringify(got), JSON.stringify(exp)])
+
+  // ── التثبيتُ يرفضُ فى الاتّجاهَين ────────────────────────────────────────
+  t("يمرُّ حين يُطابقُ الرقمُ المُثبَّت", judgePin(35, 35), "ok")
+  t("ويرفضُ موضعاً جديداً", judgePin(36, 35), "grew")
+  t("ويرفضُ نقصاً لم يُثبَّتْ — ومكسبٌ لا يُثبَّتُ يُلتَفُّ عليه", judgePin(34, 35), "shrank")
+  t("ويرفضُ الصفرَ غيرَ المُثبَّت", judgePin(0, 35), "shrank")
+
+  // ── التصنيفُ بالأثر ─────────────────────────────────────────────────────
+  t("يرى قرارَ مالٍ فى مقارنةِ CASE", classifySite("CASE WHEN v_currency = 'EGP' THEN NEW.amount ELSE x END"), "قرارُ مالٍ")
+  t("ويراه فى شرطِ IF", classifySite("IF v_exp_currency <> 'EGP' THEN"), "قرارُ مالٍ")
+  t("ويراه فى شرطِ WHERE", classifySite("AND COALESCE(p.original_currency, 'EGP') <> 'EGP'"), "قرارُ مالٍ")
+  t("ويرى الوسمَ حين تكونُ قيمةً تُكتَب", classifySite("v_currency := COALESCE(NEW.currency_code, 'EGP');"), "وسمٌ يُكتَبُ أو يُرسَل")
+  t("ويراه فى قيمةٍ تُدخَلُ فى صفّ", classifySite("COALESCE(NULLIF(p_so_data->>'currency', ''), 'EGP'),"), "وسمٌ يُكتَبُ أو يُرسَل")
+  t("ولا يعدُّ مساواةَ تعيينٍ مقارنةً", classifySite("v_base_ccy := UPPER(COALESCE(v_base_ccy, 'EGP'));"), "وسمٌ يُكتَبُ أو يُرسَل")
+  t("ولا يحكمُ على سطرٍ بلا عملة", classifySite("NEW.original_amount := NEW.amount;"), "وسمٌ يُكتَبُ أو يُرسَل")
+
+  // ── الإعلاناتُ حيّةٌ وكاملة ──────────────────────────────────────────────
+  const ALIVE = Object.keys(DECLARED)
+  t("يقبلُ الإعلاناتِ كلَّها حيّة", judgeDeadDeclarations(ALIVE).length, 0)
+  t("ويمسكُ إعلاناً مات عمودُه", judgeDeadDeclarations(ALIVE.slice(1)).length, 1)
+  t("ويُسمّى الميّتَ بعينِه", judgeDeadDeclarations(ALIVE.slice(1))[0], ALIVE[0])
+  t("ويمسكُ موتَ الجميع", judgeDeadDeclarations([]).length, ALIVE.length)
+  t("ولا إعلانَ بلا سبب", Object.values(DECLARED).every((d) => d.why && d.why.length > 30), true)
+  t("ولا إعلانَ بلا شرطِ رفع", Object.values(DECLARED).every((d) => d.lift && d.lift.length > 20), true)
+
+  // ── البيتُ الواحدُ يُحاكَمُ بخاصّيّتِه ───────────────────────────────────
+  t("يقبلُ بيتاً قائماً بصلاحيّاتِ مُنادِيه ومغلَقاً", judgeHome({ exists_: 1, secdef: 0, open_: 0 }).length, 0)
+  t("ويرفضُ غيابَه", judgeHome({ exists_: 0 }).length, 1)
+  t("ويرفضُ أن يصيرَ بصلاحيّاتٍ كاملة", judgeHome({ exists_: 1, secdef: 1, open_: 0 }).length, 1)
+  t("ويرفضُ أن يُفتَحَ لمستخدِم", judgeHome({ exists_: 1, secdef: 0, open_: 2 }).length, 1)
+  t("ويجمعُ العطبَين", judgeHome({ exists_: 1, secdef: 1, open_: 1 }).length, 2)
+
+  // ── والمُسدَّدُ يُحاكَمُ بالنداءِ لا بالاسم ──────────────────────────────
+  const OK3 = HEALED.map((n) => ({ proname: n, names_currency: 0, calls_home: 1 }))
+  t("يمرُّ حين الثلاثةُ نظيفةٌ وتنادى البيت", judgeHealed(OK3).length, 0)
+  t("ويرفضُ عودةَ عملةٍ حرفيّةٍ فى أحدِها",
+    judgeHealed(OK3.map((r, i) => (i === 0 ? { ...r, names_currency: 1 } : r))).length, 1)
+  t("ويرفضُ من كفَّ عن نداءِ البيت — والذِّكرُ ليس نداءً",
+    judgeHealed(OK3.map((r, i) => (i === 1 ? { ...r, calls_home: 0 } : r))).length, 1)
+  t("ويُسمّى الغائبَ بعينِه", judgeHealed(OK3.slice(1)).length, 1)
+  t("ويرفضُ الجميعَ حين لا صفَّ أصلاً — وبحثٌ لا يجد ليس دليلَ حياة", judgeHealed([]).length, 3)
+
+  let fail = 0
+  for (const [name, got, exp] of cases) {
+    const ok = got === exp
+    if (!ok) fail++
+    console.log((ok ? "  ok  " : "  X   ") + name + "  (توقّعتُ " + exp + " فجاء " + got + ")")
+  }
+  if (fail) { console.error("X سقط الفخُّ الذاتىّ فى " + fail + " اتّجاه."); process.exit(1) }
+  console.log("  الفخُّ الذاتىّ: " + cases.length + " اتّجاهاً، كلُّها صحيحة.")
+  process.exit(0)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// القياسُ الحىّ
+// ═══════════════════════════════════════════════════════════════════════════
+require("dotenv").config({ path: [".env.local", ".env", ".env.development.local"] })
+const requireDb = process.argv.includes("--require-db")
+const url = process.env.PRODUCTION_SUPABASE_DB_URL
+if (!url) {
+  const msg = "PRODUCTION_SUPABASE_DB_URL غير مضبوط - لا يمكن قياسُ عملاتِ القاعدة."
+  if (requireDb) { console.error("X " + msg); process.exit(1) }
+  console.log("! " + msg + " تُخطّى (مرّر --require-db لجعلها قاتلة).")
+  process.exit(0)
+}
+
+// **بيتٌ واحدٌ للقاعدةِ النمطيّة**: تُكتَبُ مرّةً وتُستعمَلُ فى كلِّ استعلام.
+const CCY = "'''(EGP|USD|SAR|EUR|GBP|AED|KWD|JOD|QAR|BHD|OMR)'''"
+// **والتعليقُ ليس تعليمة**: يُحجَبُ الكتلىُّ والسطرىُّ قبلَ الحكم.
+const BLANK = "regexp_replace(regexp_replace(p.prosrc, '/\\*.*?\\*/', ' ', 'gs'), '--[^\\n]*', ' ', 'g')"
+
+;(async () => {
+  const data = await withLiveDatabase(url, async (c) => {
+    const funcs = (await c.query(`
+      WITH src AS (
+        SELECT p.oid, p.proname, ${BLANK} AS body
+        FROM pg_proc p
+        WHERE p.pronamespace = 'public'::regnamespace AND p.prokind IN ('f','p')
+          AND p.proname NOT LIKE 'assert_baseline_%'
+      )
+      SELECT proname,
+             (SELECT count(*) FROM regexp_matches(body, ${CCY}, 'g'))::int AS n,
+             (SELECT btrim(l) FROM regexp_split_to_table(body, E'\\n') AS l
+               WHERE l ~ ${CCY} LIMIT 1) AS site
+      FROM src
+      WHERE body ~ ${CCY}
+      ORDER BY proname`)).rows
+
+    const defaults = (await c.query(`
+      SELECT c.table_name || '.' || c.column_name AS col,
+             replace(replace(c.column_default, '::character varying', ''), '::text', '') AS dflt,
+             EXISTS (SELECT 1 FROM information_schema.columns k
+                      WHERE k.table_schema = 'public' AND k.table_name = c.table_name
+                        AND k.column_name = 'company_id') AS tenant
+      FROM information_schema.columns c
+      JOIN information_schema.tables t
+        ON t.table_schema = c.table_schema AND t.table_name = c.table_name AND t.table_type = 'BASE TABLE'
+      WHERE c.table_schema = 'public'
+        AND c.column_name ILIKE '%currency%'
+        AND c.column_default ~ '''[A-Z]{3}'''
+      ORDER BY col`)).rows
+
+    const healed = (await c.query(`
+      SELECT p.proname,
+             (${BLANK} ~ ${CCY})::int AS names_currency,
+             (p.prosrc LIKE '%${HOME}(NEW.company_id)%')::int AS calls_home
+      FROM pg_proc p
+      WHERE p.pronamespace = 'public'::regnamespace
+        AND p.proname = ANY($1::text[])`, [HEALED])).rows
+
+    const home = (await c.query(`
+      SELECT (SELECT count(*) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname=$1)::int AS exists_,
+             (SELECT count(*) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname=$1 AND prosecdef)::int AS secdef,
+             (SELECT count(*) FROM information_schema.routine_privileges
+               WHERE routine_schema='public' AND routine_name=$1
+                 AND grantee IN ('PUBLIC','anon','authenticated'))::int AS open_`, [HOME])).rows[0]
+
+    const baseline = (await c.query(`
+      SELECT (SELECT count(*) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname=$1)::int AS n,
+             (SELECT count(*) FROM information_schema.routine_privileges
+               WHERE routine_schema='public' AND routine_name=$1
+                 AND grantee IN ('PUBLIC','anon','authenticated'))::int AS open_`, [BASELINE])).rows[0]
+
+    return { funcs, defaults, healed, home, baseline }
+  })
+
+  const problems = []
+
+  // ── (١) دوالُّ القاعدةِ التى تُسمّى عملة ────────────────────────────────
+  const nFuncs = data.funcs.length
+  const nSites = data.funcs.reduce((a, r) => a + Number(r.n), 0)
+  const vFuncs = judgePin(nFuncs, PINNED_FUNCS)
+  const vSites = judgePin(nSites, PINNED_SITES)
+
+  // ── (٢) الأعمدةُ التى تخترعُ عملةً لشركة ────────────────────────────────
+  const tenant = data.defaults.filter((r) => r.tenant)
+  const others = data.defaults.filter((r) => !r.tenant)
+  const vDefaults = judgePin(tenant.length, PINNED_DEFAULTS)
+
+  const undeclared = others.filter((r) => !DECLARED[r.col]).map((r) => r.col + " = " + r.dflt)
+  if (undeclared.length) problems.push(["عمودٌ لا يخصُّ شركةً يُسمّى عملةً ولم يُعلَنْ بسببِه وشرطِ رفعِه", undeclared])
+  const dead = judgeDeadDeclarations(others.map((r) => r.col))
+  if (dead.length) problems.push(["إعلانٌ لم يعُدْ له عمودٌ حىّ — **ودَينٌ يُكتَبُ ولا يُسدَّدُ يصيرُ عادة**", dead])
+
+  // ── (٣)(٤)(٥) الخواصُّ التى وُلدت فى v3.75.52 ───────────────────────────
+  const healedProblems = judgeHealed(data.healed)
+  if (healedProblems.length) problems.push(["مُشغِّلٌ سُدِّدَ فى v3.75.52 وارتدّ", healedProblems])
+  const homeProblems = judgeHome(data.home)
+  if (homeProblems.length) problems.push(["البيتُ الواحدُ لعملةِ الشركة", homeProblems])
+  if (!Number(data.baseline.n)) problems.push(["الفحصُ المرجعىُّ " + BASELINE + " غائب", []])
+  else if (Number(data.baseline.open_)) problems.push(["الفحصُ المرجعىُّ يبلغُه زائرٌ أو مستخدِم — **وحارسٌ يُفتَحُ بابُه ليس حارساً**", []])
+
+  // ── التقرير ─────────────────────────────────────────────────────────────
+  console.log("  دوالُّ القاعدة: تُسمّى عملةً بعينِها " + nFuncs + " دالّةً فى " + nSites +
+    " موضعاً   (المُثبَّت " + PINNED_FUNCS + " / " + PINNED_SITES + ")")
+  console.log("  أعمدةُ جداولِ الشركاتِ بقيمةٍ افتراضيّةٍ تُسمّى عملة: " + tenant.length +
+    "   (المُثبَّت " + PINNED_DEFAULTS + ")   ·   مُعلَنٌ خارجَها: " + others.length)
+
+  if (vFuncs === "grew" || vSites === "grew" || vDefaults === "grew") {
+    problems.push(["زادَ ما يُسمّى عملةً فى القاعدة — **ولا تُخترَعُ عملةٌ، بل تُقرأُ من صاحبِها**", [
+      "دوالّ: " + nFuncs + " (المُثبَّت " + PINNED_FUNCS + ")",
+      "مواضع: " + nSites + " (المُثبَّت " + PINNED_SITES + ")",
+      "أعمدة: " + tenant.length + " (المُثبَّت " + PINNED_DEFAULTS + ")",
+    ]])
+  }
+  if (vFuncs === "shrank" || vSites === "shrank" || vDefaults === "shrank") {
+    problems.push(["نقصَ العددُ ولم يُثبَّتْ رقمُه الجديد — **ومكسبٌ لا يُثبَّتُ يُلتَفُّ عليه**", [
+      "تُحدَّثُ الأرقامُ المُثبَّتةُ فى هذا الملفِّ فى الدفعةِ التى سدَّدت: " +
+      "PINNED_FUNCS=" + nFuncs + " · PINNED_SITES=" + nSites + " · PINNED_DEFAULTS=" + tenant.length,
+    ]])
+  }
+
+  if (problems.length) {
+    for (const [title, lines] of problems) {
+      console.error("\nX " + title + (lines.length ? " (" + lines.length + "):" : ":"))
+      lines.forEach((x) => console.error("   " + x))
+    }
+    console.error("\n   وعنوانُ السدادِ واحد: public." + HOME + "(company_id) — تُقرأُ منه عملةُ الشركةِ،")
+    console.error("   ولا تُكتَبُ عملةٌ فى قيمةٍ افتراضيّةٍ ولا فى جسدِ دالّة.")
+    process.exit(1)
+  }
+
+  console.log("+ لا موضعَ جديدٌ يخترعُ عملةً فى القاعدةِ فوقَ الدَّينِ المُثبَّت (التعليقُ محجوبٌ قبلَ الحكم،" +
+    " والفحوصُ المرجعيّةُ مستثناةٌ بالاسم فلا يعدُّ الحارسُ نفسَه).")
+  console.log("  ok  والمُشغِّلاتُ الثلاثةُ التى سُدِّدت ما زالت تنادى البيتَ الواحدَ ولا تُسمّى عملة.")
+  console.log("  ok  والبيتُ الواحدُ بصلاحيّاتِ مُنادِيه ولا يبلغُه زائرٌ ولا مستخدِمٌ مسجَّل.")
+
+  for (const [k, d] of Object.entries(DECLARED)) {
+    console.log("  -   استثناءٌ معلَن: " + k + " — " + d.why)
+    console.log("      يُرفَع حين: " + d.lift)
+  }
+
+  console.log("  ! ومعدودٌ لا مسكوتٌ عنه — يُسدَّدون على دفعاتٍ مقيسة، والأثقلُ أوّلاً:")
+  const rank = (r) => (classifySite(r.site) === "قرارُ مالٍ" ? 0 : 1)
+  for (const r of [...data.funcs].sort((a, b) => rank(a) - rank(b) || a.proname.localeCompare(b.proname))) {
+    console.log("      - " + r.proname + "()   [" + classifySite(r.site) + "]   " + String(r.site || "").slice(0, 90))
+  }
+  for (const r of tenant) console.log("      - " + r.col + " = " + r.dflt + "   [قيمةٌ افتراضيّةٌ فى جدولِ شركات]")
+})().catch((e) => { console.error("X " + ((e && e.message) || e)); process.exit(1) })

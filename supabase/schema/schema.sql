@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-17T13:24:27.683Z
+-- Generated: 2026-08-17T14:33:37.498Z
 -- Tables: 256 | Policies: 784 | Triggers: 582 | Constraints: 1841
 -- =====================================================================
 
@@ -1533,7 +1533,7 @@ CREATE TABLE IF NOT EXISTS public.customer_credit_ledger (
   description text,
   created_by uuid,
   created_at timestamp with time zone DEFAULT now() NOT NULL,
-  original_currency text DEFAULT 'EGP'::text,
+  original_currency text,
   original_amount numeric(18,4),
   exchange_rate_used numeric(18,8) DEFAULT 1,
   exchange_rate_id uuid
@@ -1558,7 +1558,7 @@ CREATE TABLE IF NOT EXISTS public.customer_credits (
   used_amount numeric(15,2) DEFAULT 0,
   branch_id uuid,
   cost_center_id uuid,
-  original_currency text DEFAULT 'EGP'::text,
+  original_currency text,
   original_amount numeric(18,4),
   exchange_rate_used numeric(18,8) DEFAULT 1,
   exchange_rate_id uuid
@@ -4826,7 +4826,7 @@ CREATE TABLE IF NOT EXISTS public.vendor_credits (
   reference_id uuid,
   created_by uuid,
   created_by_user_id uuid,
-  original_currency text DEFAULT 'EGP'::text,
+  original_currency text,
   original_subtotal numeric(18,4),
   original_tax_amount numeric(18,4),
   original_total_amount numeric(18,4),
@@ -11068,6 +11068,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_49_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_49_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_51_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_51_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_52_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_52_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;
@@ -11981,6 +11983,8 @@ REVOKE ALL ON FUNCTION public.erp_branch_sku_code(p_branch_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_branch_sku_code(p_branch_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.erp_branch_sku_code(p_branch_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_branch_sku_code(p_branch_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.erp_company_base_currency(p_company_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_company_base_currency(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_company_senior_count(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_company_senior_count(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_company_senior_count(p_company_id uuid) TO service_role;
