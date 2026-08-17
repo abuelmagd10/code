@@ -30,7 +30,7 @@
  *       ليس فحصاً**.
  *   (٢) أعمدةُ جداولِ الشركاتِ (التى تحملُ `company_id`) وقيمُها الافتراضيّةُ
  *       التى تُسمّى عملة. وما ليس من جداولِ الشركاتِ يُعلَنُ بسببِه وشرطِ رفعِه.
- *   (٣) المُشغِّلاتُ الثلاثةُ التى سُدِّدت: لا تُسمّى عملةً، **وتنادى البيتَ
+ *   (٣) المُسدَّدون (ثلاثةُ مُشغِّلاتٍ وثلاثةُ كُتّاب): لا يُسمّون عملةً، **وينادون البيتَ
  *       الواحدَ فعلاً** — والذِّكرُ ليس نداءً، فيُقاسُ نصُّ النداءِ لا نصُّ الاسم.
  *   (٤) البيتُ الواحدُ قائمٌ، **بصلاحيّاتِ مُنادِيه** لا بصلاحيّاتٍ كاملة،
  *       ولا يبلغُه زائرٌ ولا مستخدِمٌ مسجَّل.
@@ -52,19 +52,31 @@
 const { withLiveDatabase } = require("./lib/live-db")
 
 /** الأرقامُ المُثبَّتة — قِيست حيّةً على البيتَين يومَ v3.75.52. */
-const PINNED_FUNCS = 33
-const PINNED_SITES = 34
+const PINNED_FUNCS = 31
+const PINNED_SITES = 31
 const PINNED_DEFAULTS = 30
 
 /** البيتُ الواحدُ وعنوانُ السداد. */
 const HOME = "erp_company_base_currency"
 const BASELINE = "assert_baseline_v3_75_52_check"
 
-/** المُشغِّلاتُ الثلاثةُ التى سُدِّدت فى v3.75.52. */
+/**
+ * المُسدَّدون — **وكلٌّ يُحاكَمُ بالوسيطِ الذى يُعطاه هو**، لا بوسيطِ غيرِه:
+ * فالمُشغِّلُ يقرأُ الشركةَ من صفِّه (NEW.company_id)، والكاتبُ من وسيطِه
+ * (p_company_id). **وشكلُ النداءِ خاصّيّةٌ فى صاحبِه لا قالبٌ واحدٌ للجميع.**
+ *
+ * وsecdefOnly تعنى: لهذا الاسمِ نسخةٌ أخرى بصلاحيّاتِ مُنادِيها **مُعلَنةٌ
+ * ومؤجَّلةٌ على قرارِ صلاحيّة** — فلا تُحاكَمُ هنا ولا يُسكَتُ عنها.
+ */
 const HEALED = [
-  "fill_customer_credit_fx_from_source",
-  "fill_customer_credit_ledger_fx_from_source",
-  "fill_vendor_credit_fx_from_source",
+  // v3.75.52 — ثلاثةُ مُشغِّلات
+  { name: "fill_customer_credit_fx_from_source",        arg: "NEW.company_id" },
+  { name: "fill_customer_credit_ledger_fx_from_source", arg: "NEW.company_id" },
+  { name: "fill_vendor_credit_fx_from_source",          arg: "NEW.company_id" },
+  // v3.75.55 — ثلاثةُ كُتّابٍ للمرتجع
+  { name: "process_purchase_return_atomic",             arg: "p_company_id" },
+  { name: "process_purchase_return_multi_warehouse",    arg: "p_company_id" },
+  { name: "post_purchase_transaction",                  arg: "p_company_id", secdefOnly: true },
 ]
 
 /**
@@ -134,12 +146,16 @@ function judgeHome(row) {
 /** والمُشغِّلاتُ المُسدَّدةُ تُحاكَمُ بالنداءِ لا بالاسم. */
 function judgeHealed(rows) {
   const out = []
-  const seen = new Map((rows || []).map((r) => [r.proname, r]))
-  for (const name of HEALED) {
-    const r = seen.get(name)
-    if (!r) { out.push(name + " اختفى من القاعدة") ; continue }
-    if (Number(r.names_currency)) out.push(name + " عادَ يُسمّى عملةً بعينِها")
-    if (!Number(r.calls_home)) out.push(name + " لم يعُدْ ينادى " + HOME + "(NEW.company_id) — **والذِّكرُ ليس نداءً**")
+  const all = rows || []
+  for (const h of HEALED) {
+    // **ولا يُحكَمُ على موضعٍ لم يُقرَأ**: الاسمُ قد يحملُ أكثرَ من نسخة، فتُقرأُ
+    // النسخُ المعنيّةُ كلُّها ويجبُ أن تصدُقَ جميعُها — لا أن تشفعَ واحدةٌ لأخرى.
+    const mine = all.filter((r) => r.proname === h.name && (!h.secdefOnly || Number(r.prosecdef)))
+    if (!mine.length) { out.push(h.name + " اختفى من القاعدة"); continue }
+    for (const r of mine) {
+      if (Number(r.names_currency)) out.push(h.name + " عادَ يُسمّى عملةً بعينِها")
+      if (!Number(r.calls_home)) out.push(h.name + " لم يعُدْ ينادى " + HOME + "(" + h.arg + ") — **والذِّكرُ ليس نداءً**")
+    }
   }
   return out
 }
@@ -183,14 +199,22 @@ if (process.argv.includes("--selftest")) {
   t("ويجمعُ العطبَين", judgeHome({ exists_: 1, secdef: 1, open_: 1 }).length, 2)
 
   // ── والمُسدَّدُ يُحاكَمُ بالنداءِ لا بالاسم ──────────────────────────────
-  const OK3 = HEALED.map((n) => ({ proname: n, names_currency: 0, calls_home: 1 }))
-  t("يمرُّ حين الثلاثةُ نظيفةٌ وتنادى البيت", judgeHealed(OK3).length, 0)
-  t("ويرفضُ عودةَ عملةٍ حرفيّةٍ فى أحدِها",
+  const OK3 = HEALED.map((h) => ({ proname: h.name, prosecdef: 1, names_currency: 0, calls_home: 1 }))
+  t("يمرُّ حين المُسدَّدون كلُّهم نظافٌ وينادون البيت", judgeHealed(OK3).length, 0)
+  t("ويرفضُ عودةَ عملةٍ حرفيّةٍ فى أحدِهم",
     judgeHealed(OK3.map((r, i) => (i === 0 ? { ...r, names_currency: 1 } : r))).length, 1)
   t("ويرفضُ من كفَّ عن نداءِ البيت — والذِّكرُ ليس نداءً",
     judgeHealed(OK3.map((r, i) => (i === 1 ? { ...r, calls_home: 0 } : r))).length, 1)
+  t("ويرفضُ كاتبَ المرتجعِ إن كفَّ هو أيضاً",
+    judgeHealed(OK3.map((r, i) => (i === 3 ? { ...r, calls_home: 0 } : r))).length, 1)
   t("ويُسمّى الغائبَ بعينِه", judgeHealed(OK3.slice(1)).length, 1)
-  t("ويرفضُ الجميعَ حين لا صفَّ أصلاً — وبحثٌ لا يجد ليس دليلَ حياة", judgeHealed([]).length, 3)
+  t("ويرفضُ الجميعَ حين لا صفَّ أصلاً — وبحثٌ لا يجد ليس دليلَ حياة", judgeHealed([]).length, HEALED.length)
+  // **ولا تشفعُ نسخةٌ لأخرى**: نسختانِ بالاسمِ نفسِه، إحداهما كفَّت — يُرفَض
+  t("ولا تشفعُ نسخةٌ سليمةٌ لنسخةٍ كفَّت", judgeHealed(
+    OK3.concat([{ proname: "process_purchase_return_atomic", prosecdef: 1, names_currency: 0, calls_home: 0 }])).length, 1)
+  // **والنسخةُ بصلاحيّاتِ مُنادِيها مُعلَنةٌ فلا تُحاكَم** — وإلّا صرخَ الحارسُ على معلوم
+  t("ولا يُحاكَمُ المُعلَنُ بصلاحيّاتِ مُنادِيه", judgeHealed(
+    OK3.concat([{ proname: "post_purchase_transaction", prosecdef: 0, names_currency: 1, calls_home: 0 }])).length, 0)
 
   let fail = 0
   for (const [name, got, exp] of cases) {
@@ -257,13 +281,19 @@ const BLANK = "regexp_replace(regexp_replace(p.prosrc, '/\\*.*?\\*/', ' ', 'gs')
         AND c.column_default ~ '''[A-Z]{3}'''
       ORDER BY col`)).rows
 
-    const healed = (await c.query(`
-      SELECT p.proname,
-             (${BLANK} ~ ${CCY})::int AS names_currency,
-             (p.prosrc LIKE '%${HOME}(NEW.company_id)%')::int AS calls_home
-      FROM pg_proc p
-      WHERE p.pronamespace = 'public'::regnamespace
-        AND p.proname = ANY($1::text[])`, [HEALED])).rows
+    // **وكلٌّ يُقاسُ بوسيطِه**: النداءُ يُبحَثُ عنه بالشكلِ الذى يخصُّ صاحبَه،
+    // فلا يُبرَّأُ كاتبٌ بشكلِ مُشغِّلٍ ولا يُتَّهَمُ مُشغِّلٌ بشكلِ كاتب.
+    const healed = []
+    for (const h of HEALED) {
+      healed.push(...(await c.query(`
+        SELECT p.proname,
+               (${BLANK} ~ ${CCY})::int AS names_currency,
+               p.prosecdef::int AS prosecdef,
+               (p.prosrc LIKE '%' || $2 || '%')::int AS calls_home
+        FROM pg_proc p
+        WHERE p.pronamespace = 'public'::regnamespace
+          AND p.proname = $1`, [h.name, HOME + "(" + h.arg + ")"])).rows)
+    }
 
     const home = (await c.query(`
       SELECT (SELECT count(*) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname=$1)::int AS exists_,
@@ -339,7 +369,7 @@ const BLANK = "regexp_replace(regexp_replace(p.prosrc, '/\\*.*?\\*/', ' ', 'gs')
 
   console.log("+ لا موضعَ جديدٌ يخترعُ عملةً فى القاعدةِ فوقَ الدَّينِ المُثبَّت (التعليقُ محجوبٌ قبلَ الحكم،" +
     " والفحوصُ المرجعيّةُ مستثناةٌ بالاسم فلا يعدُّ الحارسُ نفسَه).")
-  console.log("  ok  والمُشغِّلاتُ الثلاثةُ التى سُدِّدت ما زالت تنادى البيتَ الواحدَ ولا تُسمّى عملة.")
+  console.log("  ok  والمُسدَّدون " + HEALED.length + " (مُشغِّلاتٌ وكُتّابٌ) ما زالوا ينادون البيتَ الواحدَ كلٌّ بوسيطِه ولا يُسمّون عملة.")
   console.log("  ok  والبيتُ الواحدُ بصلاحيّاتِ مُنادِيه ولا يبلغُه زائرٌ ولا مستخدِمٌ مسجَّل.")
 
   for (const [k, d] of Object.entries(DECLARED)) {

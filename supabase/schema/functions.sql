@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-17T16:34:07.375Z
--- Routines: 1401
+-- Generated: 2026-08-17T17:45:25.886Z
+-- Routines: 1402
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -8034,6 +8034,108 @@ BEGIN
   RETURN 'v3.75.54 ok - جسدٌ بلا عملةٍ حرفيّة=1 · ينادى البيت=1 · بصلاحيّاتٍ كاملة=1 · بلا توسيعِ منحة=0'
          || ' · إشعاراتُ دائنٍ من مرتجع=' || n_vc || ' · موسومةٌ بغيرِ عملةِ مرتجعِها=' || n_bad
          || ' · مرتجعاتٌ فى القاعدة=' || n_returns;
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_55_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_55_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  n          int;
+  n_pr       bigint;
+  n_blank    bigint;
+  n_mismatch bigint;
+  v_names    text[] := ARRAY['process_purchase_return_atomic',
+                             'process_purchase_return_multi_warehouse',
+                             'post_purchase_transaction'];
+BEGIN
+  -- (أ) لا جسدَ من الثلاثةِ يُسمّى عملةً بعينِها — والتعليقُ محجوبٌ قبلَ الحكم.
+  --     وpost_purchase_transaction تُحاكَمُ بنسختِها ذاتِ الصلاحيّاتِ الكاملةِ
+  --     وحدَها، فالأخرى مُعلَنةٌ ومؤجَّلةٌ على قرارِ صلاحيّة.
+  SELECT count(*) INTO n
+  FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace
+    AND p.proname = ANY(v_names)
+    AND p.prosecdef
+    AND regexp_replace(p.prosrc, '--[^\n]*', ' ', 'g') ~ '''(EGP|USD|SAR|EUR|GBP|AED|KWD|JOD|QAR|BHD|OMR)''';
+  IF n <> 0 THEN
+    RAISE EXCEPTION 'v3.75.55: % من كُتّابِ المرتجعِ عادَ يُسمّى عملةً بعينِها', n;
+  END IF;
+
+  -- (ب) وكلُّ واحدٍ منها ينادى البيتَ الواحدَ برقمِ الشركةِ الذى أُعطىَ له
+  --     — **والذِّكرُ ليس نداءً**.
+  SELECT count(*) INTO n
+  FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace
+    AND p.proname = ANY(v_names)
+    AND p.prosecdef
+    AND p.prosrc LIKE '%erp_company_base_currency(p_company_id)%';
+  IF n <> 3 THEN
+    RAISE EXCEPTION 'v3.75.55: ينادى البيتَ % من ثلاثةٍ — والباقى يخترع', n;
+  END IF;
+
+  -- (ج) والثلاثةُ ما زالت بصلاحيّاتٍ كاملة — فنداؤها للبيتِ بلا منحةٍ لأحد
+  SELECT count(*) INTO n
+  FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace
+    AND p.proname = ANY(v_names) AND p.prosecdef;
+  IF n <> 3 THEN
+    RAISE EXCEPTION 'v3.75.55: % بصلاحيّاتٍ كاملةٍ لا ثلاثة — ونداءُ البيتِ يحتاجُ منحةً لم تُعلَن', n;
+  END IF;
+
+  -- (د) والكاتبُ الصامتُ صارَ ناطقاً: يذكرُ العمودَ صراحةً فى كتابتِه،
+  --     فلا يُجيبُ عنه افتراضٌ مكتوب.
+  SELECT count(*) INTO n
+  FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace
+    AND p.proname = 'post_purchase_transaction' AND p.prosecdef
+    AND p.prosrc LIKE '%original_currency%';
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'v3.75.55: post_purchase_transaction عادَ يسكتُ عن العمود — فيُجيبُ عنه الافتراض';
+  END IF;
+
+  -- (هـ) ولم يُوسَّعْ بلوغُ البيتِ الواحدِ ولا الفحصِ صامتاً
+  SELECT count(*) INTO n
+  FROM information_schema.routine_privileges
+  WHERE routine_schema = 'public'
+    AND routine_name IN ('erp_company_base_currency', 'assert_baseline_v3_75_55_check')
+    AND grantee IN ('PUBLIC', 'anon', 'authenticated');
+  IF n <> 0 THEN
+    RAISE EXCEPTION 'v3.75.55: % صلاحيّةً مفتوحةً على البيتِ أو الفحص — والتوسيعُ يُعلَنُ ولا يُدَسّ', n;
+  END IF;
+
+  -- (و) وقيدٌ حىٌّ على الصفوفِ كلِّها — **يصرخُ يومَ يقع**:
+  --     لا مرتجعَ بعمودِ عملةٍ فارغ، ولا مرتجعَ يقولُ عملةً غيرَ أساسِ شركتِه
+  --     **وحسابُه يقولُ إنّه بالأساس** (سعرُ صرفٍ واحدٌ وأصلُه يساوى محوَّلَه)
+  --     — فذلك هو الوسمُ الكاذبُ بعينِه، لا العملةُ الأجنبيّةُ الصادقة.
+  SELECT count(*),
+         count(*) FILTER (WHERE pr.original_currency IS NULL OR btrim(pr.original_currency) = ''),
+         count(*) FILTER (WHERE upper(btrim(coalesce(pr.original_currency,''))) <> upper(btrim(co.base_currency))
+                            AND coalesce(pr.exchange_rate_used, 1) = 1
+                            AND coalesce(pr.original_total_amount, pr.total_amount) = pr.total_amount)
+    INTO n_pr, n_blank, n_mismatch
+  FROM public.purchase_returns pr
+  JOIN public.companies co ON co.id = pr.company_id;
+
+  IF n_blank <> 0 THEN
+    RAISE EXCEPTION 'v3.75.55: % مرتجعاً بعمودِ عملةٍ فارغ (من %)', n_blank, n_pr;
+  END IF;
+  IF n_mismatch <> 0 THEN
+    RAISE EXCEPTION 'v3.75.55: % مرتجعاً يقولُ عملةً غيرَ أساسِ شركتِه وحسابُه بالأساس — وسمٌ كاذب (من %)', n_mismatch, n_pr;
+  END IF;
+
+  RETURN 'v3.75.55 ok - أجسادٌ بلا عملةٍ حرفيّة=3 · تنادى البيت=3 · بصلاحيّاتٍ كاملة=3'
+         || ' · الكاتبُ الصامتُ صارَ ناطقاً=1 · بلا توسيعِ منحة=0'
+         || ' · مرتجعاتٌ فى القاعدة=' || n_pr
+         || ' · بعمودٍ فارغ=' || n_blank
+         || ' · وسمٌ كاذب=' || n_mismatch;
 END
 $function$
 ;
@@ -47635,6 +47737,7 @@ DECLARE
   item_update           JSONB;
   inv_tx                JSONB;
   v_bill_exists         BOOLEAN;
+  v_base                TEXT;
 BEGIN
   -- v3.74.730 — reject a caller acting on another company's data.
   PERFORM public.assert_company_access(p_company_id);
@@ -47838,10 +47941,14 @@ BEGIN
     END IF;
 
     IF p_purchase_return IS NOT NULL THEN
+      -- v3.75.55 — يُقرأُ الأساسُ هنا لا فى رأسِ الدالّة: فهذه الدالّةُ تخدمُ
+      -- ثلاثةَ أنواعٍ من العمليّات، ولا يُوسَّعُ أثرُ جراحةٍ إلى طريقٍ لا شأنَ لها به.
+      v_base := public.erp_company_base_currency(p_company_id);
       INSERT INTO purchase_returns (
         company_id, supplier_id, bill_id, journal_entry_id,
         return_number, return_date, status, subtotal, tax_amount, total_amount,
-        settlement_method, reason, notes, branch_id, cost_center_id, warehouse_id
+        settlement_method, reason, notes, branch_id, cost_center_id, warehouse_id,
+        original_currency
       ) VALUES (
         p_company_id, NULLIF(p_purchase_return->>'supplier_id', '')::UUID,
         p_bill_id, v_je_id, p_purchase_return->>'return_number',
@@ -47854,7 +47961,12 @@ BEGIN
         p_purchase_return->>'notes',
         NULLIF(p_purchase_return->>'branch_id', '')::UUID,
         NULLIF(p_purchase_return->>'cost_center_id', '')::UUID,
-        NULLIF(p_purchase_return->>'warehouse_id', '')::UUID
+        NULLIF(p_purchase_return->>'warehouse_id', '')::UUID,
+        -- v3.75.55 — **والسكوتُ عن عمودٍ لا يعنى صمتاً**: كان هذا الكاتبُ يُهملُ
+        -- العمودَ فتكتبُ القاعدةُ له «جنيهاً» من افتراضٍ مكتوب — فالاختراعُ كان
+        -- **مُخفىً فى افتراضٍ لا فى شيفرة**، ولا يراه من يقرأُ الشيفرةَ وحدَها.
+        -- صار يقولُ ما يعنيه: قولَ مُنشِئِه إن قال، وإلّا أساسَ شركتِه من صفِّها.
+        COALESCE(NULLIF(p_purchase_return->>'original_currency', ''), v_base)
       ) RETURNING id INTO v_pr_id;
 
       v_result := jsonb_set(v_result, '{purchase_return_id}', to_jsonb(v_pr_id));
@@ -50354,6 +50466,7 @@ DECLARE
   -- v3.74.941 — المالُ يُحسب هنا
   v_priced          RECORD;
   v_rate            NUMERIC;
+  v_base            TEXT;
   v_orig_subtotal   NUMERIC := 0;
   v_orig_tax        NUMERIC := 0;
   v_orig_total      NUMERIC := 0;
@@ -50363,6 +50476,8 @@ DECLARE
 BEGIN
   -- v3.74.730 — reject a caller acting on another company's data.
   PERFORM public.assert_company_access(p_company_id);
+  -- v3.75.55 — يُقرأُ الأساسُ مرّةً من البيتِ الواحدِ بعدَ سؤالِ الإذن، لا يُخترَع.
+  v_base := public.erp_company_base_currency(p_company_id);
   v_warehouse_id   := NULLIF(p_purchase_return->>'warehouse_id', '')::UUID;
   v_branch_id      := NULLIF(p_purchase_return->>'branch_id', '')::UUID;
   v_cost_center_id := NULLIF(p_purchase_return->>'cost_center_id', '')::UUID;
@@ -50496,7 +50611,11 @@ BEGIN
     p_purchase_return->>'reason',
     p_purchase_return->>'notes',
     v_branch_id, v_cost_center_id, v_warehouse_id,
-    COALESCE(NULLIF(p_purchase_return->>'original_currency', ''), 'EGP'),
+    -- v3.75.55 — **ولا تُخترَعُ عملة**: عملةُ المرتجعِ إن قالَها مُنشِئُه، وإلّا
+    -- أساسُ شركتِه مقروءاً من صفِّها. وهذا الصفُّ هو **المصدرُ** الذى يرثُ منه
+    -- إشعارُ الدائنِ ومُشغِّلُ v3.75.52 وكلُّ ما بعدَهما — فاختراعُ «جنيه» هنا
+    -- يُوسَمُ به سلسلةٌ كاملةٌ ولا يُكشَف.
+    COALESCE(NULLIF(p_purchase_return->>'original_currency', ''), v_base),
     v_orig_subtotal, v_orig_tax, v_orig_total,
     v_rate,
     NULLIF(p_purchase_return->>'exchange_rate_id', '')::UUID,
@@ -50637,6 +50756,7 @@ DECLARE
   v_rate           NUMERIC;
   v_g_sub          NUMERIC;
   v_g_tax          NUMERIC;
+  v_base           TEXT;
   v_orig_subtotal  NUMERIC := 0;
   v_orig_tax       NUMERIC := 0;
   v_orig_total     NUMERIC := 0;
@@ -50646,6 +50766,8 @@ DECLARE
 BEGIN
   -- v3.74.730 — reject a caller acting on another company's data.
   PERFORM public.assert_company_access(p_company_id);
+  -- v3.75.55 — يُقرأُ الأساسُ مرّةً من البيتِ الواحدِ بعدَ سؤالِ الإذن، لا يُخترَع.
+  v_base := public.erp_company_base_currency(p_company_id);
   IF p_bill_id IS NULL THEN
     RAISE EXCEPTION 'Bill ID is required to create a purchase return';
   END IF;
@@ -50770,7 +50892,11 @@ BEGIN
     p_purchase_return->>'reason',
     p_purchase_return->>'notes',
     NULL, NULL, NULL,
-    COALESCE(NULLIF(p_purchase_return->>'original_currency', ''), 'EGP'),
+    -- v3.75.55 — **ولا تُخترَعُ عملة**: عملةُ المرتجعِ إن قالَها مُنشِئُه، وإلّا
+    -- أساسُ شركتِه مقروءاً من صفِّها. وهذا الصفُّ هو **المصدرُ** الذى يرثُ منه
+    -- إشعارُ الدائنِ ومُشغِّلُ v3.75.52 وكلُّ ما بعدَهما — فاختراعُ «جنيه» هنا
+    -- يُوسَمُ به سلسلةٌ كاملةٌ ولا يُكشَف.
+    COALESCE(NULLIF(p_purchase_return->>'original_currency', ''), v_base),
     v_orig_subtotal, v_orig_tax, v_orig_total,
     v_rate,
     NULLIF(p_purchase_return->>'exchange_rate_id', '')::UUID
@@ -50815,7 +50941,9 @@ BEGIN
           v_branch_id, v_cost_center_id,
           COALESCE((l->>'original_debit')::NUMERIC, 0),
           COALESCE((l->>'original_credit')::NUMERIC, 0),
-          COALESCE(NULLIF(l->>'original_currency', ''), 'EGP'),
+          -- v3.75.55 — **وقيدُ الدفترِ أثقلُ من وسمِ مستند**: سطرُ يوميّةٍ يقولُ
+          -- «جنيه» فى شركةٍ أساسُها غيرُه يكذبُ على الأستاذِ نفسِه.
+          COALESCE(NULLIF(l->>'original_currency', ''), v_base),
           COALESCE((l->>'exchange_rate_used')::NUMERIC, 1),
           NULLIF(l->>'exchange_rate_id', '')::UUID
         FROM jsonb_array_elements(v_group->'journal_lines') AS l;
