@@ -12,15 +12,6 @@ export function formatNumber(num: number): string {
   }).format(num)
 }
 
-export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(amount)
-}
-
 /**
  * Find account ID by search criteria
  * Utility function to find account IDs based on sub_type or name patterns
