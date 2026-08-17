@@ -9,8 +9,8 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-17T12:30:38.379Z
--- Tables: 256 | Policies: 784 | Triggers: 581 | Constraints: 1841
+-- Generated: 2026-08-17T13:24:27.683Z
+-- Tables: 256 | Policies: 784 | Triggers: 582 | Constraints: 1841
 -- =====================================================================
 
 
@@ -7683,6 +7683,7 @@ CREATE TRIGGER trg_cmr_payroll_link_write_once BEFORE UPDATE OF payroll_run_id O
 CREATE TRIGGER trg_commission_run_status_transition BEFORE UPDATE OF status ON public.commission_runs FOR EACH ROW WHEN ((old.status IS DISTINCT FROM new.status)) EXECUTE FUNCTION enforce_commission_run_transition();
 CREATE TRIGGER companies_subscription_status_transitions BEFORE UPDATE OF subscription_status ON public.companies FOR EACH ROW EXECUTE FUNCTION companies_subscription_status_transitions_trg();
 CREATE TRIGGER trg_auto_seed_role_permissions_on_company_insert AFTER INSERT ON public.companies FOR EACH ROW EXECUTE FUNCTION trg_auto_seed_role_permissions();
+CREATE TRIGGER trg_companies_base_currency_change_guard BEFORE UPDATE ON public.companies FOR EACH ROW WHEN ((old.base_currency IS DISTINCT FROM new.base_currency)) EXECUTE FUNCTION erp_base_currency_change_guard();
 CREATE TRIGGER trg_companies_manufacturing_accounts_guard BEFORE UPDATE ON public.companies FOR EACH ROW EXECUTE FUNCTION mfg_guard_company_manufacturing_accounts();
 CREATE TRIGGER trg_company_after_insert_seed_accounts AFTER INSERT ON public.companies FOR EACH ROW EXECUTE FUNCTION trg_seed_company_accounts();
 CREATE TRIGGER trg_company_defaults AFTER INSERT ON public.companies FOR EACH ROW EXECUTE FUNCTION auto_create_company_defaults();
@@ -11065,6 +11066,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_47_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_47_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_49_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_49_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_51_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_51_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;
@@ -11972,6 +11975,8 @@ REVOKE ALL ON FUNCTION public.ensure_sales_order_created_by() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.ensure_sales_order_created_by() TO service_role;
 REVOKE ALL ON FUNCTION public.ensure_warehouse_cost_center_from_branch_default() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.ensure_warehouse_cost_center_from_branch_default() TO service_role;
+REVOKE ALL ON FUNCTION public.erp_base_currency_change_guard() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_base_currency_change_guard() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_branch_sku_code(p_branch_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_branch_sku_code(p_branch_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.erp_branch_sku_code(p_branch_id uuid) TO authenticated;
