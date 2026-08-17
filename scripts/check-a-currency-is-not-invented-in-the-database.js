@@ -37,7 +37,7 @@
  *   (٥) الفحصُ المرجعىُّ `assert_baseline_v3_75_52_check` قائمٌ ومغلَقٌ —
  *       **وحارسٌ يُفتَحُ بابُه ليس حارساً**.
  *
- * ويُصنَّفُ كلُّ موضعٍ باقٍ بأثرِه: **قرارُ مالٍ** إن كانتِ العملةُ فى موضعِ
+ * ويُصنَّفُ كلُّ موضعٍ باقٍ بأثرِه: **شرطٌ يتفرّعُ عليه سلوك** إن كانتِ العملةُ فى موضعِ
  * مقارنةٍ يتفرّعُ عليها حساب، و**وسمٌ يُكتَبُ أو يُرسَل** إن كانت قيمةً تُسجَّلُ
  * أو تُعرَض. والأوّلُ أثقل، ويُسدَّدُ أوّلاً — **الاهمُّ ثمّ الاهمّ**.
  *
@@ -52,8 +52,8 @@
 const { withLiveDatabase } = require("./lib/live-db")
 
 /** الأرقامُ المُثبَّتة — قِيست حيّةً على البيتَين يومَ v3.75.52. */
-const PINNED_FUNCS = 35
-const PINNED_SITES = 37
+const PINNED_FUNCS = 34
+const PINNED_SITES = 35
 const PINNED_DEFAULTS = 30
 
 /** البيتُ الواحدُ وعنوانُ السداد. */
@@ -98,8 +98,11 @@ function judgePin(found, pinned) {
 }
 
 /**
- * **ويُسمّى الأثرَ لا الشكل**: عملةٌ فى موضعِ مقارنةٍ يتفرّعُ عليها حسابٌ
- * قرارُ مال، وعملةٌ فى موضعِ قيمةٍ وسمٌ يُكتَبُ أو يُرسَل.
+ * **ويُسمّى ما يُقاسُ لا أكثرَ منه**: هذا الحكمُ يرى **شكلَ الموضع** — هل
+ * العملةُ فى مقارنةٍ يتفرّعُ عليها سلوك، أم فى قيمةٍ تُكتَبُ أو تُرسَل — **ولا
+ * يعرفُ أهُوَ حسابُ مالٍ أم نصُّ وصفٍ يُعرَض**. وذلك يُقرأُ بالعينِ فى دفعةِ
+ * السداد. وقد سُمِّىَ الصنفُ الأوّلُ «قرارَ مالٍ» فى v3.75.52 فأوهمَ أكثرَ
+ * ممّا قِيس — فصارَ يُسمّى ما يُقاسُ: **شرطٌ يتفرّعُ عليه سلوك**.
  */
 function classifySite(line) {
   const s = String(line || "")
@@ -107,7 +110,7 @@ function classifySite(line) {
   const compared = new RegExp("(?:=|<>|!=|IN\\s*\\()\\s*" + q, "i").test(s) ||
                    new RegExp(q + "\\s*(?:=|<>|!=)", "i").test(s)
   const branching = /\b(CASE\s+WHEN|IF|ELSIF|AND|OR|WHERE)\b/i.test(s)
-  return compared && branching ? "قرارُ مالٍ" : "وسمٌ يُكتَبُ أو يُرسَل"
+  return compared && branching ? "شرطٌ يتفرّعُ عليه سلوك" : "وسمٌ يُكتَبُ أو يُرسَل"
 }
 
 /** ولا إعلانٌ ميّت: كلُّ عمودٍ مُعلَنٍ يجبُ أن يكونَ حيّاً فى القاعدة. */
@@ -155,9 +158,9 @@ if (process.argv.includes("--selftest")) {
   t("ويرفضُ الصفرَ غيرَ المُثبَّت", judgePin(0, 35), "shrank")
 
   // ── التصنيفُ بالأثر ─────────────────────────────────────────────────────
-  t("يرى قرارَ مالٍ فى مقارنةِ CASE", classifySite("CASE WHEN v_currency = 'EGP' THEN NEW.amount ELSE x END"), "قرارُ مالٍ")
-  t("ويراه فى شرطِ IF", classifySite("IF v_exp_currency <> 'EGP' THEN"), "قرارُ مالٍ")
-  t("ويراه فى شرطِ WHERE", classifySite("AND COALESCE(p.original_currency, 'EGP') <> 'EGP'"), "قرارُ مالٍ")
+  t("يرى قرارَ مالٍ فى مقارنةِ CASE", classifySite("CASE WHEN v_currency = 'EGP' THEN NEW.amount ELSE x END"), "شرطٌ يتفرّعُ عليه سلوك")
+  t("ويراه فى شرطِ IF", classifySite("IF v_exp_currency <> 'EGP' THEN"), "شرطٌ يتفرّعُ عليه سلوك")
+  t("ويراه فى شرطِ WHERE", classifySite("AND COALESCE(p.original_currency, 'EGP') <> 'EGP'"), "شرطٌ يتفرّعُ عليه سلوك")
   t("ويرى الوسمَ حين تكونُ قيمةً تُكتَب", classifySite("v_currency := COALESCE(NEW.currency_code, 'EGP');"), "وسمٌ يُكتَبُ أو يُرسَل")
   t("ويراه فى قيمةٍ تُدخَلُ فى صفّ", classifySite("COALESCE(NULLIF(p_so_data->>'currency', ''), 'EGP'),"), "وسمٌ يُكتَبُ أو يُرسَل")
   t("ولا يعدُّ مساواةَ تعيينٍ مقارنةً", classifySite("v_base_ccy := UPPER(COALESCE(v_base_ccy, 'EGP'));"), "وسمٌ يُكتَبُ أو يُرسَل")
@@ -220,20 +223,25 @@ const BLANK = "regexp_replace(regexp_replace(p.prosrc, '/\\*.*?\\*/', ' ', 'gs')
 
 ;(async () => {
   const data = await withLiveDatabase(url, async (c) => {
-    const funcs = (await c.query(`
+    // **ويُسمّى الأثرَ لا الشكل**: يُعادُ كلُّ موضعٍ **بسطرِه** لا سطرٌ واحدٌ
+    // نموذجاً عن الدالّة — فتصنيفُ موضعٍ بسطرِ موضعٍ آخَر حكمٌ على ما لم يُقرَأ،
+    // وهو الذى أخطأ فى v3.75.52 فصنَّفَ نصَّ وصفٍ «قرارَ مالٍ».
+    const sites = (await c.query(`
       WITH src AS (
         SELECT p.oid, p.proname, ${BLANK} AS body
         FROM pg_proc p
         WHERE p.pronamespace = 'public'::regnamespace AND p.prokind IN ('f','p')
           AND p.proname NOT LIKE 'assert_baseline_%'
+      ), ln AS (
+        SELECT s.oid, s.proname, t.ord, btrim(t.line) AS line
+        FROM src s,
+             LATERAL (SELECT row_number() OVER () AS ord, line
+                        FROM regexp_split_to_table(s.body, E'\\n') AS line) t
       )
-      SELECT proname,
-             (SELECT count(*) FROM regexp_matches(body, ${CCY}, 'g'))::int AS n,
-             (SELECT btrim(l) FROM regexp_split_to_table(body, E'\\n') AS l
-               WHERE l ~ ${CCY} LIMIT 1) AS site
-      FROM src
-      WHERE body ~ ${CCY}
-      ORDER BY proname`)).rows
+      SELECT oid::text AS oid, proname, ord::int AS ord, line,
+             (SELECT count(*) FROM regexp_matches(line, ${CCY}, 'g'))::int AS hits
+      FROM ln WHERE line ~ ${CCY}
+      ORDER BY proname, ord`)).rows
 
     const defaults = (await c.query(`
       SELECT c.table_name || '.' || c.column_name AS col,
@@ -270,14 +278,14 @@ const BLANK = "regexp_replace(regexp_replace(p.prosrc, '/\\*.*?\\*/', ' ', 'gs')
                WHERE routine_schema='public' AND routine_name=$1
                  AND grantee IN ('PUBLIC','anon','authenticated'))::int AS open_`, [BASELINE])).rows[0]
 
-    return { funcs, defaults, healed, home, baseline }
+    return { sites, defaults, healed, home, baseline }
   })
 
   const problems = []
 
   // ── (١) دوالُّ القاعدةِ التى تُسمّى عملة ────────────────────────────────
-  const nFuncs = data.funcs.length
-  const nSites = data.funcs.reduce((a, r) => a + Number(r.n), 0)
+  const nFuncs = new Set(data.sites.map((r) => r.oid)).size
+  const nSites = data.sites.reduce((a, r) => a + Number(r.hits), 0)
   const vFuncs = judgePin(nFuncs, PINNED_FUNCS)
   const vSites = judgePin(nSites, PINNED_SITES)
 
@@ -340,9 +348,9 @@ const BLANK = "regexp_replace(regexp_replace(p.prosrc, '/\\*.*?\\*/', ' ', 'gs')
   }
 
   console.log("  ! ومعدودٌ لا مسكوتٌ عنه — يُسدَّدون على دفعاتٍ مقيسة، والأثقلُ أوّلاً:")
-  const rank = (r) => (classifySite(r.site) === "قرارُ مالٍ" ? 0 : 1)
-  for (const r of [...data.funcs].sort((a, b) => rank(a) - rank(b) || a.proname.localeCompare(b.proname))) {
-    console.log("      - " + r.proname + "()   [" + classifySite(r.site) + "]   " + String(r.site || "").slice(0, 90))
+  const rank = (r) => (classifySite(r.line) === "شرطٌ يتفرّعُ عليه سلوك" ? 0 : 1)
+  for (const r of [...data.sites].sort((a, b) => rank(a) - rank(b) || a.proname.localeCompare(b.proname) || a.ord - b.ord)) {
+    console.log("      - " + r.proname + "()  سطر " + r.ord + "   [" + classifySite(r.line) + "]   " + String(r.line || "").slice(0, 90))
   }
   for (const r of tenant) console.log("      - " + r.col + " = " + r.dflt + "   [قيمةٌ افتراضيّةٌ فى جدولِ شركات]")
 })().catch((e) => { console.error("X " + ((e && e.message) || e)); process.exit(1) })
