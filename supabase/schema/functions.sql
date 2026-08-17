@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-16T19:10:59.201Z
--- Routines: 1394
+-- Generated: 2026-08-17T11:50:00.749Z
+-- Routines: 1395
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -7465,6 +7465,102 @@ BEGIN
   END IF;
 
   RETURN 'v3.75.47 ok - the payment-reference list and the mirror test are each written in exactly one home, 4 door(s) and 1 door call them, and nothing writes either by hand.';
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_49_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_49_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  k_shut text[] := ARRAY[
+    'auto_post_monthly_depreciation(uuid,uuid)',
+    'check_and_claim_idempotency_key(text,uuid,text,text,uuid)',
+    'check_period_lock_for_date(uuid,date)',
+    'get_dashboard_kpis(uuid,date,date)',
+    'reconcile_fifo_vs_gl(uuid)'
+  ];
+  s          text;
+  v_missing  text := '';
+  v_open     text := '';
+  v_noserver text := '';
+  v_invoker  text := '';
+  v_inner    int;
+BEGIN
+  FOREACH s IN ARRAY k_shut LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+       WHERE n.nspname = 'public' AND p.prosecdef
+         AND pg_get_userbyid(p.proowner) = 'postgres'
+         AND replace(p.oid::regprocedure::text, 'public.', '') = s
+    ) THEN
+      v_missing := v_missing || s || ' ';
+    END IF;
+  END LOOP;
+  -- **وبابٌ أُزيل لا يحتاجُ قفلاً — لكنّ إزالتَه تُعلَنُ فى دفعتِها لا تُسكَتُ عنها**
+  IF v_missing <> '' THEN
+    RAISE EXCEPTION 'v3.75.49 (1): missing, not a definer, or not owned by postgres: %', v_missing;
+  END IF;
+
+  SELECT coalesce(string_agg(x.sig || CASE WHEN x.a THEN ':authenticated' ELSE '' END
+                                    || CASE WHEN x.n THEN ':anon' ELSE '' END, ' '), '')
+    INTO v_open
+  FROM (
+    SELECT replace(p.oid::regprocedure::text, 'public.', '') AS sig,
+           has_function_privilege('authenticated', p.oid, 'EXECUTE') AS a,
+           has_function_privilege('anon',          p.oid, 'EXECUTE') AS n
+      FROM pg_proc p JOIN pg_namespace nn ON nn.oid = p.pronamespace
+     WHERE nn.nspname = 'public'
+       AND replace(p.oid::regprocedure::text, 'public.', '') = ANY(k_shut)
+  ) x
+  WHERE x.a OR x.n;
+  IF v_open <> '' THEN
+    RAISE EXCEPTION 'v3.75.49 (2): a door that has no knocker is open again: %', v_open;
+  END IF;
+
+  -- **ولا يُغلَقُ بابٌ يمرُّ منه عمل**: مسارُ الخادمِ يبقى مفتوحاً
+  SELECT coalesce(string_agg(replace(p.oid::regprocedure::text, 'public.', ''), ' '), '')
+    INTO v_noserver
+    FROM pg_proc p JOIN pg_namespace nn ON nn.oid = p.pronamespace
+   WHERE nn.nspname = 'public'
+     AND replace(p.oid::regprocedure::text, 'public.', '') = ANY(k_shut)
+     AND NOT has_function_privilege('service_role', p.oid, 'EXECUTE');
+  IF v_noserver <> '' THEN
+    RAISE EXCEPTION 'v3.75.49 (3): the server path was closed too - %', v_noserver;
+  END IF;
+
+  -- **ونداءٌ من الداخلِ لا يحتاجُ إذناً، إلّا أن يجرىَ المُنادِى بحقِّ من يُنادى**
+  SELECT count(*) INTO v_inner
+    FROM pg_proc c JOIN pg_namespace cn ON cn.oid = c.pronamespace
+   WHERE cn.nspname = 'public' AND c.prosecdef
+     AND c.proname <> 'check_and_claim_idempotency_key'
+     AND c.proname NOT LIKE 'assert_baseline_%'
+     AND c.prosrc ~ '\ycheck_and_claim_idempotency_key\s*\(';
+  IF v_inner < 4 THEN
+    RAISE EXCEPTION 'v3.75.49 (4): the idempotency claim is called from % full-rights place(s), not 4 - a business path may have lost it.', v_inner;
+  END IF;
+
+  SELECT coalesce(string_agg(c.proname, ' '), '') INTO v_invoker
+    FROM pg_proc c JOIN pg_namespace cn ON cn.oid = c.pronamespace
+   WHERE cn.nspname = 'public' AND NOT c.prosecdef
+     AND c.proname NOT LIKE 'assert_baseline_%'
+     AND c.prosrc ~ ('\y(' ||
+         'auto_post_monthly_depreciation|check_and_claim_idempotency_key|' ||
+         'check_period_lock_for_date|get_dashboard_kpis|reconcile_fifo_vs_gl' ||
+         ')\s*\(');
+  IF v_invoker <> '' THEN
+    RAISE EXCEPTION 'v3.75.49 (5): a place that runs with the caller rights now calls a shut door - grant it back or make the caller a definer: %', v_invoker;
+  END IF;
+
+  RETURN format('v3.75.49 ok - 5 doors with no knocker are shut to anon and to a logged-in user, '
+             || 'the service_role path is untouched, the idempotency claim is still called from %s '
+             || 'full-rights place(s), and no caller-rights place calls any of the five.', v_inner);
 END
 $function$
 ;

@@ -309,7 +309,12 @@ $$ LANGUAGE plpgsql;
 -- =====================================
 GRANT EXECUTE ON FUNCTION generate_depreciation_schedule(UUID) TO authenticated;
 GRANT EXECUTE ON FUNCTION generate_depreciation_schedule(UUID) TO anon;
-GRANT EXECUTE ON FUNCTION auto_post_monthly_depreciation(UUID, UUID) TO authenticated;
+-- v3.75.49 — **وقائمةٌ تسألُ: هل أنتَ موجود؟ ليست يداً تطرقُ الباب**
+-- لا طارقَ لهذه الدالّةِ فى المشروعِ كلِّه: المسارُ الذى يبدو أنّه يناديها ينادى
+-- post_depreciation صفّاً صفّاً، والاسمُ عندَه عنوانٌ فى سجلِّ التدقيقِ لا نداء.
+-- فنُزعت منحتُها فى v3.75.49، **ولو أُعيدَ تشغيلُ هذا السكربتِ لأعادَ فتحَ بابٍ
+-- لا يمرُّ منه أحد** — ومكسبٌ لا يُثبَّتُ يُلتَفُّ عليه. فيُقلَبُ السطرُ إلى نزع:
+REVOKE ALL ON FUNCTION auto_post_monthly_depreciation(UUID, UUID) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION validate_depreciation_schedule(UUID) TO authenticated;
 
 -- =====================================

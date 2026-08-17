@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-16T19:10:57.625Z
+-- Generated: 2026-08-17T11:49:59.144Z
 -- Tables: 256 | Policies: 784 | Triggers: 581 | Constraints: 1841
 -- =====================================================================
 
@@ -11063,6 +11063,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_46_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_46_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_47_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_47_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_49_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_49_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;
@@ -11180,7 +11182,6 @@ GRANT EXECUTE ON FUNCTION public.auto_link_inventory_to_journal() TO service_rol
 REVOKE ALL ON FUNCTION public.auto_link_payment_to_journal() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.auto_link_payment_to_journal() TO service_role;
 REVOKE ALL ON FUNCTION public.auto_post_monthly_depreciation(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.auto_post_monthly_depreciation(p_company_id uuid, p_user_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.auto_post_monthly_depreciation(p_company_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.auto_reverse_cogs_on_sale_return() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.auto_reverse_cogs_on_sale_return() TO service_role;
@@ -11529,7 +11530,6 @@ GRANT EXECUTE ON FUNCTION public.check_all_journal_entries_balance(p_company_id 
 GRANT EXECUTE ON FUNCTION public.check_all_journal_entries_balance(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.check_all_journal_entries_balance(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.check_and_claim_idempotency_key(p_idempotency_key text, p_company_id uuid, p_operation_type text, p_request_hash text, p_created_by uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.check_and_claim_idempotency_key(p_idempotency_key text, p_company_id uuid, p_operation_type text, p_request_hash text, p_created_by uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.check_and_claim_idempotency_key(p_idempotency_key text, p_company_id uuid, p_operation_type text, p_request_hash text, p_created_by uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.check_and_increment_rate_limit(p_identifier text, p_route text, p_max_requests integer, p_window_seconds integer) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.check_and_increment_rate_limit(p_identifier text, p_route text, p_max_requests integer, p_window_seconds integer) TO authenticated;
@@ -11602,7 +11602,6 @@ REVOKE ALL ON FUNCTION public.check_period_lock(p_company_id uuid, p_transaction
 GRANT EXECUTE ON FUNCTION public.check_period_lock(p_company_id uuid, p_transaction_date date) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.check_period_lock(p_company_id uuid, p_transaction_date date) TO service_role;
 REVOKE ALL ON FUNCTION public.check_period_lock_for_date(p_company_id uuid, p_date date) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.check_period_lock_for_date(p_company_id uuid, p_date date) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.check_period_lock_for_date(p_company_id uuid, p_date date) TO service_role;
 REVOKE ALL ON FUNCTION public.check_permission(p_company_id uuid, p_role text, p_resource text, p_action text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.check_permission(p_company_id uuid, p_role text, p_resource text, p_action text) TO authenticated;
@@ -12238,7 +12237,6 @@ GRANT EXECUTE ON FUNCTION public.get_customers_overview(p_company_id uuid, p_bra
 GRANT EXECUTE ON FUNCTION public.get_customers_overview(p_company_id uuid, p_branch_filter uuid, p_employee_filter uuid, p_cost_center_filter uuid, p_shared_grantor_ids uuid[], p_search text, p_invoice_filter text, p_page integer, p_page_size integer) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_customers_overview(p_company_id uuid, p_branch_filter uuid, p_employee_filter uuid, p_cost_center_filter uuid, p_shared_grantor_ids uuid[], p_search text, p_invoice_filter text, p_page integer, p_page_size integer) TO service_role;
 REVOKE ALL ON FUNCTION public.get_dashboard_kpis(p_company_id uuid, p_from_date date, p_to_date date) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.get_dashboard_kpis(p_company_id uuid, p_from_date date, p_to_date date) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.get_dashboard_kpis(p_company_id uuid, p_from_date date, p_to_date date) TO service_role;
 REVOKE ALL ON FUNCTION public.get_db_governance_state() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.get_db_governance_state() TO authenticated;
@@ -13827,7 +13825,6 @@ GRANT EXECUTE ON FUNCTION public.recompute_on_journal_soft_delete() TO service_r
 REVOKE ALL ON FUNCTION public.recompute_on_line_change() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.recompute_on_line_change() TO service_role;
 REVOKE ALL ON FUNCTION public.reconcile_fifo_vs_gl(p_company_id uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.reconcile_fifo_vs_gl(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.reconcile_fifo_vs_gl(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.record_approval_action(p_company_id uuid, p_reference_type text, p_reference_id uuid, p_cycle_no integer, p_action text, p_actor_id uuid, p_actor_role text, p_reason text, p_snapshot_data jsonb, p_branch_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.record_approval_action(p_company_id uuid, p_reference_type text, p_reference_id uuid, p_cycle_no integer, p_action text, p_actor_id uuid, p_actor_role text, p_reason text, p_snapshot_data jsonb, p_branch_id uuid) TO authenticated;
