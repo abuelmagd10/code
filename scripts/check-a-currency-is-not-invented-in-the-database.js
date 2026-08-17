@@ -52,8 +52,8 @@
 const { withLiveDatabase } = require("./lib/live-db")
 
 /** الأرقامُ المُثبَّتة — قِيست حيّةً على البيتَين يومَ v3.75.52. */
-const PINNED_FUNCS = 34
-const PINNED_SITES = 35
+const PINNED_FUNCS = 33
+const PINNED_SITES = 34
 const PINNED_DEFAULTS = 30
 
 /** البيتُ الواحدُ وعنوانُ السداد. */

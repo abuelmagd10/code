@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-17T15:19:41.806Z
--- Routines: 1400
+-- Generated: 2026-08-17T16:34:07.375Z
+-- Routines: 1401
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -7958,6 +7958,82 @@ BEGIN
          || ' · شركةٌ فارغة=' || r_null
          || ' · الشرطُ يتبعُ الأساس=' || r_follows
          || ' (صفوفُ الشركة=' || n_rows || ' · أجنبىٌّ بأساسِها=' || n_base || ' · بأساسٍ آخَر=' || n_marker || ')';
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_54_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_54_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  n         int;
+  n_vc      bigint;
+  n_bad     bigint;
+  n_returns bigint;
+BEGIN
+  -- (أ) الجسدُ لا يُسمّى عملةً بعينِها — والتعليقُ محجوبٌ قبلَ الحكم
+  SELECT count(*) INTO n
+  FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace
+    AND p.proname = 'confirm_purchase_return_delivery'
+    AND regexp_replace(p.prosrc, '--[^\n]*', ' ', 'g') ~ '''(EGP|USD|SAR|EUR|GBP|AED|KWD|JOD|QAR|BHD|OMR)''';
+  IF n <> 0 THEN
+    RAISE EXCEPTION 'v3.75.54: confirm_purchase_return_delivery عادت تُسمّى عملةً بعينِها';
+  END IF;
+
+  -- (ب) وتنادى البيتَ الواحدَ برقمِ شركةِ الصفِّ — والذِّكرُ ليس نداءً
+  SELECT count(*) INTO n
+  FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace
+    AND p.proname = 'confirm_purchase_return_delivery'
+    AND p.prosrc LIKE '%erp_company_base_currency(v_pr.company_id)%';
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'v3.75.54: لا تنادى البيتَ الواحدَ برقمِ شركةِ الصفّ';
+  END IF;
+
+  -- (ج) وما زالت بصلاحيّاتٍ كاملة — فنداؤها للبيتِ لا يحتاجُ منحةً لأحد
+  SELECT count(*) INTO n
+  FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace
+    AND p.proname = 'confirm_purchase_return_delivery' AND p.prosecdef;
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'v3.75.54: صارت بصلاحيّاتِ مُنادِيها — فنداؤها للبيتِ يحتاجُ منحةً لم تُعلَن';
+  END IF;
+
+  -- (د) ولم يُوسَّعْ بلوغُ البيتِ الواحدِ صامتاً
+  SELECT count(*) INTO n
+  FROM information_schema.routine_privileges
+  WHERE routine_schema = 'public'
+    AND routine_name IN ('erp_company_base_currency', 'assert_baseline_v3_75_54_check')
+    AND grantee IN ('PUBLIC', 'anon', 'authenticated');
+  IF n <> 0 THEN
+    RAISE EXCEPTION 'v3.75.54: % صلاحيّةً مفتوحةً على البيتِ الواحدِ أو الفحص — والتوسيعُ يُعلَنُ ولا يُدَسّ', n;
+  END IF;
+
+  -- (هـ) وقيدٌ حىٌّ على الصفوفِ كلِّها: لا إشعارَ دائنٍ مولودٍ من مرتجعٍ
+  --      يُوسَمُ بعملةٍ غيرِ عملةِ مرتجعِه. **ومعدودٌ لا مسكوتٌ عنه.**
+  SELECT count(*),
+         count(*) FILTER (WHERE upper(btrim(coalesce(vc.original_currency, ''))) IS DISTINCT FROM
+                                upper(btrim(coalesce(pr.original_currency, ''))))
+    INTO n_vc, n_bad
+  FROM public.vendor_credits vc
+  JOIN public.purchase_returns pr ON pr.id = vc.source_purchase_return_id;
+
+  IF n_bad <> 0 THEN
+    RAISE EXCEPTION 'v3.75.54: % إشعارَ دائنٍ موسومٌ بعملةٍ غيرِ عملةِ مرتجعِه (من %)', n_bad, n_vc;
+  END IF;
+
+  SELECT count(*) INTO n_returns FROM public.purchase_returns;
+
+  RETURN 'v3.75.54 ok - جسدٌ بلا عملةٍ حرفيّة=1 · ينادى البيت=1 · بصلاحيّاتٍ كاملة=1 · بلا توسيعِ منحة=0'
+         || ' · إشعاراتُ دائنٍ من مرتجع=' || n_vc || ' · موسومةٌ بغيرِ عملةِ مرتجعِها=' || n_bad
+         || ' · مرتجعاتٌ فى القاعدة=' || n_returns;
 END
 $function$
 ;
@@ -17170,7 +17246,12 @@ BEGIN
         v_pr.subtotal, v_pr.tax_amount, v_pr.total_amount, 0,
         v_pr.branch_id, v_pr.cost_center_id, v_pr.warehouse_id,
         'إشعار دائن - اعتماد مرتجع ' || v_pr.return_number,
-        COALESCE(v_pr.original_currency, 'EGP'), COALESCE(v_pr.exchange_rate_used, 1))
+        -- v3.75.54 — **ولا تُخترَعُ عملة**: عملةُ المرتجعِ إن قالَها، وإلّا أساسُ
+        -- شركتِه مقروءاً من صفِّها. واختراعُ «جنيه» هنا يُصدِّقُه مُشغِّلُ
+        -- v3.75.52 فيصيرُ وسماً كاذباً لا يُكشَف.
+        COALESCE(NULLIF(btrim(v_pr.original_currency), ''),
+                 public.erp_company_base_currency(v_pr.company_id)),
+        COALESCE(v_pr.exchange_rate_used, 1))
       RETURNING id INTO v_vc_id;
       INSERT INTO vendor_credit_items (vendor_credit_id, product_id, description, quantity, unit_price, tax_rate, discount_percent, line_total)
       SELECT v_vc_id, pri.product_id, pri.description, pri.quantity, pri.unit_price, pri.tax_rate, pri.discount_percent, pri.line_total
