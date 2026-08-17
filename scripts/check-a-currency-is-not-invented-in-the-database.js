@@ -131,14 +131,30 @@ function judgeDeadDeclarations(liveCols) {
   return Object.keys(DECLARED).filter((k) => !live.has(k)).sort()
 }
 
-/** والبيتُ الواحدُ يُحاكَمُ بخاصّيّتِه: قائمٌ، بصلاحيّاتِ مُنادِيه، ومغلَق. */
+/**
+ * والبيتُ الواحدُ يُحاكَمُ **بخاصّيّتِه لا بإغلاقِه** (v3.75.56):
+ * قائمٌ · بصلاحيّاتِ مُنادِيه · وجدولُ الشركاتِ محمىٌّ بحمايةِ الصفوف · ولا
+ * يبلغُه زائرٌ ولا عمومُ الأدوار.
+ *
+ * **والحكمُ بالأثرِ لا بالاسم**: الإغلاقُ أمامَ المستخدِمِ المسجَّلِ اسمٌ لا أثر.
+ * فالبيتُ بصلاحيّاتِ مُنادِيه — من ناداه جرى بحقِّه هو، فحمايةُ الصفوفِ على
+ * companies تحكمُه بالضبطِ كما تحكمُ القراءةَ المباشرةَ من الجدولِ التى يملكُها
+ * المستخدِمُ المسجَّلُ أصلاً. **فالمنحةُ لا تُوسِّعُ معلومةً واحدة.** أمّا أن
+ * يصيرَ بصلاحيّاتٍ كاملةٍ أو تُرفَعَ الحمايةُ عن صفوفِ جدولِه فعطبانِ حقيقيّان
+ * **لم يكن شرطُ الإغلاقِ يراهما** — ولذلك بُدِّلَ السؤالُ إلى الأقوى لا رُفِع.
+ *
+ * **ومعدودٌ لا مسكوتٌ عنه**: منحةُ المستخدِمِ المسجَّلِ تُعَدُّ وتُعرَضُ فى
+ * التقرير ولا تُشترَطُ بعد — فلا كاتبَ يعتمدُ عليها اليوم. وأوّلُ دفعةٍ يعتمدُ
+ * فيها كاتبٌ عليها **تُثبِّتُها**، فمكسبٌ لا يُثبَّتُ يُلتَفُّ عليه.
+ */
 function judgeHome(row) {
   const out = []
   const r = row || {}
   if (!Number(r.exists_)) out.push("البيتُ الواحدُ " + HOME + " غائبٌ من القاعدة — **وبحثٌ لا يجد ليس دليلَ غياب**، فهذا غيابٌ مقيس")
   else {
-    if (Number(r.secdef)) out.push(HOME + " صارَ بصلاحيّاتٍ كاملة — وكان بصلاحيّاتِ مُنادِيه عن قصد، فحمايةُ الصفوفِ تحرسُه")
-    if (Number(r.open_)) out.push(HOME + " صارَ يبلغُه زائرٌ أو مستخدِمٌ مسجَّل (" + r.open_ + " صلاحيّة)")
+    if (Number(r.secdef)) out.push(HOME + " صارَ بصلاحيّاتٍ كاملة — وكان بصلاحيّاتِ مُنادِيه عن قصد، فحمايةُ الصفوفِ تحرسُه، والمنحةُ المُعلَنةُ تصيرُ عندئذٍ باباً لصفوفِ غيرِ صاحبِها")
+    if (!Number(r.rls)) out.push("رُفعت حمايةُ الصفوفِ عن جدولِ companies — **وهى الحارسُ الحقيقىُّ للبيتِ لا إغلاقُه**")
+    if (Number(r.open_)) out.push(HOME + " صارَ يبلغُه زائرٌ أو عمومُ الأدوار (" + r.open_ + " صلاحيّة)")
   }
   return out
 }
@@ -191,12 +207,23 @@ if (process.argv.includes("--selftest")) {
   t("ولا إعلانَ بلا سبب", Object.values(DECLARED).every((d) => d.why && d.why.length > 30), true)
   t("ولا إعلانَ بلا شرطِ رفع", Object.values(DECLARED).every((d) => d.lift && d.lift.length > 20), true)
 
-  // ── البيتُ الواحدُ يُحاكَمُ بخاصّيّتِه ───────────────────────────────────
-  t("يقبلُ بيتاً قائماً بصلاحيّاتِ مُنادِيه ومغلَقاً", judgeHome({ exists_: 1, secdef: 0, open_: 0 }).length, 0)
+  // ── البيتُ الواحدُ يُحاكَمُ بخاصّيّتِه لا بإغلاقِه (v3.75.56) ────────────
+  t("يقبلُ بيتاً قائماً بصلاحيّاتِ مُنادِيه وجدولُه محمىٌّ ولا يبلغُه زائر",
+    judgeHome({ exists_: 1, secdef: 0, rls: 1, open_: 0 }).length, 0)
   t("ويرفضُ غيابَه", judgeHome({ exists_: 0 }).length, 1)
-  t("ويرفضُ أن يصيرَ بصلاحيّاتٍ كاملة", judgeHome({ exists_: 1, secdef: 1, open_: 0 }).length, 1)
-  t("ويرفضُ أن يُفتَحَ لمستخدِم", judgeHome({ exists_: 1, secdef: 0, open_: 2 }).length, 1)
-  t("ويجمعُ العطبَين", judgeHome({ exists_: 1, secdef: 1, open_: 1 }).length, 2)
+  t("ويرفضُ أن يصيرَ بصلاحيّاتٍ كاملة", judgeHome({ exists_: 1, secdef: 1, rls: 1, open_: 0 }).length, 1)
+  t("ويرفضُ أن تُرفَعَ حمايةُ الصفوفِ عن جدولِ الشركات — وهى الحارسُ الحقيقىّ",
+    judgeHome({ exists_: 1, secdef: 0, rls: 0, open_: 0 }).length, 1)
+  t("ويُسمّى الجدولَ الذى رُفعت عنه الحمايةُ بعينِه",
+    judgeHome({ exists_: 1, secdef: 0, rls: 0, open_: 0 })[0].indexOf("companies") >= 0, true)
+  t("ويرفضُ أن يبلغَه زائرٌ أو عمومُ الأدوار", judgeHome({ exists_: 1, secdef: 0, rls: 1, open_: 2 }).length, 1)
+  // **والحكمُ بالأثرِ لا بالاسم**: منحةُ المستخدِمِ المسجَّلِ مُعلَنةٌ ومقصودةٌ
+  // ولا تُوسِّعُ معلومة، فلا تُعَدُّ عطباً — وتُعَدُّ وتُعرَضُ فى التقرير،
+  // **ومعدودٌ لا مسكوتٌ عنه**.
+  t("ولا يصرخُ على منحةِ المستخدِمِ المسجَّلِ المُعلَنة — والحكمُ بالأثرِ لا بالاسم",
+    judgeHome({ exists_: 1, secdef: 0, rls: 1, open_: 0, auth: 1 }).length, 0)
+  t("ويجمعُ العطبَينِ الحقيقيَّين", judgeHome({ exists_: 1, secdef: 1, rls: 0, open_: 0 }).length, 2)
+  t("ويجمعُ الثلاثةَ حين تجتمع", judgeHome({ exists_: 1, secdef: 1, rls: 0, open_: 1 }).length, 3)
 
   // ── والمُسدَّدُ يُحاكَمُ بالنداءِ لا بالاسم ──────────────────────────────
   const OK3 = HEALED.map((h) => ({ proname: h.name, prosecdef: 1, names_currency: 0, calls_home: 1 }))
@@ -295,12 +322,22 @@ const BLANK = "regexp_replace(regexp_replace(p.prosrc, '/\\*.*?\\*/', ' ', 'gs')
           AND p.proname = $1`, [h.name, HOME + "(" + h.arg + ")"])).rows)
     }
 
+    // v3.75.56 — **والحكمُ بالأثرِ لا بالاسم**: يُقاسُ ما يحرسُ البيتَ فعلاً
+    // (صلاحيّاتُ مُنادِيه · وحمايةُ صفوفِ جدولِ الشركات) لا ما يُغلِقُه اسماً.
+    // ومنحةُ المستخدِمِ المسجَّلِ تُقاسُ على حِدَةٍ لتُعرَضَ ولا تُشترَطَ بعد،
+    // **ومعدودٌ لا مسكوتٌ عنه**.
     const home = (await c.query(`
       SELECT (SELECT count(*) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname=$1)::int AS exists_,
              (SELECT count(*) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname=$1 AND prosecdef)::int AS secdef,
+             (SELECT count(*) FROM pg_class c2
+                JOIN pg_namespace ns2 ON ns2.oid = c2.relnamespace
+               WHERE ns2.nspname='public' AND c2.relname='companies' AND c2.relrowsecurity)::int AS rls,
              (SELECT count(*) FROM information_schema.routine_privileges
                WHERE routine_schema='public' AND routine_name=$1
-                 AND grantee IN ('PUBLIC','anon','authenticated'))::int AS open_`, [HOME])).rows[0]
+                 AND grantee IN ('PUBLIC','anon'))::int AS open_,
+             (SELECT count(*) FROM information_schema.routine_privileges
+               WHERE routine_schema='public' AND routine_name=$1
+                 AND grantee = 'authenticated')::int AS auth`, [HOME])).rows[0]
 
     const baseline = (await c.query(`
       SELECT (SELECT count(*) FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname=$1)::int AS n,
@@ -342,6 +379,10 @@ const BLANK = "regexp_replace(regexp_replace(p.prosrc, '/\\*.*?\\*/', ' ', 'gs')
     " موضعاً   (المُثبَّت " + PINNED_FUNCS + " / " + PINNED_SITES + ")")
   console.log("  أعمدةُ جداولِ الشركاتِ بقيمةٍ افتراضيّةٍ تُسمّى عملة: " + tenant.length +
     "   (المُثبَّت " + PINNED_DEFAULTS + ")   ·   مُعلَنٌ خارجَها: " + others.length)
+  console.log("  البيتُ الواحدُ " + HOME + ": بصلاحيّاتِ مُنادِيه=" + (Number(data.home.secdef) ? "لا" : "نعم") +
+    "   ·   حمايةُ صفوفِ companies=" + (Number(data.home.rls) ? "مفعَّلة" : "مرفوعة") +
+    "   ·   لزائرٍ أو لعموم=" + Number(data.home.open_) +
+    "   ·   وللمستخدِمِ المسجَّل=" + Number(data.home.auth) + " (معلَنٌ ومقصود — v3.75.56)")
 
   if (vFuncs === "grew" || vSites === "grew" || vDefaults === "grew") {
     problems.push(["زادَ ما يُسمّى عملةً فى القاعدة — **ولا تُخترَعُ عملةٌ، بل تُقرأُ من صاحبِها**", [
@@ -370,7 +411,7 @@ const BLANK = "regexp_replace(regexp_replace(p.prosrc, '/\\*.*?\\*/', ' ', 'gs')
   console.log("+ لا موضعَ جديدٌ يخترعُ عملةً فى القاعدةِ فوقَ الدَّينِ المُثبَّت (التعليقُ محجوبٌ قبلَ الحكم،" +
     " والفحوصُ المرجعيّةُ مستثناةٌ بالاسم فلا يعدُّ الحارسُ نفسَه).")
   console.log("  ok  والمُسدَّدون " + HEALED.length + " (مُشغِّلاتٌ وكُتّابٌ) ما زالوا ينادون البيتَ الواحدَ كلٌّ بوسيطِه ولا يُسمّون عملة.")
-  console.log("  ok  والبيتُ الواحدُ بصلاحيّاتِ مُنادِيه ولا يبلغُه زائرٌ ولا مستخدِمٌ مسجَّل.")
+  console.log("  ok  والبيتُ الواحدُ بصلاحيّاتِ مُنادِيه، وجدولُ الشركاتِ محمىٌّ بحمايةِ الصفوف، ولا يبلغُه زائرٌ ولا عمومُ الأدوار — **ويُسمّى ما يُقاسُ لا أكثرَ منه**.")
 
   for (const [k, d] of Object.entries(DECLARED)) {
     console.log("  -   استثناءٌ معلَن: " + k + " — " + d.why)

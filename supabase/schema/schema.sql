@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-17T17:45:24.481Z
+-- Generated: 2026-08-17T18:46:42.334Z
 -- Tables: 256 | Policies: 784 | Triggers: 582 | Constraints: 1841
 -- =====================================================================
 
@@ -11076,6 +11076,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_54_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_54_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_55_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_55_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_56_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_56_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;
@@ -11990,6 +11992,7 @@ GRANT EXECUTE ON FUNCTION public.erp_branch_sku_code(p_branch_id uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.erp_branch_sku_code(p_branch_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_branch_sku_code(p_branch_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_company_base_currency(p_company_id uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_company_base_currency(p_company_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_company_base_currency(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_company_senior_count(p_company_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_company_senior_count(p_company_id uuid) TO authenticated;

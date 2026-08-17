@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-17T17:45:25.886Z
--- Routines: 1402
+-- Generated: 2026-08-17T18:46:43.733Z
+-- Routines: 1403
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -7829,14 +7829,20 @@ BEGIN
     RAISE EXCEPTION 'v3.75.52: وُسِمَ مبلغٌ بعملةٍ لم يُحسَبْ بها (%)', r_inherit;
   END IF;
 
-  -- (ح) ولا يُمنَحُ البيتُ الواحدُ ولا الفحصُ لأحدٍ سوى مفتاحِ الخدمة
+  -- (ح) **والحكمُ بالأثرِ لا بالاسم**: البيتُ الواحدُ لم يعُدْ يُحرَسُ بإغلاقِه
+  --     بل بخاصّيّتِه — بصلاحيّاتِ مُنادِيه، وجدولُه محمىٌّ بحمايةِ الصفوف، ولا
+  --     يبلغُه زائر. وذلك شرطٌ **أقوى**: يصرخُ لو صارَ بصلاحيّاتٍ كاملةٍ أو
+  --     رُفعتِ الحمايةُ عن صفوفِ الشركات، وكلاهما عطبٌ لا يراه شرطُ الإغلاق.
+  PERFORM public.assert_baseline_v3_75_56_check();
+
+  -- (ح٢) ولا يُمنَحُ هذا الفحصُ نفسُه لأحدٍ سوى مفتاحِ الخدمة
   SELECT count(*) INTO n
   FROM information_schema.routine_privileges
   WHERE routine_schema = 'public'
-    AND routine_name IN ('erp_company_base_currency', 'assert_baseline_v3_75_52_check')
+    AND routine_name = 'assert_baseline_v3_75_52_check'
     AND grantee IN ('PUBLIC', 'anon', 'authenticated');
   IF n <> 0 THEN
-    RAISE EXCEPTION 'v3.75.52: % صلاحيّةً مفتوحةً على البيتِ الواحدِ أو الفحص', n;
+    RAISE EXCEPTION 'v3.75.52: % صلاحيّةً مفتوحةً على هذا الفحصِ نفسِه — والتوسيعُ يُعلَنُ ولا يُدَسّ', n;
   END IF;
 
   RETURN 'v3.75.52 ok - البيتُ الواحدُ يرفضُ الاختراع=' || r_invent ||
@@ -7897,14 +7903,20 @@ BEGIN
     RAISE EXCEPTION 'v3.75.53: ic_fx_amount_accuracy صارت بصلاحيّاتِ مُنادِيها — فنداؤها للبيتِ يحتاجُ منحةً لم تُعلَن';
   END IF;
 
-  -- (د) ولم يُوسَّعْ بلوغُ البيتِ الواحدِ صامتاً فى هذه الدفعة
+  -- (د) **والحكمُ بالأثرِ لا بالاسم**: البيتُ الواحدُ لم يعُدْ يُحرَسُ بإغلاقِه
+  --     بل بخاصّيّتِه — بصلاحيّاتِ مُنادِيه، وجدولُه محمىٌّ بحمايةِ الصفوف، ولا
+  --     يبلغُه زائر. وذلك شرطٌ **أقوى**: يصرخُ لو صارَ بصلاحيّاتٍ كاملةٍ أو
+  --     رُفعتِ الحمايةُ عن صفوفِ الشركات، وكلاهما عطبٌ لا يراه شرطُ الإغلاق.
+  PERFORM public.assert_baseline_v3_75_56_check();
+
+  -- (د٢) ولا يُمنَحُ هذا الفحصُ نفسُه لأحدٍ سوى مفتاحِ الخدمة
   SELECT count(*) INTO n
   FROM information_schema.routine_privileges
   WHERE routine_schema = 'public'
-    AND routine_name IN ('erp_company_base_currency', 'assert_baseline_v3_75_53_check')
+    AND routine_name = 'assert_baseline_v3_75_53_check'
     AND grantee IN ('PUBLIC', 'anon', 'authenticated');
   IF n <> 0 THEN
-    RAISE EXCEPTION 'v3.75.53: % صلاحيّةً مفتوحةً على البيتِ الواحدِ أو الفحص — والتوسيعُ يُعلَنُ ولا يُدَسّ', n;
+    RAISE EXCEPTION 'v3.75.53: % صلاحيّةً مفتوحةً على هذا الفحصِ نفسِه — والتوسيعُ يُعلَنُ ولا يُدَسّ', n;
   END IF;
 
   -- (هـ) ورقمُ شركةٍ فارغٌ يُعيدُ لا شىءَ ولا يرفع — فلا تنكسرُ شاشةٌ تُنادِى بلا شركة
@@ -8006,14 +8018,20 @@ BEGIN
     RAISE EXCEPTION 'v3.75.54: صارت بصلاحيّاتِ مُنادِيها — فنداؤها للبيتِ يحتاجُ منحةً لم تُعلَن';
   END IF;
 
-  -- (د) ولم يُوسَّعْ بلوغُ البيتِ الواحدِ صامتاً
+  -- (د) **والحكمُ بالأثرِ لا بالاسم**: البيتُ الواحدُ لم يعُدْ يُحرَسُ بإغلاقِه
+  --     بل بخاصّيّتِه — بصلاحيّاتِ مُنادِيه، وجدولُه محمىٌّ بحمايةِ الصفوف، ولا
+  --     يبلغُه زائر. وذلك شرطٌ **أقوى**: يصرخُ لو صارَ بصلاحيّاتٍ كاملةٍ أو
+  --     رُفعتِ الحمايةُ عن صفوفِ الشركات، وكلاهما عطبٌ لا يراه شرطُ الإغلاق.
+  PERFORM public.assert_baseline_v3_75_56_check();
+
+  -- (د٢) ولا يُمنَحُ هذا الفحصُ نفسُه لأحدٍ سوى مفتاحِ الخدمة
   SELECT count(*) INTO n
   FROM information_schema.routine_privileges
   WHERE routine_schema = 'public'
-    AND routine_name IN ('erp_company_base_currency', 'assert_baseline_v3_75_54_check')
+    AND routine_name = 'assert_baseline_v3_75_54_check'
     AND grantee IN ('PUBLIC', 'anon', 'authenticated');
   IF n <> 0 THEN
-    RAISE EXCEPTION 'v3.75.54: % صلاحيّةً مفتوحةً على البيتِ الواحدِ أو الفحص — والتوسيعُ يُعلَنُ ولا يُدَسّ', n;
+    RAISE EXCEPTION 'v3.75.54: % صلاحيّةً مفتوحةً على هذا الفحصِ نفسِه — والتوسيعُ يُعلَنُ ولا يُدَسّ', n;
   END IF;
 
   -- (هـ) وقيدٌ حىٌّ على الصفوفِ كلِّها: لا إشعارَ دائنٍ مولودٍ من مرتجعٍ
@@ -8101,14 +8119,20 @@ BEGIN
     RAISE EXCEPTION 'v3.75.55: post_purchase_transaction عادَ يسكتُ عن العمود — فيُجيبُ عنه الافتراض';
   END IF;
 
-  -- (هـ) ولم يُوسَّعْ بلوغُ البيتِ الواحدِ ولا الفحصِ صامتاً
+  -- (هـ) **والحكمُ بالأثرِ لا بالاسم**: البيتُ الواحدُ لم يعُدْ يُحرَسُ بإغلاقِه
+  --     بل بخاصّيّتِه — بصلاحيّاتِ مُنادِيه، وجدولُه محمىٌّ بحمايةِ الصفوف، ولا
+  --     يبلغُه زائر. وذلك شرطٌ **أقوى**: يصرخُ لو صارَ بصلاحيّاتٍ كاملةٍ أو
+  --     رُفعتِ الحمايةُ عن صفوفِ الشركات، وكلاهما عطبٌ لا يراه شرطُ الإغلاق.
+  PERFORM public.assert_baseline_v3_75_56_check();
+
+  -- (هـ٢) ولا يُمنَحُ هذا الفحصُ نفسُه لأحدٍ سوى مفتاحِ الخدمة
   SELECT count(*) INTO n
   FROM information_schema.routine_privileges
   WHERE routine_schema = 'public'
-    AND routine_name IN ('erp_company_base_currency', 'assert_baseline_v3_75_55_check')
+    AND routine_name = 'assert_baseline_v3_75_55_check'
     AND grantee IN ('PUBLIC', 'anon', 'authenticated');
   IF n <> 0 THEN
-    RAISE EXCEPTION 'v3.75.55: % صلاحيّةً مفتوحةً على البيتِ أو الفحص — والتوسيعُ يُعلَنُ ولا يُدَسّ', n;
+    RAISE EXCEPTION 'v3.75.55: % صلاحيّةً مفتوحةً على هذا الفحصِ نفسِه — والتوسيعُ يُعلَنُ ولا يُدَسّ', n;
   END IF;
 
   -- (و) وقيدٌ حىٌّ على الصفوفِ كلِّها — **يصرخُ يومَ يقع**:
@@ -8136,6 +8160,80 @@ BEGIN
          || ' · مرتجعاتٌ فى القاعدة=' || n_pr
          || ' · بعمودٍ فارغ=' || n_blank
          || ' · وسمٌ كاذب=' || n_mismatch;
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_56_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_56_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  n_invoker int;
+  n_rls     int;
+  n_open    int;
+  n_self    int;
+  n_auth    int;
+BEGIN
+  -- (أ) البيتُ الواحدُ **بصلاحيّاتِ مُنادِيه** — فمن ناداه جرى بحقِّه هو لا بحقِّ
+  --     سواه، وحمايةُ الصفوفِ تحكمُه كما تحكمُ قراءتَه المباشرةَ من الجدول.
+  SELECT count(*) INTO n_invoker
+  FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace
+    AND p.proname = 'erp_company_base_currency'
+    AND NOT p.prosecdef;
+  IF n_invoker <> 1 THEN
+    RAISE EXCEPTION 'v3.75.56: البيتُ الواحدُ ليس بصلاحيّاتِ مُنادِيه — فمنحُه لمستخدِمٍ يفتحُ له صفوفَ غيرِه';
+  END IF;
+
+  -- (ب) وجدولُ الشركاتِ محمىٌّ بحمايةِ الصفوف — **وهى الحارسُ الحقيقىُّ لا المنحة**
+  SELECT count(*) INTO n_rls
+  FROM pg_class c
+  JOIN pg_namespace ns ON ns.oid = c.relnamespace
+  WHERE ns.nspname = 'public' AND c.relname = 'companies' AND c.relrowsecurity;
+  IF n_rls <> 1 THEN
+    RAISE EXCEPTION 'v3.75.56: رُفعت حمايةُ الصفوفِ عن companies — فالبيتُ الممنوحُ يصيرُ باباً مفتوحاً';
+  END IF;
+
+  -- (ج) ولا يبلغُه زائرٌ ولا عمومُ الأدوار — **والمسجَّلُ وحدَه معلَنٌ ومقصود**
+  SELECT count(*) INTO n_open
+  FROM information_schema.routine_privileges
+  WHERE routine_schema = 'public'
+    AND routine_name = 'erp_company_base_currency'
+    AND grantee IN ('PUBLIC', 'anon');
+  IF n_open <> 0 THEN
+    RAISE EXCEPTION 'v3.75.56: % صلاحيّةً على البيتِ لزائرٍ أو لعمومِ الأدوار', n_open;
+  END IF;
+
+  -- (د) ولا يُمنَحُ هذا الفحصُ نفسُه لأحدٍ سوى مفتاحِ الخدمة
+  SELECT count(*) INTO n_self
+  FROM information_schema.routine_privileges
+  WHERE routine_schema = 'public'
+    AND routine_name = 'assert_baseline_v3_75_56_check'
+    AND grantee IN ('PUBLIC', 'anon', 'authenticated');
+  IF n_self <> 0 THEN
+    RAISE EXCEPTION 'v3.75.56: % صلاحيّةً مفتوحةً على هذا الفحصِ نفسِه', n_self;
+  END IF;
+
+  -- **ومعدودٌ لا مسكوتٌ عنه**: منحةُ المستخدِمِ المسجَّلِ تُعَدُّ وتُعرَض، ولا تُشترَطُ
+  -- بعدُ — فلا كاتبَ يعتمدُ عليها اليوم. وأوّلُ دفعةٍ يعتمدُ فيها كاتبٌ عليها
+  -- **تُثبِّتُها**، فمكسبٌ لا يُثبَّتُ يُلتَفُّ عليه.
+  SELECT count(*) INTO n_auth
+  FROM information_schema.routine_privileges
+  WHERE routine_schema = 'public'
+    AND routine_name = 'erp_company_base_currency'
+    AND grantee = 'authenticated';
+
+  RETURN 'v3.75.56 ok - بصلاحيّاتِ مُنادِيه=' || n_invoker
+         || ' · حمايةُ صفوفِ الشركات=' || n_rls
+         || ' · لزائرٍ أو لعموم=' || n_open
+         || ' · الفحصُ مغلَق=' || n_self
+         || ' · وللمستخدِمِ المسجَّل=' || n_auth || ' (معلَنٌ ومقصود)';
 END
 $function$
 ;
