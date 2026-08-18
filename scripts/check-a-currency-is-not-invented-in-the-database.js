@@ -52,8 +52,8 @@
 const { withLiveDatabase } = require("./lib/live-db")
 
 /** الأرقامُ المُثبَّتة — قِيست حيّةً على البيتَين يومَ v3.75.52. */
-const PINNED_FUNCS = 31
-const PINNED_SITES = 31
+const PINNED_FUNCS = 27
+const PINNED_SITES = 27
 const PINNED_DEFAULTS = 30
 
 /** البيتُ الواحدُ وعنوانُ السداد. */
@@ -77,6 +77,12 @@ const HEALED = [
   { name: "process_purchase_return_atomic",             arg: "p_company_id" },
   { name: "process_purchase_return_multi_warehouse",    arg: "p_company_id" },
   { name: "post_purchase_transaction",                  arg: "p_company_id", secdefOnly: true },
+  // v3.75.57 — أربعةُ كُتّابٍ **بصلاحيّاتِ مُنادِيهم**، ونداؤهم قائمٌ على منحةِ
+  // v3.75.56 المُثبَّتة. ولإشعارِ المَدينِ نسختان تُحاكَمانِ معاً بالاسمِ نفسِه،
+  // **ولا تشفعُ نسخةٌ لأخرى**.
+  { name: "create_customer_debit_note",                 arg: "p_company_id" },
+  { name: "create_sales_order_atomic",                  arg: "(p_so_data->>'company_id')::uuid" },
+  { name: "create_vendor_credit_with_items",            arg: "(p_credit->>'company_id')::UUID" },
 ]
 
 /**

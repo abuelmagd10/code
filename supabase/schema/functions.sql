@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-17T18:46:43.733Z
--- Routines: 1403
+-- Generated: 2026-08-18T11:46:33.803Z
+-- Routines: 1404
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -8220,20 +8220,175 @@ BEGIN
     RAISE EXCEPTION 'v3.75.56: % صلاحيّةً مفتوحةً على هذا الفحصِ نفسِه', n_self;
   END IF;
 
-  -- **ومعدودٌ لا مسكوتٌ عنه**: منحةُ المستخدِمِ المسجَّلِ تُعَدُّ وتُعرَض، ولا تُشترَطُ
-  -- بعدُ — فلا كاتبَ يعتمدُ عليها اليوم. وأوّلُ دفعةٍ يعتمدُ فيها كاتبٌ عليها
-  -- **تُثبِّتُها**، فمكسبٌ لا يُثبَّتُ يُلتَفُّ عليه.
+  -- (هـ) **ومكسبٌ لا يُثبَّتُ يُلتَفُّ عليه**: كانت هذه المنحةُ تُعَدُّ وتُعرَضُ ولا
+  --     تُشترَط، إذ لم يكن كاتبٌ يعتمدُ عليها. وv3.75.57 جعلت أربعةَ كُتّابٍ
+  --     بصلاحيّاتِ مُنادِيهم ينادون البيتَ الواحد، **فنزعُها اليومَ يكسرُ إنشاءَ
+  --     أمرِ بيعٍ وإشعارِ دائنٍ وإشعارِ مَدين**. فصارت شرطاً لا خبَراً.
   SELECT count(*) INTO n_auth
   FROM information_schema.routine_privileges
   WHERE routine_schema = 'public'
     AND routine_name = 'erp_company_base_currency'
     AND grantee = 'authenticated';
+  IF n_auth <> 1 THEN
+    RAISE EXCEPTION 'v3.75.57: منحةُ التنفيذِ على البيتِ الواحدِ للمستخدِمِ المسجَّلِ = % لا واحدة — وأربعةُ كُتّابٍ بصلاحيّاتِ مُنادِيهم يعتمدون عليها', n_auth;
+  END IF;
 
   RETURN 'v3.75.56 ok - بصلاحيّاتِ مُنادِيه=' || n_invoker
          || ' · حمايةُ صفوفِ الشركات=' || n_rls
          || ' · لزائرٍ أو لعموم=' || n_open
          || ' · الفحصُ مغلَق=' || n_self
-         || ' · وللمستخدِمِ المسجَّل=' || n_auth || ' (معلَنٌ ومقصود)';
+         || ' · وللمستخدِمِ المسجَّل=' || n_auth || ' (مُثبَّتٌ منذ v3.75.57)';
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_57_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_57_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  n         int;
+  n_invoker int;
+  n_open    int;
+  n_auth    int;
+  n_self    int;
+  n_so      bigint; n_so_blank bigint; n_so_bad bigint;
+  n_vc      bigint; n_vc_blank bigint; n_vc_bad bigint;
+  n_dn      bigint; n_dn_blank bigint; n_dn_bad bigint;
+  v_names   text[] := ARRAY['create_customer_debit_note',
+                            'create_sales_order_atomic',
+                            'create_vendor_credit_with_items'];
+BEGIN
+  -- (أ) لا جسدَ من الأربعةِ يُسمّى عملةً بعينِها — والتعليقُ محجوبٌ قبلَ الحكم
+  SELECT count(*) INTO n
+  FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace
+    AND p.proname = ANY(v_names)
+    AND regexp_replace(p.prosrc, '--[^\n]*', ' ', 'g') ~ '''(EGP|USD|SAR|EUR|GBP|AED|KWD|JOD|QAR|BHD|OMR)''';
+  IF n <> 0 THEN
+    RAISE EXCEPTION 'v3.75.57: % من الكُتّابِ عادَ يُسمّى عملةً بعينِها', n;
+  END IF;
+
+  -- (ب) وكلٌّ ينادى البيتَ **بالوسيطِ الذى يُعطاه هو** — والذِّكرُ ليس نداءً،
+  --     **وشكلُ النداءِ خاصّيّةٌ فى صاحبِه لا قالبٌ واحدٌ للجميع**.
+  SELECT count(*) INTO n FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'create_customer_debit_note'
+    AND p.prosrc LIKE '%erp_company_base_currency(p_company_id)%';
+  IF n <> 2 THEN
+    RAISE EXCEPTION 'v3.75.57: نسختا إشعارِ المَدينِ تناديانِ البيتَ % لا اثنتين', n;
+  END IF;
+
+  SELECT count(*) INTO n FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'create_sales_order_atomic'
+    AND p.prosrc LIKE '%erp_company_base_currency((p_so_data->>''company_id'')::uuid)%';
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'v3.75.57: أمرُ البيعِ لا ينادى البيتَ برقمِ الشركةِ من حمولتِه';
+  END IF;
+
+  SELECT count(*) INTO n FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'create_vendor_credit_with_items'
+    AND p.prosrc LIKE '%erp_company_base_currency((p_credit->>''company_id'')::UUID)%';
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'v3.75.57: إشعارُ الدائنِ اليدوىُّ لا ينادى البيتَ برقمِ الشركةِ من حمولتِه';
+  END IF;
+
+  -- (ج) ونسختا إشعارِ المَدينِ ترثانِ عملةَ فاتورتِهما، ولا تقرآنِ الجدولَ الفارغ
+  SELECT count(*) INTO n FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'create_customer_debit_note'
+    AND p.prosrc LIKE '%FROM public.invoices i%';
+  IF n <> 2 THEN
+    RAISE EXCEPTION 'v3.75.57: % من نسختَى إشعارِ المَدينِ ترثُ عملةَ فاتورتِها لا اثنتان', n;
+  END IF;
+
+  SELECT count(*) INTO n FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'create_customer_debit_note'
+    AND regexp_replace(p.prosrc, '--[^\n]*', ' ', 'g') ~ '\mcurrencies\M';
+  IF n <> 0 THEN
+    RAISE EXCEPTION 'v3.75.57: إشعارُ المَدينِ عادَ يقرأُ الجدولَ الفارغَ currencies — فيكتبُ فراغاً';
+  END IF;
+
+  -- (د) والأربعةُ **بصلاحيّاتِ مُنادِيهم**: حمايةُ الصفوفِ تحكمُهم، ونداؤهم للبيتِ
+  --     قائمٌ على المنحةِ المُعلَنة. **ولو صاروا بصلاحيّاتٍ كاملةٍ لتغيّرَ الحكمُ كلُّه.**
+  SELECT count(*) INTO n_invoker FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace AND p.proname = ANY(v_names) AND NOT p.prosecdef;
+  IF n_invoker <> 4 THEN
+    RAISE EXCEPTION 'v3.75.57: % بصلاحيّاتِ مُنادِيهم لا أربعة — والحكمُ يتغيّرُ بتغيّرِ الخاصّيّة', n_invoker;
+  END IF;
+
+  -- (هـ) ولا يبلغُهم زائرٌ ولا عمومُ الأدوار
+  SELECT count(*) INTO n_open FROM information_schema.routine_privileges
+  WHERE routine_schema = 'public' AND routine_name = ANY(v_names) AND grantee IN ('PUBLIC', 'anon');
+  IF n_open <> 0 THEN
+    RAISE EXCEPTION 'v3.75.57: % صلاحيّةً على الكُتّابِ لزائرٍ أو لعمومِ الأدوار', n_open;
+  END IF;
+
+  -- (هـ٢) **ولا يُنزَعُ ما تحتاجُه الشاشة**: المستخدِمُ المسجَّلُ ما زال يبلغُهم
+  --     صراحةً — فالتضييقُ أغلقَ على الزائرِ ولم يكسرْ شاشةً على المسجَّل.
+  SELECT count(*) INTO n_auth FROM information_schema.routine_privileges
+  WHERE routine_schema = 'public' AND routine_name = ANY(v_names) AND grantee = 'authenticated';
+  IF n_auth <> 4 THEN
+    RAISE EXCEPTION 'v3.75.57: المستخدِمُ المسجَّلُ يبلغُ % من الكُتّابِ لا أربعةً — فالتضييقُ كسرَ شاشة', n_auth;
+  END IF;
+
+  -- (و) والبيتُ محروسٌ بخاصّيّتِه، **ومنحتُه صارت مُثبَّتةً لا مُعلَنةً فحسب** —
+  --     يُنادَى بيتٌ واحدٌ للتوكيدِ ولا يُنسَخ.
+  PERFORM public.assert_baseline_v3_75_56_check();
+
+  -- (ز) ولا يُمنَحُ هذا الفحصُ نفسُه لأحدٍ سوى مفتاحِ الخدمة
+  SELECT count(*) INTO n_self FROM information_schema.routine_privileges
+  WHERE routine_schema = 'public' AND routine_name = 'assert_baseline_v3_75_57_check'
+    AND grantee IN ('PUBLIC', 'anon', 'authenticated');
+  IF n_self <> 0 THEN
+    RAISE EXCEPTION 'v3.75.57: % صلاحيّةً مفتوحةً على هذا الفحصِ نفسِه', n_self;
+  END IF;
+
+  -- (ح) وقيدٌ حىٌّ على الصفوفِ كلِّها — **يصرخُ يومَ يقع**: لا مستندَ بعمودِ عملةٍ
+  --     فارغ، ولا مستندَ يقولُ عملةً غيرَ أساسِ شركتِه **وحسابُه يقولُ إنّه بالأساس**
+  --     (سعرُ صرفٍ واحدٌ وأصلُه يساوى محوَّلَه) — فذلك الوسمُ الكاذبُ بعينِه.
+  SELECT count(*),
+         count(*) FILTER (WHERE so.currency IS NULL OR btrim(so.currency) = ''),
+         count(*) FILTER (WHERE upper(btrim(coalesce(so.currency,''))) <> upper(btrim(co.base_currency))
+                            AND coalesce(so.exchange_rate, 1) = 1
+                            AND coalesce(so.total_base, so.total_amount) = so.total_amount)
+    INTO n_so, n_so_blank, n_so_bad
+  FROM public.sales_orders so JOIN public.companies co ON co.id = so.company_id;
+
+  SELECT count(*),
+         count(*) FILTER (WHERE vc.original_currency IS NULL OR btrim(vc.original_currency) = ''),
+         count(*) FILTER (WHERE upper(btrim(coalesce(vc.original_currency,''))) <> upper(btrim(co.base_currency))
+                            AND coalesce(vc.exchange_rate_used, 1) = 1
+                            AND coalesce(vc.original_total_amount, vc.total_amount) = vc.total_amount)
+    INTO n_vc, n_vc_blank, n_vc_bad
+  FROM public.vendor_credits vc JOIN public.companies co ON co.id = vc.company_id;
+
+  SELECT count(*),
+         count(*) FILTER (WHERE dn.original_currency IS NULL OR btrim(dn.original_currency) = ''),
+         count(*) FILTER (WHERE upper(btrim(coalesce(dn.original_currency,''))) <> upper(btrim(co.base_currency))
+                            AND coalesce(dn.exchange_rate, 1) = 1
+                            AND coalesce(dn.original_total_amount, dn.total_amount) = dn.total_amount)
+    INTO n_dn, n_dn_blank, n_dn_bad
+  FROM public.customer_debit_notes dn JOIN public.companies co ON co.id = dn.company_id;
+
+  IF n_so_blank + n_vc_blank + n_dn_blank <> 0 THEN
+    RAISE EXCEPTION 'v3.75.57: مستنداتٌ بعمودِ عملةٍ فارغ — أوامرُ بيع % · إشعاراتُ دائن % · إشعاراتُ مَدين %',
+      n_so_blank, n_vc_blank, n_dn_blank;
+  END IF;
+  IF n_so_bad + n_vc_bad + n_dn_bad <> 0 THEN
+    RAISE EXCEPTION 'v3.75.57: وسمٌ كاذب — أوامرُ بيع % · إشعاراتُ دائن % · إشعاراتُ مَدين %',
+      n_so_bad, n_vc_bad, n_dn_bad;
+  END IF;
+
+  RETURN 'v3.75.57 ok - أجسادٌ بلا عملةٍ حرفيّة=4 · تنادى البيت=4 · بصلاحيّاتِ مُنادِيها=' || n_invoker
+      || ' · ترثُ عملةَ فاتورتِها=2 · بلا جدولٍ فارغ=0 · لزائرٍ أو لعموم=' || n_open
+      || ' · وللمستخدِمِ المسجَّل=' || n_auth
+      || ' · الفحصُ مغلَق=' || n_self
+      || ' · أوامرُ بيع=' || n_so || ' · إشعاراتُ دائن=' || n_vc || ' · إشعاراتُ مَدين=' || n_dn
+      || ' · فارغة=0 · وسمٌ كاذب=0';
 END
 $function$
 ;
@@ -19173,11 +19328,13 @@ BEGIN
   
   v_total_amount := v_subtotal + v_tax_amount;
   
-  IF p_currency_id IS NULL THEN
-    v_original_currency := 'EGP';
-  ELSE
-    SELECT code INTO v_original_currency FROM currencies WHERE id = p_currency_id;
-  END IF;
+  -- v3.75.57: عملةُ الإشعارِ عملةُ فاتورتِه، وإن سكتت فأساسُ شركتِه من صفِّها.
+  SELECT NULLIF(btrim(i.original_currency), '')
+    INTO v_original_currency
+    FROM public.invoices i
+   WHERE i.id = p_source_invoice_id;
+  v_original_currency := COALESCE(v_original_currency,
+                                  public.erp_company_base_currency(p_company_id));
   
   INSERT INTO customer_debit_notes (
     company_id, branch_id, cost_center_id, customer_id, debit_note_number, debit_note_date,
@@ -19246,7 +19403,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.create_customer_debit_note(p_company_id uuid, p_branch_id uuid, p_cost_center_id uuid, p_customer_id uuid, p_source_invoice_id uuid, p_debit_note_date date, p_reference_type character varying, p_reason text, p_items jsonb, p_notes text DEFAULT NULL::text, p_currency_id uuid DEFAULT NULL::uuid, p_exchange_rate numeric DEFAULT 1, p_created_by uuid DEFAULT NULL::uuid)
  RETURNS TABLE(debit_note_id uuid, debit_note_number character varying, total_amount numeric, approval_status character varying, success boolean, message text)
  LANGUAGE plpgsql
-AS $function$ DECLARE v_debit_note_id UUID; v_debit_note_number VARCHAR(50); v_subtotal DECIMAL(15,2) := 0; v_tax_amount DECIMAL(15,2) := 0; v_total_amount DECIMAL(15,2) := 0; v_item JSONB; v_line_total DECIMAL(15,2); v_line_tax DECIMAL(15,2); v_customer_name TEXT; v_invoice_number TEXT; v_original_currency VARCHAR(3); v_approval_status VARCHAR(20) := 'draft'; BEGIN IF p_company_id IS NULL OR p_customer_id IS NULL OR p_source_invoice_id IS NULL THEN RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::VARCHAR(20), FALSE, 'Missing required fields: company_id, customer_id, or source_invoice_id'; RETURN; END IF; IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::VARCHAR(20), FALSE, 'At least one item is required'; RETURN; END IF; SELECT c.name INTO v_customer_name FROM customers c WHERE c.id = p_customer_id; SELECT i.invoice_number INTO v_invoice_number FROM invoices i WHERE i.id = p_source_invoice_id; IF v_customer_name IS NULL OR v_invoice_number IS NULL THEN RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::VARCHAR(20), FALSE, 'Customer or invoice not found'; RETURN; END IF; v_debit_note_number := generate_customer_debit_note_number(p_company_id); FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP v_line_total := (v_item->>'quantity')::DECIMAL * (v_item->>'unit_price')::DECIMAL; v_line_tax := v_line_total * COALESCE((v_item->>'tax_rate')::DECIMAL, 0) / 100; v_subtotal := v_subtotal + v_line_total; v_tax_amount := v_tax_amount + v_line_tax; END LOOP; v_total_amount := v_subtotal + v_tax_amount; IF p_currency_id IS NULL THEN v_original_currency := 'EGP'; ELSE SELECT code INTO v_original_currency FROM currencies WHERE id = p_currency_id; END IF; INSERT INTO customer_debit_notes (company_id, branch_id, cost_center_id, customer_id, debit_note_number, debit_note_date, source_invoice_id, subtotal, tax_amount, total_amount, applied_amount, currency_id, original_currency, original_subtotal, original_tax_amount, original_total_amount, exchange_rate, status, approval_status, reference_type, reason, notes, created_by) VALUES (p_company_id, p_branch_id, p_cost_center_id, p_customer_id, v_debit_note_number, p_debit_note_date, p_source_invoice_id, v_subtotal, v_tax_amount, v_total_amount, 0, p_currency_id, v_original_currency, v_subtotal, v_tax_amount, v_total_amount, p_exchange_rate, 'open', 'draft', p_reference_type, p_reason, p_notes, p_created_by) RETURNING id INTO v_debit_note_id; FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP v_line_total := (v_item->>'quantity')::DECIMAL * (v_item->>'unit_price')::DECIMAL; INSERT INTO customer_debit_note_items (customer_debit_note_id, product_id, description, quantity, unit_price, tax_rate, line_total, item_type) VALUES (v_debit_note_id, (v_item->>'product_id')::UUID, v_item->>'description', (v_item->>'quantity')::DECIMAL, (v_item->>'unit_price')::DECIMAL, COALESCE((v_item->>'tax_rate')::DECIMAL, 0), v_line_total, COALESCE(v_item->>'item_type', 'charge')); END LOOP; RETURN QUERY SELECT v_debit_note_id, v_debit_note_number, v_total_amount, v_approval_status, TRUE, 'Customer debit note created successfully as DRAFT. Submit for approval before applying.'; EXCEPTION WHEN OTHERS THEN RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::VARCHAR(20), FALSE, 'Error creating customer debit note: ' || SQLERRM; END; $function$
+AS $function$ DECLARE v_debit_note_id UUID; v_debit_note_number VARCHAR(50); v_subtotal DECIMAL(15,2) := 0; v_tax_amount DECIMAL(15,2) := 0; v_total_amount DECIMAL(15,2) := 0; v_item JSONB; v_line_total DECIMAL(15,2); v_line_tax DECIMAL(15,2); v_customer_name TEXT; v_invoice_number TEXT; v_original_currency VARCHAR(3); v_approval_status VARCHAR(20) := 'draft'; BEGIN IF p_company_id IS NULL OR p_customer_id IS NULL OR p_source_invoice_id IS NULL THEN RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::VARCHAR(20), FALSE, 'Missing required fields: company_id, customer_id, or source_invoice_id'; RETURN; END IF; IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::VARCHAR(20), FALSE, 'At least one item is required'; RETURN; END IF; SELECT c.name INTO v_customer_name FROM customers c WHERE c.id = p_customer_id; SELECT i.invoice_number INTO v_invoice_number FROM invoices i WHERE i.id = p_source_invoice_id; IF v_customer_name IS NULL OR v_invoice_number IS NULL THEN RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::VARCHAR(20), FALSE, 'Customer or invoice not found'; RETURN; END IF; v_debit_note_number := generate_customer_debit_note_number(p_company_id); FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP v_line_total := (v_item->>'quantity')::DECIMAL * (v_item->>'unit_price')::DECIMAL; v_line_tax := v_line_total * COALESCE((v_item->>'tax_rate')::DECIMAL, 0) / 100; v_subtotal := v_subtotal + v_line_total; v_tax_amount := v_tax_amount + v_line_tax; END LOOP; v_total_amount := v_subtotal + v_tax_amount; SELECT NULLIF(btrim(i.original_currency), '') INTO v_original_currency FROM public.invoices i WHERE i.id = p_source_invoice_id; v_original_currency := COALESCE(v_original_currency, public.erp_company_base_currency(p_company_id)); INSERT INTO customer_debit_notes (company_id, branch_id, cost_center_id, customer_id, debit_note_number, debit_note_date, source_invoice_id, subtotal, tax_amount, total_amount, applied_amount, currency_id, original_currency, original_subtotal, original_tax_amount, original_total_amount, exchange_rate, status, approval_status, reference_type, reason, notes, created_by) VALUES (p_company_id, p_branch_id, p_cost_center_id, p_customer_id, v_debit_note_number, p_debit_note_date, p_source_invoice_id, v_subtotal, v_tax_amount, v_total_amount, 0, p_currency_id, v_original_currency, v_subtotal, v_tax_amount, v_total_amount, p_exchange_rate, 'open', 'draft', p_reference_type, p_reason, p_notes, p_created_by) RETURNING id INTO v_debit_note_id; FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP v_line_total := (v_item->>'quantity')::DECIMAL * (v_item->>'unit_price')::DECIMAL; INSERT INTO customer_debit_note_items (customer_debit_note_id, product_id, description, quantity, unit_price, tax_rate, line_total, item_type) VALUES (v_debit_note_id, (v_item->>'product_id')::UUID, v_item->>'description', (v_item->>'quantity')::DECIMAL, (v_item->>'unit_price')::DECIMAL, COALESCE((v_item->>'tax_rate')::DECIMAL, 0), v_line_total, COALESCE(v_item->>'item_type', 'charge')); END LOOP; RETURN QUERY SELECT v_debit_note_id, v_debit_note_number, v_total_amount, v_approval_status, TRUE, 'Customer debit note created successfully as DRAFT. Submit for approval before applying.'; EXCEPTION WHEN OTHERS THEN RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::VARCHAR(20), FALSE, 'Error creating customer debit note: ' || SQLERRM; END; $function$
 ;
 
 -- ---------------------------------------------------------------
@@ -21225,7 +21382,12 @@ DECLARE
   v_so_id     uuid;
   v_so_number text;
   v_item      jsonb;
+  v_base      text;
 BEGIN
+  -- v3.75.57: **ولا تُخترَعُ عملة** — تُقرأُ من صفِّ الشركةِ التى تُنشَأُ لها.
+  -- ورقمُ شركةٍ فارغٌ يرفعُ هنا بدَلَ أن يرفعَ فى الإدراج: الرفضُ واحدٌ ولا صفَّ يُكتَب.
+  v_base := public.erp_company_base_currency((p_so_data->>'company_id')::uuid);
+
   INSERT INTO sales_orders (
     company_id, customer_id, so_date, due_date, status,
     subtotal, tax_amount, discount_amount, shipping_charge, shipping_tax,
@@ -21248,7 +21410,7 @@ BEGIN
     COALESCE((p_so_data->>'adjustment')::numeric, 0),
     COALESCE((p_so_data->>'total')::numeric, 0),
     COALESCE((p_so_data->>'total_amount')::numeric, 0),
-    COALESCE(NULLIF(p_so_data->>'currency', ''), 'EGP'),
+    COALESCE(NULLIF(p_so_data->>'currency', ''), v_base),
     COALESCE(NULLIF((p_so_data->>'exchange_rate')::numeric, 0), 1),
     COALESCE((p_so_data->>'total_base')::numeric, 0),
     COALESCE((p_so_data->>'tax_inclusive')::boolean, FALSE),
@@ -21735,6 +21897,7 @@ DECLARE
   v_id UUID;
   v_item JSONB;
   v_count INT;
+  v_base TEXT;
 BEGIN
   IF p_credit IS NULL OR jsonb_typeof(p_credit) <> 'object' THEN
     RAISE EXCEPTION 'p_credit must be a JSON object';
@@ -21742,6 +21905,9 @@ BEGIN
   IF p_items IS NULL OR jsonb_typeof(p_items) <> 'array' THEN
     RAISE EXCEPTION 'p_items must be a JSON array';
   END IF;
+
+  -- v3.75.57: **ولا تُخترَعُ عملة** — تُقرأُ من صفِّ الشركةِ التى يُنشَأُ لها.
+  v_base := public.erp_company_base_currency((p_credit->>'company_id')::UUID);
 
   -- الأعمدة مذكورةٌ بأسمائها لا مُمرَّرة كما جاءت: جسمٌ يُكتب كما هو يسمح
   -- للمُرسِل أن يضع ما لم يُقصد (درس check-request-body-written-raw).
@@ -21773,7 +21939,7 @@ BEGIN
     COALESCE((p_credit->>'shipping_tax_rate')::NUMERIC, 0),
     COALESCE((p_credit->>'adjustment')::NUMERIC, 0),
      p_credit->>'notes',
-    COALESCE(p_credit->>'original_currency', 'EGP'),
+    COALESCE(p_credit->>'original_currency', v_base),
     (p_credit->>'original_subtotal')::NUMERIC,
     (p_credit->>'original_tax_amount')::NUMERIC,
     (p_credit->>'original_total_amount')::NUMERIC,

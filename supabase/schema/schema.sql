@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-17T18:46:42.334Z
+-- Generated: 2026-08-18T11:46:32.152Z
 -- Tables: 256 | Policies: 784 | Triggers: 582 | Constraints: 1841
 -- =====================================================================
 
@@ -11078,6 +11078,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_55_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_55_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_56_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_56_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_57_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_57_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;
@@ -11773,11 +11775,9 @@ REVOKE ALL ON FUNCTION public.create_company_atomic(p_user_id uuid, p_email text
 GRANT EXECUTE ON FUNCTION public.create_company_atomic(p_user_id uuid, p_email text, p_company_name text, p_contact_name text, p_phone text, p_country text, p_city text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_company_atomic(p_user_id uuid, p_email text, p_company_name text, p_contact_name text, p_phone text, p_country text, p_city text) TO service_role;
 REVOKE ALL ON FUNCTION public.create_customer_debit_note(p_company_id uuid, p_branch_id uuid, p_cost_center_id uuid, p_customer_id uuid, p_source_invoice_id uuid, p_debit_note_date date, p_reference_type character varying, p_reason text, p_items jsonb, p_notes text, p_currency_id uuid, p_exchange_rate numeric) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.create_customer_debit_note(p_company_id uuid, p_branch_id uuid, p_cost_center_id uuid, p_customer_id uuid, p_source_invoice_id uuid, p_debit_note_date date, p_reference_type character varying, p_reason text, p_items jsonb, p_notes text, p_currency_id uuid, p_exchange_rate numeric) TO anon;
 GRANT EXECUTE ON FUNCTION public.create_customer_debit_note(p_company_id uuid, p_branch_id uuid, p_cost_center_id uuid, p_customer_id uuid, p_source_invoice_id uuid, p_debit_note_date date, p_reference_type character varying, p_reason text, p_items jsonb, p_notes text, p_currency_id uuid, p_exchange_rate numeric) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_customer_debit_note(p_company_id uuid, p_branch_id uuid, p_cost_center_id uuid, p_customer_id uuid, p_source_invoice_id uuid, p_debit_note_date date, p_reference_type character varying, p_reason text, p_items jsonb, p_notes text, p_currency_id uuid, p_exchange_rate numeric) TO service_role;
 REVOKE ALL ON FUNCTION public.create_customer_debit_note(p_company_id uuid, p_branch_id uuid, p_cost_center_id uuid, p_customer_id uuid, p_source_invoice_id uuid, p_debit_note_date date, p_reference_type character varying, p_reason text, p_items jsonb, p_notes text, p_currency_id uuid, p_exchange_rate numeric, p_created_by uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.create_customer_debit_note(p_company_id uuid, p_branch_id uuid, p_cost_center_id uuid, p_customer_id uuid, p_source_invoice_id uuid, p_debit_note_date date, p_reference_type character varying, p_reason text, p_items jsonb, p_notes text, p_currency_id uuid, p_exchange_rate numeric, p_created_by uuid) TO anon;
 GRANT EXECUTE ON FUNCTION public.create_customer_debit_note(p_company_id uuid, p_branch_id uuid, p_cost_center_id uuid, p_customer_id uuid, p_source_invoice_id uuid, p_debit_note_date date, p_reference_type character varying, p_reason text, p_items jsonb, p_notes text, p_currency_id uuid, p_exchange_rate numeric, p_created_by uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_customer_debit_note(p_company_id uuid, p_branch_id uuid, p_cost_center_id uuid, p_customer_id uuid, p_source_invoice_id uuid, p_debit_note_date date, p_reference_type character varying, p_reason text, p_items jsonb, p_notes text, p_currency_id uuid, p_exchange_rate numeric, p_created_by uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.create_default_branch_for_company() FROM PUBLIC;
@@ -11844,7 +11844,6 @@ REVOKE ALL ON FUNCTION public.create_sales_invoice_atomic(p_invoice_data jsonb, 
 GRANT EXECUTE ON FUNCTION public.create_sales_invoice_atomic(p_invoice_data jsonb, p_invoice_items jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_sales_invoice_atomic(p_invoice_data jsonb, p_invoice_items jsonb) TO service_role;
 REVOKE ALL ON FUNCTION public.create_sales_order_atomic(p_so_data jsonb, p_so_items jsonb) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.create_sales_order_atomic(p_so_data jsonb, p_so_items jsonb) TO anon;
 GRANT EXECUTE ON FUNCTION public.create_sales_order_atomic(p_so_data jsonb, p_so_items jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_sales_order_atomic(p_so_data jsonb, p_so_items jsonb) TO service_role;
 REVOKE ALL ON FUNCTION public.create_sales_return_gl_reversal(p_company_id uuid, p_invoice_id uuid, p_return_amount numeric, p_return_request_id uuid, p_user_id uuid) FROM PUBLIC;
@@ -11862,7 +11861,6 @@ GRANT EXECUTE ON FUNCTION public.create_vendor_credit_from_bill_return(p_bill_id
 GRANT EXECUTE ON FUNCTION public.create_vendor_credit_from_bill_return(p_bill_id uuid) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_vendor_credit_from_bill_return(p_bill_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.create_vendor_credit_with_items(p_credit jsonb, p_items jsonb) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.create_vendor_credit_with_items(p_credit jsonb, p_items jsonb) TO anon;
 GRANT EXECUTE ON FUNCTION public.create_vendor_credit_with_items(p_credit jsonb, p_items jsonb) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.create_vendor_credit_with_items(p_credit jsonb, p_items jsonb) TO service_role;
 REVOKE ALL ON FUNCTION public.create_vendor_credits_for_all_returns() FROM PUBLIC;
