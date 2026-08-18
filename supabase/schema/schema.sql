@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-18T13:48:57.560Z
+-- Generated: 2026-08-18T15:12:30.754Z
 -- Tables: 256 | Policies: 784 | Triggers: 582 | Constraints: 1841
 -- =====================================================================
 
@@ -11082,6 +11082,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_57_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_57_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_59_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_59_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_60_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_60_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;

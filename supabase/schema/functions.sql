@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-18T13:48:59.012Z
--- Routines: 1405
+-- Generated: 2026-08-18T15:12:32.546Z
+-- Routines: 1406
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -13,6 +13,7 @@ CREATE OR REPLACE FUNCTION public._arabic_month_name(p_month integer)
  RETURNS text
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT CASE p_month
     WHEN 1  THEN 'يناير'
@@ -75,6 +76,7 @@ CREATE OR REPLACE FUNCTION public._to_arabic_indic_digits(p_text text)
  RETURNS text
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT translate(p_text, '0123456789', '٠١٢٣٤٥٦٧٨٩');
 $function$
@@ -86,6 +88,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.accrual_accounting_engine()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_inventory_id UUID;
@@ -598,7 +601,7 @@ CREATE OR REPLACE FUNCTION public.ai_current_user_allowed_resources()
  RETURNS text[]
  LANGUAGE plpgsql
  STABLE
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
   v_set        TEXT[] := ARRAY[]::TEXT[];
@@ -704,7 +707,7 @@ CREATE OR REPLACE FUNCTION public.ai_current_user_is_full_access()
  RETURNS boolean
  LANGUAGE sql
  STABLE
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
   SELECT EXISTS (
     SELECT 1
@@ -722,7 +725,7 @@ CREATE OR REPLACE FUNCTION public.ai_get_proactive_alerts(p_language text DEFAUL
  RETURNS TABLE(alert_key text, alert_type text, severity text, resource text, title text, message text, action_url text, count_value integer, total_amount numeric, metadata jsonb)
  LANGUAGE plpgsql
  STABLE
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
   v_allowed text[];
@@ -877,6 +880,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ai_knowledge_chunks_touch_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at := NOW();
@@ -892,6 +896,7 @@ CREATE OR REPLACE FUNCTION public.ai_normalize_for_fts(input text)
  RETURNS text
  LANGUAGE sql
  IMMUTABLE PARALLEL SAFE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT regexp_replace(
     regexp_replace(
@@ -1035,6 +1040,7 @@ CREATE OR REPLACE FUNCTION public.ai_resource_for_page_key(p_page_key text)
  RETURNS text
  LANGUAGE sql
  IMMUTABLE PARALLEL SAFE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT CASE LOWER(COALESCE(p_page_key, ''))
     WHEN 'dashboard' THEN 'dashboard'
@@ -1266,7 +1272,7 @@ CREATE OR REPLACE FUNCTION public.anon_prelogin_exceptions()
  RETURNS text[]
  LANGUAGE sql
  IMMUTABLE
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
   -- **الأبوابُ التى يطرقُها من لا حسابَ له بعد.**
   -- كلُّ اسمٍ هنا **دَينٌ مُعلَنٌ لا رخصة**، **ولا رخصةَ بلا طارق**: يُشترَطُ
@@ -1292,7 +1298,7 @@ CREATE OR REPLACE FUNCTION public.anon_reachable_ceiling()
  RETURNS integer
  LANGUAGE sql
  IMMUTABLE
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
   -- **السقفُ الواحدُ لعددِ دالّاتِ الصلاحيّاتِ الكاملةِ التى يبلغُها الزائر.**
   --
@@ -1517,6 +1523,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.apply_customer_debit_note(p_debit_note_id uuid, p_applied_to_type character varying, p_applied_to_id uuid, p_amount_to_apply numeric, p_applied_by uuid, p_notes text DEFAULT NULL::text)
  RETURNS TABLE(success boolean, message text, application_id uuid, journal_entry_id uuid)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_debit_note RECORD; v_remaining_amount DECIMAL(15,2); v_application_id UUID; v_journal_id UUID; v_invoice RECORD; v_ar_account_id UUID; v_revenue_account_id UUID; BEGIN SELECT * INTO v_debit_note FROM customer_debit_notes WHERE id = p_debit_note_id; IF NOT FOUND THEN RETURN QUERY SELECT FALSE, 'Debit note not found', NULL::UUID, NULL::UUID; RETURN; END IF; IF v_debit_note.approval_status != 'approved' THEN RETURN QUERY SELECT FALSE, 'Debit note must be approved before application (current status: ' || v_debit_note.approval_status || ')', NULL::UUID, NULL::UUID; RETURN; END IF; IF v_debit_note.created_by = p_applied_by AND public.erp_company_senior_count(v_debit_note.company_id) > 1 AND NOT public.erp_is_company_owner(v_debit_note.company_id, p_applied_by) THEN RETURN QUERY SELECT FALSE, 'Creator cannot apply their own debit note (separation of duties)', NULL::UUID, NULL::UUID; RETURN; END IF; v_remaining_amount := v_debit_note.total_amount - v_debit_note.applied_amount; IF p_amount_to_apply > v_remaining_amount THEN RETURN QUERY SELECT FALSE, 'Amount exceeds remaining balance (' || v_remaining_amount::TEXT || ')', NULL::UUID, NULL::UUID; RETURN; END IF; IF p_applied_to_type = 'invoice' THEN SELECT * INTO v_invoice FROM invoices WHERE id = p_applied_to_id; IF NOT FOUND THEN RETURN QUERY SELECT FALSE, 'Invoice not found', NULL::UUID, NULL::UUID; RETURN; END IF; IF v_invoice.company_id != v_debit_note.company_id THEN RETURN QUERY SELECT FALSE, 'Company mismatch between debit note and invoice', NULL::UUID, NULL::UUID; RETURN; END IF; IF v_debit_note.branch_id IS NOT NULL AND v_invoice.branch_id != v_debit_note.branch_id THEN RETURN QUERY SELECT FALSE, 'Branch mismatch between debit note and invoice', NULL::UUID, NULL::UUID; RETURN; END IF; IF v_invoice.customer_id != v_debit_note.customer_id THEN RETURN QUERY SELECT FALSE, 'Customer mismatch between debit note and invoice', NULL::UUID, NULL::UUID; RETURN; END IF; END IF; SELECT id INTO v_ar_account_id FROM chart_of_accounts WHERE company_id = v_debit_note.company_id AND account_type = 'accounts_receivable' AND is_active = TRUE LIMIT 1; SELECT ca.id INTO v_revenue_account_id FROM customer_debit_note_items dni LEFT JOIN products p ON dni.product_id = p.id LEFT JOIN chart_of_accounts ca ON p.revenue_account_id = ca.id WHERE dni.customer_debit_note_id = p_debit_note_id LIMIT 1; IF v_revenue_account_id IS NULL THEN SELECT id INTO v_revenue_account_id FROM chart_of_accounts WHERE company_id = v_debit_note.company_id AND account_type = 'revenue' AND is_active = TRUE LIMIT 1; END IF; IF v_ar_account_id IS NULL OR v_revenue_account_id IS NULL THEN RETURN QUERY SELECT FALSE, 'Required accounts not found', NULL::UUID, NULL::UUID; RETURN; END IF; INSERT INTO customer_debit_note_applications (company_id, branch_id, customer_debit_note_id, applied_to_type, applied_to_id, applied_date, amount_applied, notes, application_method, applied_by) VALUES (v_debit_note.company_id, v_debit_note.branch_id, p_debit_note_id, p_applied_to_type, p_applied_to_id, CURRENT_DATE, p_amount_to_apply, p_notes, 'manual', p_applied_by) RETURNING id INTO v_application_id; INSERT INTO journal_entries (company_id, branch_id, cost_center_id, reference_type, reference_id, entry_date, description, status, created_by) VALUES (v_debit_note.company_id, v_debit_note.branch_id, v_debit_note.cost_center_id, 'customer_debit_application', v_application_id, CURRENT_DATE, 'Customer Debit Note Applied - ' || v_debit_note.debit_note_number, 'posted', p_applied_by) RETURNING id INTO v_journal_id; INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description) VALUES (v_journal_id, v_ar_account_id, p_amount_to_apply, 0, 'AR - Customer Debit Note Applied'); INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description) VALUES (v_journal_id, v_revenue_account_id, 0, p_amount_to_apply, 'Revenue - Customer Debit Note Applied'); UPDATE customer_debit_note_applications SET journal_entry_id = v_journal_id WHERE id = v_application_id; UPDATE customer_debit_notes SET applied_amount = applied_amount + p_amount_to_apply, status = CASE WHEN (applied_amount + p_amount_to_apply) >= total_amount THEN 'applied' ELSE 'partially_applied' END WHERE id = p_debit_note_id; IF p_applied_to_type = 'invoice' THEN UPDATE invoices SET total_amount = total_amount + p_amount_to_apply, balance_due = balance_due + p_amount_to_apply WHERE id = p_applied_to_id; END IF; RETURN QUERY SELECT TRUE, 'Debit note applied successfully - journal entry created', v_application_id, v_journal_id; END; $function$
 ;
 
@@ -1662,6 +1669,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.approve_customer_debit_note(p_debit_note_id uuid, p_approved_by uuid, p_notes text DEFAULT NULL::text)
  RETURNS TABLE(success boolean, message text, debit_note_id uuid)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_debit_note RECORD; BEGIN SELECT * INTO v_debit_note FROM customer_debit_notes WHERE id = p_debit_note_id; IF NOT FOUND THEN RETURN QUERY SELECT FALSE, 'Debit note not found', NULL::UUID; RETURN; END IF; IF v_debit_note.approval_status = 'approved' THEN RETURN QUERY SELECT FALSE, 'Debit note is already approved', NULL::UUID; RETURN; END IF; IF v_debit_note.approval_status = 'rejected' THEN RETURN QUERY SELECT FALSE, 'Cannot approve rejected debit note', NULL::UUID; RETURN; END IF; IF v_debit_note.created_by = p_approved_by AND public.erp_company_senior_count(v_debit_note.company_id) > 1 AND NOT public.erp_is_company_owner(v_debit_note.company_id, p_approved_by) THEN RETURN QUERY SELECT FALSE, 'Creator cannot approve their own debit note (separation of duties)', NULL::UUID; RETURN; END IF; UPDATE customer_debit_notes SET approval_status = 'approved', approved_by = p_approved_by, approved_at = NOW(), notes = CASE WHEN p_notes IS NOT NULL THEN COALESCE(notes, '') || E'\n[APPROVAL] ' || p_notes ELSE notes END, updated_at = NOW() WHERE id = p_debit_note_id; RETURN QUERY SELECT TRUE, 'Debit note approved successfully', p_debit_note_id; END; $function$
 ;
 
@@ -5561,6 +5569,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_17_check()
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_bad    int;
@@ -5646,6 +5655,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_18_check()
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_company uuid;
@@ -5707,6 +5717,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_19_check()
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_closed boolean;
@@ -5763,6 +5774,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_20_check()
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_bad      int;
@@ -5818,6 +5830,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_21_check()
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_bad  int;
@@ -5864,7 +5877,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_22_check()
  RETURNS void
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
   v_def   TEXT;
@@ -5970,7 +5983,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_23_check()
  RETURNS void
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
   v_name TEXT;
@@ -6048,7 +6061,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_24_check()
  RETURNS void
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
   v_missing TEXT;
@@ -6125,7 +6138,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_25_check()
  RETURNS void
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
   v_open    TEXT;
@@ -6197,7 +6210,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_27_check()
  RETURNS void
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
   r         record;
@@ -6305,7 +6318,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_28_check()
  RETURNS void
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
   v_bad     TEXT;
@@ -6362,7 +6375,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_29_check()
  RETURNS void
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
   t0        timestamptz;
@@ -6409,7 +6422,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_31_check()
  RETURNS void
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
   v_bad     TEXT;
@@ -6493,7 +6506,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_33_check()
  RETURNS void
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
   v_bad TEXT;
@@ -6566,7 +6579,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_34_check()
  RETURNS void
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
   v_bad TEXT;
@@ -6656,7 +6669,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_37_check()
  RETURNS void
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
   v_bad TEXT;
@@ -8471,6 +8484,101 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- assert_baseline_v3_75_60_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_60_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
+AS $function$
+DECLARE
+  n_ours_unset   int;
+  n_ours_no_temp int;
+  n_ours_total   int;
+  n_definer_bad  int;
+  n_foreign      int;
+  n_foreign_set  int;
+BEGIN
+  -- **دوالُّنا** = فى public · دالّة · بصلاحيّاتِ مُنادِيها · plpgsql أو sql ·
+  -- **وليست لحمَ امتدادٍ** — تُعرَّفُ بالخاصّيّةِ لا بقائمةِ أسماء.
+  SELECT count(*) INTO n_ours_total
+    FROM pg_proc p JOIN pg_language l ON l.oid = p.prolang
+   WHERE p.pronamespace = 'public'::regnamespace
+     AND p.prokind = 'f' AND NOT p.prosecdef
+     AND l.lanname IN ('plpgsql', 'sql')
+     AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                      WHERE d.objid = p.oid AND d.classid = 'pg_proc'::regclass AND d.deptype = 'e');
+
+  SELECT count(*) INTO n_ours_unset
+    FROM pg_proc p JOIN pg_language l ON l.oid = p.prolang
+   WHERE p.pronamespace = 'public'::regnamespace
+     AND p.prokind = 'f' AND NOT p.prosecdef
+     AND l.lanname IN ('plpgsql', 'sql')
+     AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                      WHERE d.objid = p.oid AND d.classid = 'pg_proc'::regclass AND d.deptype = 'e')
+     AND NOT EXISTS (SELECT 1 FROM unnest(coalesce(p.proconfig, '{}')) c WHERE c LIKE 'search_path=%');
+
+  IF n_ours_unset <> 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: % من دوالِّنا بلا مسارِ بحث — ومخطَّطُ المُنادى يسبقُ بيتَنا (v3.75.60)', n_ours_unset
+      USING ERRCODE = '23514';
+  END IF;
+
+  -- **وشكلُ الضبطِ ليس ضبطاً**: مسارٌ مضبوطٌ لا يذكرُ pg_temp يتركُ البابَ مفتوحاً.
+  SELECT count(*) INTO n_ours_no_temp
+    FROM pg_proc p JOIN pg_language l ON l.oid = p.prolang
+   WHERE p.pronamespace = 'public'::regnamespace
+     AND p.prokind = 'f' AND NOT p.prosecdef
+     AND l.lanname IN ('plpgsql', 'sql')
+     AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                      WHERE d.objid = p.oid AND d.classid = 'pg_proc'::regclass AND d.deptype = 'e')
+     AND NOT EXISTS (SELECT 1 FROM unnest(coalesce(p.proconfig, '{}')) c
+                      WHERE c LIKE 'search_path=%' AND c ~ '(^|[=,[:space:]])pg_temp([,[:space:]]|$)');
+
+  IF n_ours_no_temp <> 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: % من دوالِّنا مسارُها لا يذكرُ pg_temp (v3.75.60)', n_ours_no_temp
+      USING ERRCODE = '23514';
+  END IF;
+
+  -- **ومكسبُ v3.75.59 يُحرَسُ هنا أيضاً** — ولا تشفعُ نسخةٌ لأخرى.
+  SELECT count(*) INTO n_definer_bad
+    FROM pg_proc p
+   WHERE p.pronamespace = 'public'::regnamespace
+     AND p.prokind = 'f' AND p.prosecdef
+     AND NOT EXISTS (SELECT 1 FROM unnest(coalesce(p.proconfig, '{}')) c
+                      WHERE c LIKE 'search_path=%' AND c LIKE '%pg_temp%');
+
+  IF n_definer_bad <> 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: % دالّةً بصلاحيّاتٍ كاملةٍ يسبقُها مخطَّطُ المُنادى (v3.75.60)', n_definer_bad
+      USING ERRCODE = '23514';
+  END IF;
+
+  -- **ولحمُ غيرِنا يُعَدُّ ولا يُمَسّ** — ومعدودٌ لا مسكوتٌ عنه.
+  SELECT count(*) INTO n_foreign
+    FROM pg_proc p
+   WHERE p.pronamespace = 'public'::regnamespace
+     AND EXISTS (SELECT 1 FROM pg_depend d
+                  WHERE d.objid = p.oid AND d.classid = 'pg_proc'::regclass AND d.deptype = 'e');
+
+  SELECT count(*) INTO n_foreign_set
+    FROM pg_proc p
+   WHERE p.pronamespace = 'public'::regnamespace
+     AND EXISTS (SELECT 1 FROM pg_depend d
+                  WHERE d.objid = p.oid AND d.classid = 'pg_proc'::regclass AND d.deptype = 'e')
+     AND EXISTS (SELECT 1 FROM unnest(coalesce(p.proconfig, '{}')) c WHERE c LIKE 'search_path=%');
+
+  IF n_foreign_set <> 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: % من لحمِ الامتداداتِ نالَ مسارَ بحثٍ من يدِنا (v3.75.60)', n_foreign_set
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN format('v3.75.60 ok — دوالُّنا %s كلُّها تحملُ مسارَها ويذكرُ pg_temp · صلاحيّاتٌ كاملةٌ يسبقُها المُنادى %s · لحمُ امتداداتٍ معدودٌ لم يُمَسّ %s',
+                n_ours_total, n_definer_bad, n_foreign);
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- assert_baseline_v3_75_6_check()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_6_check()
@@ -8849,6 +8957,7 @@ CREATE OR REPLACE FUNCTION public.assert_booking_editable_for_bundle(p_booking_i
  RETURNS void
  LANGUAGE plpgsql
  STABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE v_status text; v_inv_status text;
 BEGIN
@@ -9123,7 +9232,7 @@ CREATE OR REPLACE FUNCTION public.assert_purchase_return_amount(p_field text, p_
  RETURNS void
  LANGUAGE plpgsql
  IMMUTABLE
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 BEGIN
   -- لم يُرسَل شىء ⇒ لا خلافَ يُعلن عنه؛ المحسوبُ هو المكتوب.
@@ -9295,6 +9404,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.audit_journal_entries_integrity()
  RETURNS TABLE(issue_type text, journal_entry_id uuid, reference_type text, description text, severity text)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ BEGIN RETURN QUERY SELECT 'UNBALANCED_ENTRY'::TEXT, je.id, je.reference_type, 'المدين: ' || COALESCE(SUM(jel.debit_amount), 0)::TEXT || ' - الدائن: ' || COALESCE(SUM(jel.credit_amount), 0)::TEXT, 'CRITICAL'::TEXT FROM journal_entries je LEFT JOIN journal_entry_lines jel ON jel.journal_entry_id = je.id GROUP BY je.id, je.reference_type HAVING ABS(COALESCE(SUM(jel.debit_amount), 0) - COALESCE(SUM(jel.credit_amount), 0)) > 0.01; RETURN QUERY SELECT 'EMPTY_ENTRY'::TEXT, je.id, je.reference_type, je.description, 'WARNING'::TEXT FROM journal_entries je WHERE NOT EXISTS ( SELECT 1 FROM journal_entry_lines jel WHERE jel.journal_entry_id = je.id ); RETURN QUERY SELECT 'RETURN_WITHOUT_ENTRY'::TEXT, sr.id, 'sales_return'::TEXT, 'مرتجع ' || sr.return_number || ' بمبلغ ' || sr.total_amount::TEXT, 'HIGH'::TEXT FROM sales_returns sr WHERE sr.status = 'completed' AND sr.journal_entry_id IS NULL; END; $function$
 ;
 
@@ -9389,6 +9499,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.audit_payments_without_invoice_entries()
  RETURNS TABLE(payment_journal_id uuid, invoice_id uuid, invoice_number text, payment_date date, payment_amount numeric, issue text)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   RETURN QUERY
@@ -9621,6 +9732,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.auto_approve_service_only_invoice_trg()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_goods_lines integer;
@@ -9652,6 +9764,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.auto_create_bill_inventory_transaction()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_bill_status TEXT;
@@ -9823,6 +9936,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.auto_create_cogs_on_invoice_status_change()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ BEGIN IF (OLD.status IN ('draft', 'pending') AND NEW.status IN ('sent', 'paid')) THEN PERFORM create_cogs_journal_for_invoice(NEW.id); END IF; RETURN NEW; END; $function$
 ;
 
@@ -10268,6 +10382,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.auto_generate_bill_number()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_lock_key BIGINT; v_max_number INTEGER; v_number TEXT; BEGIN IF NEW.bill_number IS NULL OR NEW.bill_number = '' THEN v_lock_key := hashtext('bill_' || NEW.company_id::TEXT); PERFORM pg_advisory_xact_lock(v_lock_key); SELECT COALESCE(MAX(CAST(SUBSTRING(bill_number FROM 'BILL-([0-9]+)') AS INTEGER)), 0) INTO v_max_number FROM bills WHERE company_id = NEW.company_id AND bill_number ~ '^BILL-[0-9]+$'; v_number := 'BILL-' || LPAD((v_max_number + 1)::TEXT, 4, '0'); NEW.bill_number := v_number; END IF; RETURN NEW; END; $function$
 ;
 
@@ -10277,6 +10392,7 @@ AS $function$ DECLARE v_lock_key BIGINT; v_max_number INTEGER; v_number TEXT; BE
 CREATE OR REPLACE FUNCTION public.auto_generate_entry_number()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_lock_key BIGINT; v_max_number INTEGER; v_number TEXT; BEGIN IF NEW.entry_number IS NULL OR NEW.entry_number = '' THEN v_lock_key := hashtext('je_' || NEW.company_id::TEXT); PERFORM pg_advisory_xact_lock(v_lock_key); SELECT COALESCE(MAX(CAST(SUBSTRING(entry_number FROM 'JE-([0-9]+)') AS INTEGER)), 0) INTO v_max_number FROM journal_entries WHERE company_id = NEW.company_id AND entry_number ~ '^JE-[0-9]+$'; v_number := 'JE-' || LPAD((v_max_number + 1)::TEXT, 6, '0'); NEW.entry_number := v_number; END IF; RETURN NEW; END; $function$
 ;
 
@@ -10286,6 +10402,7 @@ AS $function$ DECLARE v_lock_key BIGINT; v_max_number INTEGER; v_number TEXT; BE
 CREATE OR REPLACE FUNCTION public.auto_generate_expense_number()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_lock_key BIGINT;
@@ -10323,6 +10440,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.auto_generate_grn_number()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_lock_key BIGINT;
@@ -10359,6 +10477,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.auto_generate_invoice_number()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_lock_key BIGINT; v_max_number INTEGER; v_number TEXT; BEGIN IF NEW.invoice_number IS NULL OR NEW.invoice_number = '' THEN v_lock_key := hashtext('invoice_' || NEW.company_id::TEXT); PERFORM pg_advisory_xact_lock(v_lock_key); SELECT COALESCE(MAX(CAST(SUBSTRING(invoice_number FROM 'INV-([0-9]+)') AS INTEGER)), 0) INTO v_max_number FROM invoices WHERE company_id = NEW.company_id AND invoice_number ~ '^INV-[0-9]+$'; v_number := 'INV-' || LPAD((v_max_number + 1)::TEXT, 4, '0'); NEW.invoice_number := v_number; END IF; RETURN NEW; END; $function$
 ;
 
@@ -10368,7 +10487,7 @@ AS $function$ DECLARE v_lock_key BIGINT; v_max_number INTEGER; v_number TEXT; BE
 CREATE OR REPLACE FUNCTION public.auto_generate_po_number()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
   v_lock_key BIGINT;
@@ -10392,6 +10511,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.auto_generate_product_sku()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE v_prefix text; v_branch text; v_pat text; v_max integer; v_lock bigint;
 BEGIN
@@ -10422,6 +10542,7 @@ END $function$
 CREATE OR REPLACE FUNCTION public.auto_generate_purchase_request_number()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_lock_key BIGINT;
@@ -10458,6 +10579,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.auto_generate_so_number()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_lock_key BIGINT; v_max_number INTEGER; v_number TEXT; BEGIN IF NEW.so_number IS NULL OR NEW.so_number = '' THEN v_lock_key := hashtext('so_' || NEW.company_id::TEXT); PERFORM pg_advisory_xact_lock(v_lock_key); SELECT COALESCE(MAX(CAST(SUBSTRING(so_number FROM 'SO-([0-9]+)') AS INTEGER)), 0) INTO v_max_number FROM sales_orders WHERE company_id = NEW.company_id AND so_number ~ '^SO-[0-9]+$'; v_number := 'SO-' || LPAD((v_max_number + 1)::TEXT, 4, '0'); NEW.so_number := v_number; END IF; RETURN NEW; END; $function$
 ;
 
@@ -10467,6 +10589,7 @@ AS $function$ DECLARE v_lock_key BIGINT; v_max_number INTEGER; v_number TEXT; BE
 CREATE OR REPLACE FUNCTION public.auto_generate_transfer_number()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_lock_key BIGINT; v_max_number INTEGER; v_number TEXT; BEGIN IF NEW.transfer_number IS NULL OR NEW.transfer_number = '' THEN v_lock_key := hashtext('trf_' || NEW.company_id::TEXT); PERFORM pg_advisory_xact_lock(v_lock_key); SELECT COALESCE(MAX(CAST(SUBSTRING(transfer_number FROM 'TRF-([0-9]+)') AS INTEGER)), 0) INTO v_max_number FROM inventory_transfers WHERE company_id = NEW.company_id AND transfer_number ~ '^TRF-[0-9]+$'; v_number := 'TRF-' || LPAD((v_max_number + 1)::TEXT, 4, '0'); NEW.transfer_number := v_number; END IF; RETURN NEW; END; $function$
 ;
 
@@ -10476,6 +10599,7 @@ AS $function$ DECLARE v_lock_key BIGINT; v_max_number INTEGER; v_number TEXT; BE
 CREATE OR REPLACE FUNCTION public.auto_generate_write_off_number()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_lock_key BIGINT; v_max_number INTEGER; v_number TEXT; v_year TEXT; BEGIN IF NEW.write_off_number IS NULL OR NEW.write_off_number = '' THEN v_lock_key := hashtext('wo_' || NEW.company_id::TEXT); PERFORM pg_advisory_xact_lock(v_lock_key); v_year := TO_CHAR(CURRENT_DATE, 'YYYY'); SELECT COALESCE(MAX(CAST(SUBSTRING(write_off_number FROM 'WO-[0-9]{4}-([0-9]+)') AS INTEGER)), 0) INTO v_max_number FROM inventory_write_offs WHERE company_id = NEW.company_id AND write_off_number ~ ('^WO-' || v_year || '-[0-9]+$'); v_number := 'WO-' || v_year || '-' || LPAD((v_max_number + 1)::TEXT, 4, '0'); NEW.write_off_number := v_number; END IF; RETURN NEW; END; $function$
 ;
 
@@ -10849,6 +10973,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.auto_set_invoice_branch()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NEW.branch_id IS NULL THEN
@@ -10886,6 +11011,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.auto_set_sales_order_branch()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NEW.branch_id IS NULL THEN
@@ -10915,7 +11041,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.auto_stamp_lot_expiry()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE v_days integer;
 BEGIN
@@ -10940,6 +11066,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.auto_update_document_status()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF TG_TABLE_NAME = 'bills' THEN
@@ -11279,6 +11406,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.bdl_set_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN NEW.updated_at := NOW(); RETURN NEW; END;
 $function$
@@ -11887,7 +12015,7 @@ CREATE OR REPLACE FUNCTION public.bill_payable_statuses()
  RETURNS text[]
  LANGUAGE sql
  IMMUTABLE
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
   SELECT ARRAY[
     'received', 'partially_paid', 'paid', 'partially_returned', 'fully_returned'
@@ -12018,7 +12146,7 @@ CREATE OR REPLACE FUNCTION public.bill_status_is_payable(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') = ANY (public.bill_payable_statuses());
 $function$
@@ -12030,6 +12158,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.bills_force_reapproval_on_edit()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_changed boolean := false;
@@ -12108,6 +12237,7 @@ AS '$libdir/vector', $function$halfvec_binary_quantize$function$
 CREATE OR REPLACE FUNCTION public.bkg_assert_booking_accessible(p_booking_id uuid, p_company_id uuid)
  RETURNS bookings
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE v_booking public.bookings;
 BEGIN
@@ -12125,6 +12255,7 @@ END; $function$
 CREATE OR REPLACE FUNCTION public.bkg_check_service_capacity(p_service_id uuid, p_booking_date date, p_start_time time without time zone, p_end_time time without time zone, p_exclude_id uuid DEFAULT NULL::uuid)
  RETURNS TABLE(active_count integer, capacity integer, is_available boolean)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE v_capacity INTEGER; v_active_count INTEGER;
 BEGIN
@@ -12143,6 +12274,7 @@ END; $function$
 CREATE OR REPLACE FUNCTION public.bkg_check_staff_conflict(p_staff_user_id uuid, p_booking_date date, p_start_time time without time zone, p_end_time time without time zone, p_exclude_id uuid DEFAULT NULL::uuid)
  RETURNS integer
  LANGUAGE sql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COUNT(*)::INTEGER FROM public.bookings
    WHERE staff_user_id = p_staff_user_id AND booking_date = p_booking_date
@@ -12157,6 +12289,7 @@ CREATE OR REPLACE FUNCTION public.bkg_compute_totals(p_unit_price numeric, p_qua
  RETURNS TABLE(subtotal numeric, tax_amount numeric, total_amount numeric, commission_amount numeric)
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT
     ROUND((p_unit_price*p_quantity)-COALESCE(p_discount_amt,0),4),
@@ -12171,6 +12304,7 @@ AS $function$
 CREATE OR REPLACE FUNCTION public.bkg_generate_booking_no(p_company_id uuid)
  RETURNS text
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_year   TEXT    := TO_CHAR(NOW(), 'YYYY');
@@ -12205,6 +12339,7 @@ CREATE OR REPLACE FUNCTION public.bkg_is_active_status(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status,'') NOT IN ('cancelled','no_show'); $function$
 ;
@@ -12216,6 +12351,7 @@ CREATE OR REPLACE FUNCTION public.bkg_is_status_transition_allowed(p_old_status 
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT CASE COALESCE(p_old_status,'')
     WHEN 'draft'       THEN COALESCE(p_new_status,'') IN ('draft','confirmed','cancelled')
@@ -12235,6 +12371,7 @@ CREATE OR REPLACE FUNCTION public.bkg_is_terminal_status(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status,'') IN ('completed','cancelled','no_show'); $function$
 ;
@@ -12321,6 +12458,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.bkg_sync_payment_status(p_booking_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE v_total_paid NUMERIC; v_total_amount NUMERIC; v_pstatus TEXT;
 BEGIN
@@ -12366,6 +12504,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.bkg_trg_sync_payment_status()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE v_booking_id UUID;
 BEGIN
@@ -12381,6 +12520,7 @@ END; $function$
 CREATE OR REPLACE FUNCTION public.bkg_trg_validate_booking()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE v_capacity_row RECORD; v_staff_conflicts INTEGER;
 BEGIN
@@ -12425,6 +12565,7 @@ END; $function$
 CREATE OR REPLACE FUNCTION public.bkg_validate_advance_booking(p_service_id uuid, p_booking_date date, p_start_time time without time zone)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE v_service public.services; v_booking_datetime TIMESTAMPTZ; v_max_future_datetime TIMESTAMPTZ; v_min_booking_datetime TIMESTAMPTZ;
 BEGIN
@@ -12448,6 +12589,7 @@ END; $function$
 CREATE OR REPLACE FUNCTION public.bkg_validate_working_hours(p_service_id uuid, p_booking_date date, p_start_time time without time zone, p_end_time time without time zone)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_day_of_week INTEGER;
@@ -12496,6 +12638,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.block_bank_voucher_delete_after_post()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF OLD.status IN ('posted','approved') OR OLD.journal_entry_id IS NOT NULL THEN
@@ -12514,6 +12657,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.block_bank_voucher_immutable_edits()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF OLD.status IN ('draft','pending') THEN
@@ -12592,6 +12736,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.block_bill_immutable_edits()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_locked boolean := false;
@@ -12636,6 +12781,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.block_expense_delete_after_post()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF OLD.journal_entry_id IS NOT NULL
@@ -12655,6 +12801,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.block_expense_immutable_edits()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF OLD.status IN ('draft','pending_approval','rejected') THEN
@@ -12734,6 +12881,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.block_invoice_immutable_edits()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_locked boolean := false;
@@ -12783,7 +12931,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.block_manual_adjustment_trg()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 BEGIN
   IF TG_OP = 'INSERT' THEN
@@ -12810,6 +12958,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.block_production_order_delete_with_mmia()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF EXISTS (
@@ -13059,6 +13208,7 @@ CREATE OR REPLACE FUNCTION public.calc_declining_balance_depreciation(p_book_val
  RETURNS numeric
  LANGUAGE plpgsql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_depreciation DECIMAL;
@@ -13085,6 +13235,7 @@ CREATE OR REPLACE FUNCTION public.calc_straight_line_depreciation(p_purchase_cos
  RETURNS numeric
  LANGUAGE plpgsql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF p_useful_life_months <= 0 THEN
@@ -13102,6 +13253,7 @@ CREATE OR REPLACE FUNCTION public.calculate_bonus_amount(p_invoice_total numeric
  RETURNS numeric
  LANGUAGE plpgsql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ BEGIN CASE p_bonus_type WHEN 'percentage' THEN RETURN ROUND(p_invoice_total * (p_bonus_percentage / 100), 2); WHEN 'fixed' THEN RETURN p_bonus_fixed; WHEN 'points' THEN RETURN FLOOR(p_invoice_total / NULLIF(p_bonus_points_per_value, 0)); ELSE RETURN 0; END CASE; END; $function$
 ;
 
@@ -13139,6 +13291,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.calculate_customer_debit_note_totals()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_subtotal DECIMAL(15,2); v_tax_amount DECIMAL(15,2); v_total_amount DECIMAL(15,2); BEGIN SELECT COALESCE(SUM(line_total), 0), COALESCE(SUM(line_total * tax_rate / 100), 0) INTO v_subtotal, v_tax_amount FROM customer_debit_note_items WHERE customer_debit_note_id = COALESCE(NEW.customer_debit_note_id, OLD.customer_debit_note_id); v_total_amount := v_subtotal + v_tax_amount; UPDATE customer_debit_notes SET subtotal = v_subtotal, tax_amount = v_tax_amount, total_amount = v_total_amount, updated_at = NOW() WHERE id = COALESCE(NEW.customer_debit_note_id, OLD.customer_debit_note_id); RETURN COALESCE(NEW, OLD); END; $function$
 ;
 
@@ -13261,6 +13414,7 @@ CREATE OR REPLACE FUNCTION public.calculate_invoice_net_amount(p_invoice_id uuid
  RETURNS numeric
  LANGUAGE plpgsql
  STABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_total_amount NUMERIC;
@@ -14571,7 +14725,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.cancel_refund_requests_on_invoice_delete()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 BEGIN
   UPDATE public.customer_refund_requests
@@ -14595,7 +14749,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.cancel_requests_on_payment_delete()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 BEGIN
   UPDATE public.customer_refund_requests
@@ -14631,6 +14785,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.cb_validate_consolidation_run_contract()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NEW.execution_mode = 'commit_run' AND NEW.run_type = 'dry_run' THEN
@@ -14652,6 +14807,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.cb_validate_elimination_trace_link()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NEW.entry_type = 'elimination'
@@ -14672,6 +14828,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.cb_validate_statement_run_version()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_run_version INTEGER;
@@ -14700,6 +14857,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.check_account_cycle()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NEW.parent_id IS NULL THEN RETURN NEW; END IF;
@@ -14725,6 +14883,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.check_accounting_integrity(p_company_id uuid)
  RETURNS TABLE(check_name text, status text, details text)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_unbalanced_count INTEGER;
@@ -14796,6 +14955,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.check_all_journal_entries_balance(p_company_id uuid DEFAULT NULL::uuid)
  RETURNS TABLE(journal_entry_id uuid, entry_date date, description text, total_debit numeric, total_credit numeric, difference numeric, is_balanced boolean)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   RETURN QUERY
@@ -14943,6 +15103,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.check_bill_item_returned_quantity()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NEW.returned_quantity IS NOT NULL AND NEW.returned_quantity > NEW.quantity THEN
@@ -15020,6 +15181,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.check_bill_returned_amount()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   -- نتحقق فقط عند وجود قيمة للـ returned_amount
@@ -15205,6 +15367,7 @@ AS $function$ BEGIN RETURN QUERY SELECT it.id, i.id, i.invoice_number, it.transa
 CREATE OR REPLACE FUNCTION public.check_chart_of_accounts_drift(p_company_id uuid)
  RETURNS TABLE(account_code text, account_name text, sub_type text, drift_reason text)
  LANGUAGE sql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   -- Rows in template that the company doesn't have at all.
   SELECT t.account_code, t.account_name, t.sub_type,
@@ -15237,6 +15400,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.check_cogs_has_revenue(p_company_id uuid, p_invoice_id uuid)
  RETURNS boolean
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_has_revenue BOOLEAN; BEGIN SELECT EXISTS (SELECT 1 FROM journal_entries WHERE company_id = p_company_id AND reference_type = 'invoice' AND reference_id = p_invoice_id AND (is_deleted IS NULL OR is_deleted = false)) INTO v_has_revenue; RETURN v_has_revenue; END; $function$
 ;
 
@@ -15362,6 +15526,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.check_customer_delete()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
     blocking_invoice_count INTEGER;
@@ -15421,6 +15586,7 @@ CREATE OR REPLACE FUNCTION public.check_fiscal_period_locked(p_company_id uuid, 
  RETURNS boolean
  LANGUAGE sql
  STABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT EXISTS (
     SELECT 1 FROM public.fiscal_periods fp
@@ -15493,6 +15659,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.check_governance_scope()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NEW.branch_id IS NULL THEN
@@ -15527,6 +15694,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.check_inventory_balance_sync()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_company_id UUID;
@@ -15590,6 +15758,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.check_invoice_entry_before_payment()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   invoice_entry_exists BOOLEAN;
@@ -15627,6 +15796,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.check_invoice_time_lock()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_invoice_date DATE; v_time_lock_days INTEGER := 90; v_days_old INTEGER; BEGIN SELECT invoice_date INTO v_invoice_date FROM invoices WHERE id = NEW.source_invoice_id; v_days_old := CURRENT_DATE - v_invoice_date; IF v_days_old > v_time_lock_days THEN RAISE EXCEPTION 'Cannot create debit note for invoice older than % days (invoice is % days old). Contact administrator for override.', v_time_lock_days, v_days_old; END IF; RETURN NEW; END; $function$
 ;
 
@@ -15636,6 +15806,7 @@ AS $function$ DECLARE v_invoice_date DATE; v_time_lock_days INTEGER := 90; v_day
 CREATE OR REPLACE FUNCTION public.check_journal_entry_balance()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   total_debit DECIMAL(15, 2);
@@ -15689,6 +15860,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.check_journal_entry_exists(p_company_id uuid, p_reference_type text, p_reference_id uuid)
  RETURNS boolean
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_exists BOOLEAN; BEGIN SELECT EXISTS (SELECT 1 FROM journal_entries WHERE company_id = p_company_id AND reference_type = p_reference_type AND reference_id = p_reference_id AND (is_deleted IS NULL OR is_deleted = false)) INTO v_exists; RETURN v_exists; END; $function$
 ;
 
@@ -15698,6 +15870,7 @@ AS $function$ DECLARE v_exists BOOLEAN; BEGIN SELECT EXISTS (SELECT 1 FROM journ
 CREATE OR REPLACE FUNCTION public.check_no_overlapping_periods()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_overlapping_count INTEGER;
@@ -16024,6 +16197,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.check_purchase_return_item_quantity()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_bill_item_qty NUMERIC;
@@ -16086,6 +16260,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.check_purchase_return_item_warehouse_stock()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_warehouse_id  UUID; v_company_id UUID; v_current_stock NUMERIC;
@@ -16165,6 +16340,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.check_sales_return_request_quantity()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_item             JSONB;
@@ -16499,6 +16675,7 @@ AS $function$ BEGIN RETURN QUERY SELECT je.id, i.id, i.invoice_number, i.status,
 CREATE OR REPLACE FUNCTION public.claim_next_job(p_job_type text DEFAULT NULL::text)
  RETURNS SETOF jobs_queue
  LANGUAGE sql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   UPDATE jobs_queue
   SET status = 'processing', started_at = now()
@@ -16731,6 +16908,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.close_accounting_period(p_period_id uuid, p_closed_by uuid, p_retained_earnings_account_id uuid DEFAULT NULL::uuid)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_period RECORD;
@@ -17147,6 +17325,7 @@ CREATE OR REPLACE FUNCTION public.commission_run_transition_allowed(p_old text, 
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT CASE
     -- إدخالٌ جديد، أو تحديثٌ لا يمسّ الحالة
@@ -17239,6 +17418,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.company_seat_licenses_set_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at := NOW();
@@ -18768,6 +18948,7 @@ AS '$libdir/vector', $function$sparsevec_cosine_distance$function$
 CREATE OR REPLACE FUNCTION public.count_unbalanced_entries(p_company_id uuid DEFAULT NULL::uuid)
  RETURNS integer
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_count INTEGER;
@@ -19272,6 +19453,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.create_cogs_journal_for_invoice(p_invoice_id uuid)
  RETURNS uuid
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_invoice RECORD; v_item RECORD; v_journal_entry_id UUID; v_cogs_account_id UUID; v_inventory_account_id UUID; v_total_cogs NUMERIC := 0; v_item_cost NUMERIC; BEGIN SELECT * INTO v_invoice FROM invoices WHERE id = p_invoice_id; IF NOT FOUND THEN RAISE EXCEPTION 'Invoice not found: %', p_invoice_id; END IF; IF EXISTS (SELECT 1 FROM journal_entries WHERE reference_type = 'invoice_cogs' AND reference_id = p_invoice_id) THEN RETURN NULL; END IF; SELECT id INTO v_cogs_account_id FROM chart_of_accounts WHERE company_id = v_invoice.company_id AND (sub_type = 'cogs' OR sub_type = 'cost_of_goods_sold' OR account_name ILIKE '%cost of goods sold%' OR account_name ILIKE '%تكلفة البضاعة المباعة%' OR account_name LIKE '%COGS%') AND is_active = true LIMIT 1; SELECT id INTO v_inventory_account_id FROM chart_of_accounts WHERE company_id = v_invoice.company_id AND (sub_type = 'inventory' OR account_name ILIKE '%inventory%' OR account_name ILIKE '%مخزون%') AND is_active = true LIMIT 1; IF v_cogs_account_id IS NULL OR v_inventory_account_id IS NULL THEN RETURN NULL; END IF; FOR v_item IN SELECT ii.*, p.name as product_name FROM invoice_items ii JOIN products p ON p.id = ii.product_id WHERE ii.invoice_id = p_invoice_id AND p.item_type = 'product' LOOP v_item_cost := calculate_fifo_cost(v_item.product_id, v_invoice.warehouse_id, v_item.quantity); v_total_cogs := v_total_cogs + v_item_cost; END LOOP; IF v_total_cogs <= 0 THEN RETURN NULL; END IF; INSERT INTO journal_entries (company_id, reference_type, reference_id, entry_date, description, status, branch_id, cost_center_id, warehouse_id) VALUES (v_invoice.company_id, 'invoice_cogs', p_invoice_id, v_invoice.invoice_date, 'تكلفة البضاعة المباعة - فاتورة ' || v_invoice.invoice_number, 'posted', v_invoice.branch_id, v_invoice.cost_center_id, v_invoice.warehouse_id) RETURNING id INTO v_journal_entry_id; INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description, branch_id, cost_center_id) VALUES (v_journal_entry_id, v_cogs_account_id, v_total_cogs, 0, 'تكلفة البضاعة المباعة', v_invoice.branch_id, v_invoice.cost_center_id); INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description, branch_id, cost_center_id) VALUES (v_journal_entry_id, v_inventory_account_id, 0, v_total_cogs, 'تخفيض المخزون', v_invoice.branch_id, v_invoice.cost_center_id); UPDATE inventory_transactions SET journal_entry_id = v_journal_entry_id WHERE transaction_type = 'sale' AND reference_id = p_invoice_id AND journal_entry_id IS NULL; RETURN v_journal_entry_id; END; $function$
 ;
 
@@ -19355,6 +19537,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.create_customer_debit_note(p_company_id uuid, p_branch_id uuid, p_cost_center_id uuid, p_customer_id uuid, p_source_invoice_id uuid, p_debit_note_date date, p_reference_type character varying, p_reason text, p_items jsonb, p_notes text DEFAULT NULL::text, p_currency_id uuid DEFAULT NULL::uuid, p_exchange_rate numeric DEFAULT 1)
  RETURNS TABLE(debit_note_id uuid, debit_note_number character varying, total_amount numeric, journal_entry_id uuid, success boolean, message text)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_debit_note_id UUID;
@@ -19480,6 +19663,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.create_customer_debit_note(p_company_id uuid, p_branch_id uuid, p_cost_center_id uuid, p_customer_id uuid, p_source_invoice_id uuid, p_debit_note_date date, p_reference_type character varying, p_reason text, p_items jsonb, p_notes text DEFAULT NULL::text, p_currency_id uuid DEFAULT NULL::uuid, p_exchange_rate numeric DEFAULT 1, p_created_by uuid DEFAULT NULL::uuid)
  RETURNS TABLE(debit_note_id uuid, debit_note_number character varying, total_amount numeric, approval_status character varying, success boolean, message text)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_debit_note_id UUID; v_debit_note_number VARCHAR(50); v_subtotal DECIMAL(15,2) := 0; v_tax_amount DECIMAL(15,2) := 0; v_total_amount DECIMAL(15,2) := 0; v_item JSONB; v_line_total DECIMAL(15,2); v_line_tax DECIMAL(15,2); v_customer_name TEXT; v_invoice_number TEXT; v_original_currency VARCHAR(3); v_approval_status VARCHAR(20) := 'draft'; BEGIN IF p_company_id IS NULL OR p_customer_id IS NULL OR p_source_invoice_id IS NULL THEN RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::VARCHAR(20), FALSE, 'Missing required fields: company_id, customer_id, or source_invoice_id'; RETURN; END IF; IF p_items IS NULL OR jsonb_array_length(p_items) = 0 THEN RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::VARCHAR(20), FALSE, 'At least one item is required'; RETURN; END IF; SELECT c.name INTO v_customer_name FROM customers c WHERE c.id = p_customer_id; SELECT i.invoice_number INTO v_invoice_number FROM invoices i WHERE i.id = p_source_invoice_id; IF v_customer_name IS NULL OR v_invoice_number IS NULL THEN RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::VARCHAR(20), FALSE, 'Customer or invoice not found'; RETURN; END IF; v_debit_note_number := generate_customer_debit_note_number(p_company_id); FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP v_line_total := (v_item->>'quantity')::DECIMAL * (v_item->>'unit_price')::DECIMAL; v_line_tax := v_line_total * COALESCE((v_item->>'tax_rate')::DECIMAL, 0) / 100; v_subtotal := v_subtotal + v_line_total; v_tax_amount := v_tax_amount + v_line_tax; END LOOP; v_total_amount := v_subtotal + v_tax_amount; SELECT NULLIF(btrim(i.original_currency), '') INTO v_original_currency FROM public.invoices i WHERE i.id = p_source_invoice_id; v_original_currency := COALESCE(v_original_currency, public.erp_company_base_currency(p_company_id)); INSERT INTO customer_debit_notes (company_id, branch_id, cost_center_id, customer_id, debit_note_number, debit_note_date, source_invoice_id, subtotal, tax_amount, total_amount, applied_amount, currency_id, original_currency, original_subtotal, original_tax_amount, original_total_amount, exchange_rate, status, approval_status, reference_type, reason, notes, created_by) VALUES (p_company_id, p_branch_id, p_cost_center_id, p_customer_id, v_debit_note_number, p_debit_note_date, p_source_invoice_id, v_subtotal, v_tax_amount, v_total_amount, 0, p_currency_id, v_original_currency, v_subtotal, v_tax_amount, v_total_amount, p_exchange_rate, 'open', 'draft', p_reference_type, p_reason, p_notes, p_created_by) RETURNING id INTO v_debit_note_id; FOR v_item IN SELECT * FROM jsonb_array_elements(p_items) LOOP v_line_total := (v_item->>'quantity')::DECIMAL * (v_item->>'unit_price')::DECIMAL; INSERT INTO customer_debit_note_items (customer_debit_note_id, product_id, description, quantity, unit_price, tax_rate, line_total, item_type) VALUES (v_debit_note_id, (v_item->>'product_id')::UUID, v_item->>'description', (v_item->>'quantity')::DECIMAL, (v_item->>'unit_price')::DECIMAL, COALESCE((v_item->>'tax_rate')::DECIMAL, 0), v_line_total, COALESCE(v_item->>'item_type', 'charge')); END LOOP; RETURN QUERY SELECT v_debit_note_id, v_debit_note_number, v_total_amount, v_approval_status, TRUE, 'Customer debit note created successfully as DRAFT. Submit for approval before applying.'; EXCEPTION WHEN OTHERS THEN RETURN QUERY SELECT NULL::UUID, NULL::VARCHAR(50), 0::DECIMAL(15,2), NULL::VARCHAR(20), FALSE, 'Error creating customer debit note: ' || SQLERRM; END; $function$
 ;
 
@@ -20568,6 +20752,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.create_missing_invoice_journals_safe(p_company_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 20)
  RETURNS TABLE(invoice_id uuid, invoice_number text, fix_applied text, status text)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_invoice RECORD;
@@ -20912,6 +21097,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.create_opening_stock_fifo_lots(p_company_id uuid)
  RETURNS integer
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_product RECORD;
@@ -21453,7 +21639,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.create_sales_order_atomic(p_so_data jsonb, p_so_items jsonb DEFAULT '[]'::jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
   v_so_id     uuid;
@@ -21834,6 +22020,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.create_vendor_credit_from_bill_return(p_bill_id uuid)
  RETURNS uuid
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_bill RECORD;
@@ -21969,6 +22156,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.create_vendor_credit_with_items(p_credit jsonb, p_items jsonb)
  RETURNS uuid
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_id UUID;
@@ -22071,6 +22259,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.create_vendor_credits_for_all_returns()
  RETURNS TABLE(bill_id uuid, bill_number text, company_name text, returned_amount numeric, vendor_credit_id uuid, status text)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_bill RECORD;
@@ -23061,6 +23250,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.delete_empty_journal_entries_safe(p_company_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 100)
  RETURNS TABLE(deleted_count integer)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_deleted_count INTEGER := 0;
@@ -23304,6 +23494,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.discount_approvals_touch_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at := NOW();
@@ -23649,7 +23840,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.enforce_commission_run_transition()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 BEGIN
   IF NOT public.commission_run_transition_allowed(OLD.status, NEW.status) THEN
@@ -23668,6 +23859,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.enforce_governance_on_insert()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_old_status TEXT;
@@ -23893,6 +24085,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.enforce_je_has_lines_on_post()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NEW.status = 'posted' AND (OLD.status IS DISTINCT FROM 'posted') THEN
@@ -23911,7 +24104,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.enforce_je_integrity()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE v_is_trusted_caller BOOLEAN;
 BEGIN
@@ -23956,6 +24149,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.enforce_journal_entry_balance()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_entry_id    UUID;
@@ -24057,7 +24251,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.enforce_payment_names_its_author()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 BEGIN
   -- **ولا يُطلب ما يُعرَف**: إن كانت جلسةٌ فصاحبُها هو الفاعل. ويُملأ العمودان
@@ -24155,6 +24349,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.enforce_period_lock_lines()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_je_id UUID;
@@ -24185,6 +24380,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.enforce_posted_entry_lines_no_edit()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_status TEXT;
@@ -24221,6 +24417,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.enforce_posted_entry_no_edit()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF TG_OP = 'DELETE' THEN
@@ -24275,7 +24472,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.enforce_rejection_is_not_a_reversal()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 BEGIN
   IF coalesce(NEW.is_deleted, false) = true OR NEW.voided_at IS NOT NULL THEN
@@ -24505,6 +24702,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ensure_journal_entry_balanced()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   total numeric;
@@ -24530,6 +24728,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ensure_return_has_journal_entry()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ BEGIN IF NEW.status = 'completed' AND NEW.journal_entry_id IS NULL THEN RAISE WARNING 'مرتجع مكتمل بدون قيد محاسبي: %', NEW.return_number; END IF; RETURN NEW; END; $function$
 ;
 
@@ -24570,6 +24769,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ensure_warehouse_cost_center_from_branch_default()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_default_cost_center_id UUID;
@@ -24670,6 +24870,7 @@ CREATE OR REPLACE FUNCTION public.erp_branch_sku_code(p_branch_id uuid)
  RETURNS text
  LANGUAGE sql
  STABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT upper(coalesce(nullif(btrim(b.branch_code),''), nullif(btrim(b.code),''), 'HO'))
   FROM branches b WHERE b.id = p_branch_id;
@@ -24808,6 +25009,7 @@ CREATE OR REPLACE FUNCTION public.erp_financial_reports_seed_roles()
  RETURNS text[]
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT ARRAY['owner','admin']::text[];
 $function$
@@ -25020,7 +25222,7 @@ CREATE OR REPLACE FUNCTION public.erp_policy_role_groups()
  RETURNS TABLE(policy_name text, roles_named text[])
  LANGUAGE sql
  STABLE
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
   WITH pol AS (
     SELECT n.nspname || '.' || c.relname || ' / ' || p.polname AS nm,
@@ -25053,6 +25255,7 @@ CREATE OR REPLACE FUNCTION public.erp_product_sku_prefix(p_item_type text, p_pro
  RETURNS text
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT CASE
     WHEN lower(coalesce(p_item_type,'')) = 'service' OR lower(coalesce(p_product_type,'')) = 'service' THEN 'SRV'
@@ -25099,6 +25302,7 @@ CREATE OR REPLACE FUNCTION public.erp_reports_seed_roles()
  RETURNS text[]
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT ARRAY['manager','accountant','store_manager',
                'purchasing_officer','booking_officer','manufacturing_officer']::text[];
@@ -25172,6 +25376,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.erp_sod_guard()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_row     jsonb := to_jsonb(NEW);
@@ -26417,6 +26622,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.expense_account_type_guard()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE v_bad boolean;
 BEGIN
@@ -26466,6 +26672,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.expense_paid_requires_journal_guard()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NEW.status IN ('paid','posted')
@@ -26485,6 +26692,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.expenses_mark_paid_when_journal_added()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   -- We only act on the specific transition that creates the inconsistency.
@@ -26973,6 +27181,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.find_duplicate_journal_entries(p_company_id uuid)
  RETURNS TABLE(reference_type text, reference_id uuid, count bigint)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ BEGIN RETURN QUERY SELECT je.reference_type::TEXT, je.reference_id, COUNT(*)::BIGINT as count FROM journal_entries je WHERE je.company_id = p_company_id AND (je.is_deleted IS NULL OR je.is_deleted = false) AND je.reference_type IN ('invoice', 'invoice_cogs', 'bill', 'expense') GROUP BY je.reference_type, je.reference_id HAVING COUNT(*) > 1; END; $function$
 ;
 
@@ -26982,6 +27191,7 @@ AS $function$ BEGIN RETURN QUERY SELECT je.reference_type::TEXT, je.reference_id
 CREATE OR REPLACE FUNCTION public.find_payment_account(p_company_id uuid, p_account_name_pattern text, p_account_code_pattern text)
  RETURNS uuid
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
     v_account_id UUID;
@@ -27213,6 +27423,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.fix_unbalanced_journal_entries_safe(p_company_id uuid DEFAULT NULL::uuid, p_limit integer DEFAULT 50)
  RETURNS TABLE(journal_entry_id uuid, issue text, fix_applied text, status text)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_entry RECORD;
@@ -27380,6 +27591,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.fn_check_journal_balance()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   total_debit DECIMAL(15,2);
@@ -27965,6 +28177,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.fn_recalc_bill_paid_status(p_bill_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_total NUMERIC;
@@ -28050,6 +28263,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.fn_recalc_invoice_paid_status(p_invoice_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_total          NUMERIC;
@@ -28234,6 +28448,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.fn_touch_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at := now();
@@ -28283,6 +28498,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.fn_validate_normal_balance()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_is_contra BOOLEAN := false;
@@ -28648,6 +28864,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.generate_accounting_audit_report(p_company_id uuid DEFAULT NULL::uuid)
  RETURNS TABLE(category text, issue_type text, issue_count bigint, details jsonb)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   RETURN QUERY
@@ -28887,6 +29104,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.generate_customer_debit_note_number(p_company_id uuid)
  RETURNS character varying
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_prefix VARCHAR(10); v_next_number INTEGER; v_debit_number VARCHAR(50); BEGIN SELECT UPPER(LEFT(name, 3)) INTO v_prefix FROM companies WHERE id = p_company_id; SELECT COALESCE(MAX(CAST(SUBSTRING(debit_note_number FROM '[0-9]+$') AS INTEGER)), 0) + 1 INTO v_next_number FROM customer_debit_notes WHERE company_id = p_company_id AND debit_note_number ~ (v_prefix || '-DN-[0-9]+$'); v_debit_number := v_prefix || '-DN-' || LPAD(v_next_number::TEXT, 4, '0'); RETURN v_debit_number; END; $function$
 ;
 
@@ -28896,6 +29114,7 @@ AS $function$ DECLARE v_prefix VARCHAR(10); v_next_number INTEGER; v_debit_numbe
 CREATE OR REPLACE FUNCTION public.generate_depreciation_schedule(p_asset_id uuid)
  RETURNS integer
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_asset RECORD;
@@ -29041,6 +29260,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.generate_expense_number(p_company_id uuid)
  RETURNS text
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_lock_key BIGINT;
@@ -29081,6 +29301,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.generate_invoice_number()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_year TEXT;
@@ -29165,6 +29386,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.get_account_balance(p_company_id uuid, p_account_id uuid, p_as_of_date date DEFAULT CURRENT_DATE)
  RETURNS numeric
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
     v_opening_balance DECIMAL(15, 2);
@@ -29464,6 +29686,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.get_available_inventory_quantity(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_product_id uuid)
  RETURNS integer
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_available_qty INTEGER := 0;
@@ -29559,6 +29782,7 @@ CREATE OR REPLACE FUNCTION public.get_available_return_quantity(p_invoice_id uui
  RETURNS numeric
  LANGUAGE plpgsql
  STABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_sold_qty NUMERIC := 0;
@@ -29654,7 +29878,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.get_bills_payload(p_company_id uuid, p_bill_ids uuid[])
  RETURNS jsonb
  LANGUAGE plpgsql
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 BEGIN
   IF p_bill_ids IS NULL OR array_length(p_bill_ids, 1) = 0 THEN
@@ -29996,7 +30220,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.get_customers_overview(p_company_id uuid, p_branch_filter uuid DEFAULT NULL::uuid, p_employee_filter uuid DEFAULT NULL::uuid, p_cost_center_filter uuid DEFAULT NULL::uuid, p_shared_grantor_ids uuid[] DEFAULT NULL::uuid[], p_search text DEFAULT NULL::text, p_invoice_filter text DEFAULT 'all'::text, p_page integer DEFAULT 1, p_page_size integer DEFAULT 50)
  RETURNS jsonb
  LANGUAGE plpgsql
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
   v_offset integer := GREATEST(0, (COALESCE(p_page, 1) - 1)) * COALESCE(p_page_size, 50);
@@ -30446,6 +30670,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.get_enhanced_accounts_payable(p_company_id uuid, p_branch_id uuid DEFAULT NULL::uuid, p_cost_center_id uuid DEFAULT NULL::uuid, p_supplier_id uuid DEFAULT NULL::uuid, p_as_of_date date DEFAULT CURRENT_DATE)
  RETURNS TABLE(supplier_id uuid, supplier_name text, bill_id uuid, bill_number text, bill_date date, due_date date, original_amount numeric, paid_amount numeric, returned_amount numeric, balance numeric, days_overdue integer, aging_bucket text, branch_id uuid, cost_center_id uuid)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
     RETURN QUERY
@@ -30493,6 +30718,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.get_enhanced_accounts_receivable(p_company_id uuid, p_branch_id uuid DEFAULT NULL::uuid, p_cost_center_id uuid DEFAULT NULL::uuid, p_customer_id uuid DEFAULT NULL::uuid, p_as_of_date date DEFAULT CURRENT_DATE)
  RETURNS TABLE(customer_id uuid, customer_name text, invoice_id uuid, invoice_number text, invoice_date date, due_date date, original_amount numeric, paid_amount numeric, returned_amount numeric, balance numeric, days_overdue integer, aging_bucket text, branch_id uuid, cost_center_id uuid)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
     RETURN QUERY
@@ -30540,6 +30766,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.get_enhanced_balance_sheet(p_company_id uuid, p_branch_id uuid DEFAULT NULL::uuid, p_cost_center_id uuid DEFAULT NULL::uuid, p_as_of_date date DEFAULT CURRENT_DATE)
  RETURNS TABLE(account_id uuid, account_code text, account_name text, account_type text, sub_type text, balance numeric, branch_id uuid, cost_center_id uuid)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
     -- التحقق من صحة المعاملات
@@ -30592,6 +30819,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.get_enhanced_income_statement(p_company_id uuid, p_branch_id uuid DEFAULT NULL::uuid, p_cost_center_id uuid DEFAULT NULL::uuid, p_from_date date DEFAULT (date_trunc('year'::text, (CURRENT_DATE)::timestamp with time zone))::date, p_to_date date DEFAULT CURRENT_DATE)
  RETURNS TABLE(account_id uuid, account_code text, account_name text, account_type text, sub_type text, amount numeric, branch_id uuid, cost_center_id uuid)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
     -- التحقق من صحة المعاملات
@@ -30651,6 +30879,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.get_enhanced_inventory_report(p_company_id uuid, p_branch_id uuid DEFAULT NULL::uuid, p_cost_center_id uuid DEFAULT NULL::uuid, p_warehouse_id uuid DEFAULT NULL::uuid, p_product_id uuid DEFAULT NULL::uuid, p_as_of_date date DEFAULT CURRENT_DATE)
  RETURNS TABLE(product_id uuid, product_name text, product_code text, warehouse_id uuid, warehouse_name text, opening_quantity numeric, in_quantity numeric, out_quantity numeric, closing_quantity numeric, unit_cost numeric, total_value numeric, branch_id uuid, cost_center_id uuid)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
     RETURN QUERY
@@ -30714,6 +30943,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.get_enhanced_purchases_report(p_company_id uuid, p_branch_id uuid DEFAULT NULL::uuid, p_cost_center_id uuid DEFAULT NULL::uuid, p_supplier_id uuid DEFAULT NULL::uuid, p_created_by_user_id uuid DEFAULT NULL::uuid, p_from_date date DEFAULT (date_trunc('month'::text, (CURRENT_DATE)::timestamp with time zone))::date, p_to_date date DEFAULT CURRENT_DATE)
  RETURNS TABLE(bill_id uuid, bill_number text, bill_date date, supplier_id uuid, supplier_name text, subtotal numeric, tax_amount numeric, total_amount numeric, paid_amount numeric, status text, created_by_user_id uuid, branch_id uuid, cost_center_id uuid)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
     RETURN QUERY
@@ -30752,6 +30982,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.get_enhanced_sales_report(p_company_id uuid, p_branch_id uuid DEFAULT NULL::uuid, p_cost_center_id uuid DEFAULT NULL::uuid, p_customer_id uuid DEFAULT NULL::uuid, p_created_by_user_id uuid DEFAULT NULL::uuid, p_from_date date DEFAULT (date_trunc('month'::text, (CURRENT_DATE)::timestamp with time zone))::date, p_to_date date DEFAULT CURRENT_DATE)
  RETURNS TABLE(invoice_id uuid, invoice_number text, invoice_date date, customer_id uuid, customer_name text, subtotal numeric, tax_amount numeric, total_amount numeric, paid_amount numeric, status text, created_by_user_id uuid, branch_id uuid, cost_center_id uuid)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
     RETURN QUERY
@@ -31213,7 +31444,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.get_invoices_payload(p_company_id uuid, p_invoice_ids uuid[])
  RETURNS jsonb
  LANGUAGE plpgsql
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 BEGIN
   IF p_invoice_ids IS NULL OR array_length(p_invoice_ids, 1) = 0 THEN
@@ -31318,6 +31549,7 @@ CREATE OR REPLACE FUNCTION public.get_notification_escalation_level(p_notificati
  RETURNS integer
  LANGUAGE sql
  STABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(MAX(level), 0)
   FROM notification_escalations
@@ -31788,7 +32020,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.get_suppliers_overview(p_company_id uuid, p_branch_filter uuid DEFAULT NULL::uuid, p_search text DEFAULT NULL::text, p_page integer DEFAULT 1, p_page_size integer DEFAULT 50)
  RETURNS jsonb
  LANGUAGE plpgsql
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE
   v_offset integer := GREATEST(0, (COALESCE(p_page, 1) - 1)) * COALESCE(p_page_size, 50);
@@ -35238,6 +35470,7 @@ END $function$
 CREATE OR REPLACE FUNCTION public.ic_set_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at := NOW();
@@ -35701,6 +35934,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ic_validate_elimination_dry_run_only()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_run_type TEXT;
@@ -35729,6 +35963,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ic_validate_intercompany_document_integrity()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   tx RECORD;
@@ -35779,6 +36014,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ic_validate_intercompany_transaction_integrity()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   rel RECORD;
@@ -36062,6 +36298,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.inherit_branch_cost_center_for_journal()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_branch_id UUID; v_cost_center_id UUID; BEGIN IF NEW.branch_id IS NULL OR NEW.cost_center_id IS NULL THEN IF NEW.reference_type = 'invoice' OR NEW.reference_type = 'invoice_payment' OR NEW.reference_type = 'sale_return' THEN SELECT branch_id, cost_center_id INTO v_branch_id, v_cost_center_id FROM invoices WHERE id = NEW.reference_id; ELSIF NEW.reference_type = 'bill' OR NEW.reference_type = 'bill_payment' OR NEW.reference_type = 'purchase_return' THEN SELECT branch_id, cost_center_id INTO v_branch_id, v_cost_center_id FROM bills WHERE id = NEW.reference_id; ELSIF NEW.reference_type = 'payment' THEN SELECT branch_id, cost_center_id INTO v_branch_id, v_cost_center_id FROM payments WHERE id = NEW.reference_id; END IF; NEW.branch_id := COALESCE(NEW.branch_id, v_branch_id); NEW.cost_center_id := COALESCE(NEW.cost_center_id, v_cost_center_id); IF NEW.branch_id IS NULL THEN SELECT b.id INTO v_branch_id FROM branches b WHERE b.company_id = NEW.company_id AND b.is_main = true LIMIT 1; NEW.branch_id := v_branch_id; END IF; IF NEW.cost_center_id IS NULL AND NEW.branch_id IS NOT NULL THEN SELECT cc.id INTO v_cost_center_id FROM cost_centers cc WHERE cc.branch_id = NEW.branch_id AND cc.is_main = true LIMIT 1; IF v_cost_center_id IS NULL THEN SELECT cc.id INTO v_cost_center_id FROM cost_centers cc WHERE cc.branch_id = NEW.branch_id LIMIT 1; END IF; NEW.cost_center_id := v_cost_center_id; END IF; END IF; RETURN NEW; END; $function$
 ;
 
@@ -36071,6 +36308,7 @@ AS $function$ DECLARE v_branch_id UUID; v_cost_center_id UUID; BEGIN IF NEW.bran
 CREATE OR REPLACE FUNCTION public.inherit_branch_warehouse_for_inventory()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_branch_id UUID; v_warehouse_id UUID; BEGIN IF NEW.branch_id IS NULL OR NEW.warehouse_id IS NULL THEN IF NEW.transaction_type IN ('sale', 'sale_return') THEN SELECT branch_id, warehouse_id INTO v_branch_id, v_warehouse_id FROM invoices WHERE id = NEW.reference_id; ELSIF NEW.transaction_type IN ('purchase', 'purchase_return') THEN SELECT branch_id, warehouse_id INTO v_branch_id, v_warehouse_id FROM bills WHERE id = NEW.reference_id; END IF; IF NEW.branch_id IS NULL AND v_branch_id IS NOT NULL THEN NEW.branch_id := v_branch_id; END IF; IF NEW.warehouse_id IS NULL AND v_warehouse_id IS NOT NULL THEN NEW.warehouse_id := v_warehouse_id; END IF; IF NEW.branch_id IS NULL OR NEW.warehouse_id IS NULL THEN SELECT b.id, w.id INTO v_branch_id, v_warehouse_id FROM branches b LEFT JOIN warehouses w ON w.branch_id = b.id AND w.is_main = true WHERE b.company_id = NEW.company_id AND b.is_main = true LIMIT 1; NEW.branch_id := COALESCE(NEW.branch_id, v_branch_id); NEW.warehouse_id := COALESCE(NEW.warehouse_id, v_warehouse_id); END IF; END IF; RETURN NEW; END; $function$
 ;
 
@@ -36809,6 +37047,7 @@ CREATE OR REPLACE FUNCTION public.ir_format_reservation_number(p_sequence_value 
  RETURNS text
  LANGUAGE plpgsql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   RETURN 'RSV-' ||
@@ -36847,6 +37086,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ir_guard_allocation_parent_terminal()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_old_status TEXT;
@@ -36889,6 +37129,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ir_guard_consumption_immutable()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   RAISE EXCEPTION 'inventory_reservation_consumptions is immutable. UPDATE and DELETE are not allowed.';
@@ -36902,6 +37143,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ir_guard_consumption_parent_terminal()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_parent_status TEXT;
@@ -36926,6 +37168,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ir_guard_line_parent_terminal()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_old_status TEXT;
@@ -36968,6 +37211,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ir_guard_reservation_number()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_old_number TEXT;
@@ -37013,6 +37257,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ir_guard_reservation_terminal_immutability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF public.ir_is_terminal_reservation_status(OLD.status) THEN
@@ -37035,6 +37280,7 @@ CREATE OR REPLACE FUNCTION public.ir_is_terminal_reservation_status(p_status tex
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') IN ('consumed', 'released', 'cancelled', 'expired', 'closed');
 $function$
@@ -37046,6 +37292,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ir_refresh_allocation_consumed_from_consumptions()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.ir_refresh_allocation_from_consumptions(NEW.reservation_allocation_id);
@@ -37060,6 +37307,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ir_refresh_allocation_from_consumptions(p_allocation_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_consumed_qty NUMERIC(18,4) := 0;
@@ -37113,6 +37361,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ir_refresh_header_totals(p_reservation_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_requested_qty NUMERIC(18,4) := 0;
@@ -37158,6 +37407,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ir_refresh_header_totals_from_lines()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF TG_OP = 'DELETE' THEN
@@ -37181,6 +37431,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ir_refresh_line_totals(p_reservation_line_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_reserved_qty NUMERIC(18,4) := 0;
@@ -37221,6 +37472,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ir_refresh_line_totals_from_allocations()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF TG_OP = 'DELETE' THEN
@@ -37244,6 +37496,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.ir_set_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at := NOW();
@@ -38223,6 +38476,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.lock_purchase_return_on_status()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NEW.status IN ('approved', 'sent_to_vendor') THEN
@@ -38390,6 +38644,7 @@ CREATE OR REPLACE FUNCTION public.material_issue_stage_error(p_old_status text, 
  RETURNS text
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT CASE
     -- تحديثٌ لا يمسّ الحالة
@@ -38417,6 +38672,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mb_assert_bom_version_structure_editable(p_bom_version_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_status TEXT;
@@ -38443,6 +38699,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mb_guard_bom_deleteability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_blocking_version_id UUID;
@@ -38472,6 +38729,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mb_guard_bom_identity_immutability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF OLD.company_id IS DISTINCT FROM NEW.company_id
@@ -38492,6 +38750,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mb_guard_bom_line_parent_editability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF TG_OP = 'DELETE' THEN
@@ -38521,6 +38780,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mb_guard_bom_substitute_parent_editability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_old_bom_version_id UUID;
@@ -38567,6 +38827,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mb_guard_bom_version_deleteability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NOT public.mb_is_bom_version_structure_editable(OLD.status) THEN
@@ -38585,6 +38846,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mb_guard_bom_version_update()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_header_changed BOOLEAN;
@@ -38642,6 +38904,7 @@ CREATE OR REPLACE FUNCTION public.mb_is_bom_input_product_type_allowed(p_product
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(BTRIM(p_product_type), '') = 'raw_material';
 $function$
@@ -38654,6 +38917,7 @@ CREATE OR REPLACE FUNCTION public.mb_is_bom_output_product_type_allowed(p_produc
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(BTRIM(p_product_type), '') = 'manufactured';
 $function$
@@ -38666,6 +38930,7 @@ CREATE OR REPLACE FUNCTION public.mb_is_bom_version_locked(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') IN ('pending_approval', 'approved', 'superseded', 'archived');
 $function$
@@ -38678,6 +38943,7 @@ CREATE OR REPLACE FUNCTION public.mb_is_bom_version_structure_editable(p_status 
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') IN ('draft', 'rejected');
 $function$
@@ -38690,6 +38956,7 @@ CREATE OR REPLACE FUNCTION public.mb_is_bom_version_transition_allowed(p_old_sta
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT CASE COALESCE(p_old_status, '')
     WHEN 'draft' THEN COALESCE(p_new_status, '') IN ('draft', 'pending_approval', 'archived')
@@ -38709,6 +38976,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mb_set_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at := NOW();
@@ -38723,6 +38991,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mb_trg_validate_bom_line_context()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mb_validate_bom_line_context(
@@ -38744,6 +39013,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mb_trg_validate_bom_substitute_context()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mb_validate_bom_substitute_context(
@@ -38764,6 +39034,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mb_trg_validate_bom_version_effective_window()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mb_validate_bom_version_effective_window(
@@ -38785,6 +39056,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mb_validate_bom_line_context(p_bom_version_id uuid, p_company_id uuid, p_branch_id uuid, p_component_product_id uuid, p_line_type text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_version_company_id UUID;
@@ -38867,6 +39139,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mb_validate_bom_substitute_context(p_bom_line_id uuid, p_company_id uuid, p_branch_id uuid, p_substitute_product_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_line_company_id UUID;
@@ -38942,6 +39215,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mb_validate_bom_version_effective_window(p_bom_id uuid, p_version_id uuid, p_status text, p_effective_from timestamp with time zone, p_effective_to timestamp with time zone)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_conflict_id UUID;
@@ -39002,6 +39276,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.merge_duplicate_accounts_safe(p_company_id uuid, p_account_code text, p_keep_account_id uuid DEFAULT NULL::uuid)
  RETURNS TABLE(merged_count integer, journal_entry_id uuid, total_amount numeric)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
     v_keep_account_id UUID;
@@ -39209,6 +39484,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.migrate_existing_purchases_to_fifo()
  RETURNS TABLE(products_migrated integer, lots_created integer, total_value numeric)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_products_count INTEGER := 0;
@@ -39293,6 +39569,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_assert_manufactured_owner_product(p_product_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_product_type TEXT;
@@ -39323,6 +39600,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_assert_order_editable(p_production_order_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_status TEXT;
@@ -39350,6 +39628,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_assert_order_execution_open(p_production_order_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_status TEXT;
@@ -39377,6 +39656,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_assert_order_release_ready(p_production_order_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_order public.manufacturing_production_orders%ROWTYPE;
@@ -39434,6 +39714,7 @@ CREATE OR REPLACE FUNCTION public.mpo_format_order_no(p_sequence_value bigint, p
  RETURNS text
  LANGUAGE plpgsql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   RETURN 'MPO-' ||
@@ -39513,6 +39794,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_guard_production_order_header_editability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF OLD.status = 'draft' THEN
@@ -39583,6 +39865,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_guard_production_order_identity_immutability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF OLD.company_id IS DISTINCT FROM NEW.company_id
@@ -39602,6 +39885,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_guard_production_order_operation_identity_immutability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF OLD.company_id IS DISTINCT FROM NEW.company_id
@@ -39621,6 +39905,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_guard_production_order_operation_status_transition()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NOT public.mpo_is_operation_transition_allowed(OLD.status, NEW.status) THEN
@@ -39643,6 +39928,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_guard_production_order_operation_write_scope()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_order_status TEXT;
@@ -39721,6 +40007,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_guard_production_order_status_transition()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NOT public.mpo_is_order_transition_allowed(OLD.status, NEW.status) THEN
@@ -39754,6 +40041,7 @@ CREATE OR REPLACE FUNCTION public.mpo_is_operation_completed(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') = 'completed';
 $function$
@@ -39766,6 +40054,7 @@ CREATE OR REPLACE FUNCTION public.mpo_is_operation_in_progress(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') = 'in_progress';
 $function$
@@ -39778,6 +40067,7 @@ CREATE OR REPLACE FUNCTION public.mpo_is_operation_open(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') IN ('pending', 'ready', 'in_progress');
 $function$
@@ -39790,6 +40080,7 @@ CREATE OR REPLACE FUNCTION public.mpo_is_operation_ready(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') = 'ready';
 $function$
@@ -39802,6 +40093,7 @@ CREATE OR REPLACE FUNCTION public.mpo_is_operation_terminal(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') IN ('completed', 'cancelled');
 $function$
@@ -39814,6 +40106,7 @@ CREATE OR REPLACE FUNCTION public.mpo_is_operation_transition_allowed(p_old_stat
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT CASE COALESCE(p_old_status, '')
     WHEN 'pending' THEN COALESCE(p_new_status, '') IN ('pending', 'ready', 'cancelled')
@@ -39833,6 +40126,7 @@ CREATE OR REPLACE FUNCTION public.mpo_is_order_approval_transition_allowed(p_old
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT CASE COALESCE(p_old_status, '')
     WHEN 'draft'             THEN COALESCE(p_new_status, '') IN ('draft', 'pending_approval')
@@ -39855,6 +40149,7 @@ CREATE OR REPLACE FUNCTION public.mpo_is_order_editable(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') = 'draft';
 $function$
@@ -39867,6 +40162,7 @@ CREATE OR REPLACE FUNCTION public.mpo_is_order_execution_open(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') IN ('released', 'in_progress');
 $function$
@@ -39879,6 +40175,7 @@ CREATE OR REPLACE FUNCTION public.mpo_is_order_releasable(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') = 'draft';
 $function$
@@ -39891,6 +40188,7 @@ CREATE OR REPLACE FUNCTION public.mpo_is_order_terminal(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') IN ('completed', 'cancelled');
 $function$
@@ -39903,6 +40201,7 @@ CREATE OR REPLACE FUNCTION public.mpo_is_order_transition_allowed(p_old_status t
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT CASE COALESCE(p_old_status, '')
     WHEN 'draft' THEN COALESCE(p_new_status, '') IN ('draft', 'released', 'cancelled')
@@ -39921,6 +40220,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_set_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at := NOW();
@@ -39935,6 +40235,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_trg_validate_production_order_context()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpo_validate_production_order_context(
@@ -39960,6 +40261,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_trg_validate_production_order_operation_context()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpo_validate_order_operation_context(
@@ -39982,6 +40284,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_validate_order_bom_context(p_company_id uuid, p_branch_id uuid, p_product_id uuid, p_bom_id uuid, p_bom_version_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_bom_company_id UUID;
@@ -40038,6 +40341,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_validate_order_operation_context(p_production_order_id uuid, p_company_id uuid, p_branch_id uuid, p_routing_version_id uuid, p_source_routing_operation_id uuid, p_work_center_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_order_company_id UUID;
@@ -40128,6 +40432,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_validate_order_routing_context(p_company_id uuid, p_branch_id uuid, p_product_id uuid, p_routing_id uuid, p_routing_version_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_routing_company_id UUID;
@@ -40184,6 +40489,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_validate_order_warehouse_context(p_company_id uuid, p_branch_id uuid, p_issue_warehouse_id uuid, p_receipt_warehouse_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_issue_company_id UUID;
@@ -40234,6 +40540,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpo_validate_production_order_context(p_company_id uuid, p_branch_id uuid, p_product_id uuid, p_bom_id uuid, p_bom_version_id uuid, p_routing_id uuid, p_routing_version_id uuid, p_issue_warehouse_id uuid, p_receipt_warehouse_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpo_assert_manufactured_owner_product(p_product_id);
@@ -40270,6 +40577,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_assert_issue_event_mutation_forbidden(p_issue_event_id uuid, p_operation text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NOT EXISTS (
@@ -40292,6 +40600,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_assert_issue_execution_ready(p_production_order_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpoe_assert_order_execution_open(p_production_order_id);
@@ -40306,6 +40615,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_assert_issue_line_mutation_forbidden(p_issue_line_id uuid, p_operation text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NOT EXISTS (
@@ -40328,6 +40638,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_assert_material_requirement_mutation_forbidden(p_material_requirement_id uuid, p_operation text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NOT EXISTS (
@@ -40351,6 +40662,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_assert_material_requirements_snapshot_absent(p_production_order_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_requirement_count INTEGER;
@@ -40374,6 +40686,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_assert_material_requirements_snapshot_exists(p_production_order_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_requirement_count INTEGER;
@@ -40396,6 +40709,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_assert_material_requirements_snapshot_frozen(p_production_order_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_status TEXT;
@@ -40426,6 +40740,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_assert_materials_issued_before_receipt(p_production_order_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_issued_total  NUMERIC(18,4);
@@ -40459,6 +40774,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_assert_order_execution_open(p_production_order_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpo_assert_order_execution_open(p_production_order_id);
@@ -40523,6 +40839,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_assert_receipt_event_mutation_forbidden(p_receipt_event_id uuid, p_operation text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NOT EXISTS (
@@ -40545,6 +40862,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_assert_receipt_execution_ready(p_production_order_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpoe_assert_order_execution_open(p_production_order_id);
@@ -40565,6 +40883,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_assert_receipt_line_mutation_forbidden(p_receipt_line_id uuid, p_operation text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NOT EXISTS (
@@ -40588,6 +40907,7 @@ CREATE OR REPLACE FUNCTION public.mpoe_compute_open_reservation_status(p_request
  RETURNS text
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT CASE
     WHEN COALESCE(p_requested_qty, 0) <= 0 THEN 'active'
@@ -40633,6 +40953,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_guard_issue_event_immutability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpoe_assert_issue_event_mutation_forbidden(
@@ -40655,6 +40976,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_guard_issue_event_insert()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpoe_assert_issue_execution_ready(NEW.production_order_id);
@@ -40669,6 +40991,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_guard_issue_line_immutability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpoe_assert_issue_line_mutation_forbidden(
@@ -40691,6 +41014,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_guard_issue_line_insert()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpoe_assert_issue_execution_ready(NEW.production_order_id);
@@ -40705,6 +41029,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_guard_material_requirement_immutability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF TG_OP = 'DELETE' THEN
@@ -40750,6 +41075,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_guard_material_requirement_insert()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpoe_assert_order_execution_open(NEW.production_order_id);
@@ -40764,6 +41090,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_guard_receipt_event_immutability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpoe_assert_receipt_event_mutation_forbidden(
@@ -40786,6 +41113,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_guard_receipt_event_insert()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpoe_assert_receipt_execution_ready(NEW.production_order_id);
@@ -40800,6 +41128,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_guard_receipt_line_immutability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpoe_assert_receipt_line_mutation_forbidden(
@@ -40822,6 +41151,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_guard_receipt_line_insert()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpoe_assert_receipt_execution_ready(NEW.production_order_id);
@@ -40837,6 +41167,7 @@ CREATE OR REPLACE FUNCTION public.mpoe_is_issue_mode_supported(p_issue_mode text
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_issue_mode, '') = 'manual';
 $function$
@@ -40849,6 +41180,7 @@ CREATE OR REPLACE FUNCTION public.mpoe_is_receipt_mode_supported(p_receipt_mode 
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_receipt_mode, '') = 'manual';
 $function$
@@ -40861,6 +41193,7 @@ CREATE OR REPLACE FUNCTION public.mpoe_is_receipt_output_type_supported(p_output
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_output_type, '') = 'main_output';
 $function$
@@ -40873,6 +41206,7 @@ CREATE OR REPLACE FUNCTION public.mpoe_is_requirement_type_supported(p_requireme
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_requirement_type, '') = 'component';
 $function$
@@ -40884,6 +41218,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_lock_inventory_bucket(p_company_id uuid, p_warehouse_id uuid, p_product_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM pg_advisory_xact_lock(
@@ -40900,6 +41235,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_refresh_open_reservation_status(p_reservation_id uuid, p_updated_by uuid DEFAULT NULL::uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_reservation RECORD;
@@ -40957,6 +41293,7 @@ CREATE OR REPLACE FUNCTION public.mpoe_round_qty(p_value numeric)
  RETURNS numeric
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT ROUND(COALESCE(p_value, 0)::NUMERIC, 4)::NUMERIC(18,4);
 $function$
@@ -41329,6 +41666,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_trg_validate_issue_event_context()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpoe_validate_issue_event_context(
@@ -41351,6 +41689,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_trg_validate_issue_line_context()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpoe_validate_issue_line_context(
@@ -41378,6 +41717,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_trg_validate_material_requirement_context()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpoe_validate_material_requirement_context(
@@ -41403,6 +41743,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_trg_validate_receipt_event_context()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpoe_validate_receipt_event_context(
@@ -41425,6 +41766,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_trg_validate_receipt_line_context()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mpoe_validate_receipt_line_context(
@@ -41452,6 +41794,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_validate_fifo_cost_lot_link(p_fifo_cost_lot_id uuid, p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_product_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_lot_company_id UUID;
@@ -41502,6 +41845,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_validate_inventory_transaction_link(p_inventory_transaction_id uuid, p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_product_id uuid, p_expected_quantity numeric, p_expected_direction text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_tx_company_id UUID;
@@ -41576,6 +41920,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_validate_issue_allocation_compatibility(p_reservation_allocation_id uuid, p_company_id uuid, p_branch_id uuid, p_production_order_id uuid, p_material_requirement_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_product_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_allocation_company_id UUID;
@@ -41671,6 +42016,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_validate_issue_event_context(p_production_order_id uuid, p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_issue_mode text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_order_company_id UUID;
@@ -41723,6 +42069,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_validate_issue_line_context(p_issue_event_id uuid, p_production_order_id uuid, p_company_id uuid, p_branch_id uuid, p_material_requirement_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_product_id uuid, p_reservation_allocation_id uuid, p_inventory_transaction_id uuid, p_issued_qty numeric)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_event_company_id UUID;
@@ -41850,6 +42197,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_validate_material_requirement_context(p_production_order_id uuid, p_company_id uuid, p_branch_id uuid, p_source_bom_line_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_product_id uuid, p_order_planned_qty numeric, p_bom_base_output_qty numeric)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_order_company_id UUID;
@@ -41952,6 +42300,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_validate_receipt_event_context(p_production_order_id uuid, p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_receipt_mode text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_order_company_id UUID;
@@ -42004,6 +42353,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_validate_receipt_line_context(p_receipt_event_id uuid, p_production_order_id uuid, p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_product_id uuid, p_output_type text, p_inventory_transaction_id uuid, p_fifo_cost_lot_id uuid, p_received_qty numeric)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_event_company_id UUID;
@@ -42089,6 +42439,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mpoe_validate_warehouse_cost_center_source(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_cost_center_id uuid, p_context text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_warehouse_company_id UUID;
@@ -42190,6 +42541,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mr_assert_routing_version_operational(p_routing_version_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_status TEXT;
@@ -42217,6 +42569,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mr_assert_routing_version_structure_editable(p_routing_version_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_status TEXT;
@@ -42244,6 +42597,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mr_guard_routing_identity_immutability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF OLD.company_id IS DISTINCT FROM NEW.company_id
@@ -42264,6 +42618,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mr_guard_routing_operation_identity_immutability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF OLD.company_id IS DISTINCT FROM NEW.company_id
@@ -42283,6 +42638,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mr_guard_routing_operation_parent_editability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF TG_OP = 'DELETE' THEN
@@ -42355,6 +42711,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mr_guard_routing_version_update()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_header_changed BOOLEAN;
@@ -42398,6 +42755,7 @@ CREATE OR REPLACE FUNCTION public.mr_is_routing_version_approval_transition_allo
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT CASE COALESCE(p_old_status, '')
     WHEN 'draft'             THEN COALESCE(p_new_status, '') IN ('draft', 'pending_approval')
@@ -42416,6 +42774,7 @@ CREATE OR REPLACE FUNCTION public.mr_is_routing_version_locked(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') IN ('active', 'inactive', 'archived');
 $function$
@@ -42428,6 +42787,7 @@ CREATE OR REPLACE FUNCTION public.mr_is_routing_version_operational(p_status tex
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') = 'active';
 $function$
@@ -42440,6 +42800,7 @@ CREATE OR REPLACE FUNCTION public.mr_is_routing_version_structure_editable(p_sta
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') = 'draft';
 $function$
@@ -42452,6 +42813,7 @@ CREATE OR REPLACE FUNCTION public.mr_is_routing_version_transition_allowed(p_old
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT CASE COALESCE(p_old_status, '')
     WHEN 'draft' THEN COALESCE(p_new_status, '') IN ('draft', 'active', 'archived')
@@ -42469,6 +42831,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mr_set_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at := NOW();
@@ -42483,6 +42846,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mr_trg_validate_routing_operation_context()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mr_validate_routing_operation_context(
@@ -42503,6 +42867,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mr_trg_validate_routing_version_context()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mr_validate_routing_version_context(
@@ -42522,6 +42887,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mr_validate_routing_operation_context(p_routing_version_id uuid, p_company_id uuid, p_branch_id uuid, p_work_center_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_version_company_id UUID;
@@ -42569,6 +42935,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mr_validate_routing_version_context(p_routing_id uuid, p_company_id uuid, p_branch_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_routing_company_id UUID;
@@ -42597,6 +42964,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_assert_production_demand_eligible(p_product_id uuid, p_product_type text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NOT public.mrp_is_production_demand_eligible_product_type(p_product_type) THEN
@@ -42613,6 +42981,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_assert_reorder_demand_eligible(p_product_id uuid, p_product_type text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NOT public.mrp_is_reorder_demand_eligible_product_type(p_product_type) THEN
@@ -42629,6 +42998,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_assert_run_running(p_run_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_status TEXT;
@@ -42656,6 +43026,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_assert_run_scope_consistency(p_run_id uuid, p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mrp_validate_run_row_context(
@@ -42675,6 +43046,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_assert_sales_demand_eligible(p_product_id uuid, p_product_type text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NOT public.mrp_is_sales_demand_eligible_product_type(p_product_type) THEN
@@ -42691,6 +43063,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_assert_suggestion_eligibility(p_product_id uuid, p_product_type text, p_suggestion_type text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NOT public.mrp_is_suggestion_type_eligible(p_product_type, p_suggestion_type) THEN
@@ -42707,6 +43080,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_assert_supply_source_eligibility(p_product_id uuid, p_product_type text, p_supply_type text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NOT public.mrp_is_supply_source_eligible(p_product_type, p_supply_type) THEN
@@ -42723,6 +43097,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_assert_warehouse_resolution_present(p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_context text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_warehouse_company_id UUID;
@@ -42756,6 +43131,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_guard_run_identity_immutability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF OLD.company_id IS DISTINCT FROM NEW.company_id
@@ -42781,6 +43157,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_guard_run_row_write_scope()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_run_id UUID;
@@ -42804,6 +43181,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_guard_run_status_transition()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NOT public.mrp_is_run_transition_allowed(OLD.status, NEW.status) THEN
@@ -42822,6 +43200,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_guard_run_terminal_immutability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF public.mrp_is_run_terminal(OLD.status) THEN
@@ -42841,6 +43220,7 @@ CREATE OR REPLACE FUNCTION public.mrp_is_production_demand_eligible_product_type
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT public.mrp_is_supported_product_type(p_product_type);
 $function$
@@ -42853,6 +43233,7 @@ CREATE OR REPLACE FUNCTION public.mrp_is_reorder_demand_eligible_product_type(p_
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_product_type, '') IN ('raw_material', 'purchased');
 $function$
@@ -42865,6 +43246,7 @@ CREATE OR REPLACE FUNCTION public.mrp_is_run_running(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') = 'running';
 $function$
@@ -42877,6 +43259,7 @@ CREATE OR REPLACE FUNCTION public.mrp_is_run_terminal(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') IN ('completed', 'failed');
 $function$
@@ -42889,6 +43272,7 @@ CREATE OR REPLACE FUNCTION public.mrp_is_run_transition_allowed(p_old_status tex
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT CASE COALESCE(p_old_status, '')
     WHEN 'running' THEN COALESCE(p_new_status, '') IN ('running', 'completed', 'failed')
@@ -42906,6 +43290,7 @@ CREATE OR REPLACE FUNCTION public.mrp_is_sales_demand_eligible_product_type(p_pr
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT public.mrp_is_supported_product_type(p_product_type);
 $function$
@@ -42918,6 +43303,7 @@ CREATE OR REPLACE FUNCTION public.mrp_is_suggestion_type_eligible(p_product_type
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT CASE COALESCE(p_suggestion_type, '')
     WHEN 'production' THEN COALESCE(p_product_type, '') = 'manufactured'
@@ -42934,6 +43320,7 @@ CREATE OR REPLACE FUNCTION public.mrp_is_supply_source_eligible(p_product_type t
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT CASE COALESCE(p_supply_type, '')
     WHEN 'free_stock' THEN public.mrp_is_supported_product_type(p_product_type)
@@ -42951,6 +43338,7 @@ CREATE OR REPLACE FUNCTION public.mrp_is_supported_product_type(p_product_type t
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_product_type, '') IN ('manufactured', 'raw_material', 'purchased');
 $function$
@@ -42962,6 +43350,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_trg_validate_demand_row_context()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mrp_validate_demand_row_context(
@@ -42991,6 +43380,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_trg_validate_net_row_context()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mrp_validate_net_row_context(
@@ -43025,6 +43415,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_trg_validate_run_scope_context()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mrp_validate_run_scope_context(
@@ -43045,6 +43436,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_trg_validate_suggestion_context()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mrp_validate_suggestion_context(
@@ -43071,6 +43463,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_trg_validate_supply_row_context()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mrp_validate_supply_row_context(
@@ -43099,6 +43492,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_validate_demand_row_context(p_run_id uuid, p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_product_id uuid, p_product_type text, p_demand_type text, p_source_type text, p_source_id uuid, p_source_line_id uuid, p_original_qty numeric, p_covered_qty numeric, p_uncovered_qty numeric)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_requirement_company_id UUID;
@@ -43226,6 +43620,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_validate_net_row_context(p_run_id uuid, p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_product_id uuid, p_product_type text, p_total_demand_qty numeric, p_sales_demand_qty numeric, p_production_demand_qty numeric, p_reorder_demand_qty numeric, p_free_stock_qty numeric, p_incoming_purchase_qty numeric, p_incoming_production_qty numeric, p_total_supply_qty numeric, p_reorder_level_qty numeric, p_projected_after_committed_qty numeric, p_net_required_qty numeric, p_suggested_action text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mrp_assert_run_running(p_run_id);
@@ -43301,6 +43696,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_validate_net_row_link(p_net_row_id uuid, p_run_id uuid, p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_product_id uuid, p_product_type text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_run_id UUID;
@@ -43339,6 +43735,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_validate_product_snapshot(p_product_id uuid, p_product_type text, p_context text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_current_product_type TEXT;
@@ -43377,6 +43774,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_validate_run_row_context(p_run_id uuid, p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_context text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_run_company_id UUID;
@@ -43419,6 +43817,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_validate_run_scope_context(p_company_id uuid, p_branch_id uuid, p_run_scope text, p_warehouse_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   CASE COALESCE(p_run_scope, '')
@@ -43449,6 +43848,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_validate_source_pointer(p_source_type text, p_source_id uuid, p_context text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NULLIF(BTRIM(COALESCE(p_source_type, '')), '') IS NULL THEN
@@ -43468,6 +43868,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_validate_suggestion_context(p_run_id uuid, p_net_row_id uuid, p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_product_id uuid, p_product_type text, p_suggestion_type text, p_suggested_qty numeric, p_reason_code text)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_net_required_qty NUMERIC;
@@ -43540,6 +43941,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mrp_validate_supply_row_context(p_run_id uuid, p_company_id uuid, p_branch_id uuid, p_warehouse_id uuid, p_product_id uuid, p_product_type text, p_supply_type text, p_source_type text, p_source_id uuid, p_source_line_id uuid, p_original_qty numeric, p_available_qty numeric)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_order_company_id UUID;
@@ -43660,6 +44062,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mwc_assert_work_center_operational(p_work_center_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_status TEXT;
@@ -43686,6 +44089,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mwc_guard_work_center_identity_immutability()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF OLD.company_id IS DISTINCT FROM NEW.company_id
@@ -43704,6 +44108,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mwc_guard_work_center_status_transition()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NOT public.mwc_is_work_center_transition_allowed(OLD.status, NEW.status) THEN
@@ -43746,6 +44151,7 @@ CREATE OR REPLACE FUNCTION public.mwc_is_work_center_blocked(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') = 'blocked';
 $function$
@@ -43758,6 +44164,7 @@ CREATE OR REPLACE FUNCTION public.mwc_is_work_center_operational(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_status, '') = 'active';
 $function$
@@ -43770,6 +44177,7 @@ CREATE OR REPLACE FUNCTION public.mwc_is_work_center_transition_allowed(p_old_st
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(p_old_status, '') IN ('active', 'inactive', 'blocked')
      AND COALESCE(p_new_status, '') IN ('active', 'inactive', 'blocked');
@@ -43782,6 +44190,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mwc_set_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at := NOW();
@@ -43796,6 +44205,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mwc_trg_validate_work_center_context()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mwc_validate_work_center_context(
@@ -43820,6 +44230,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mwc_validate_work_center_capacity_context(p_capacity_uom text, p_nominal_capacity_per_hour numeric, p_available_hours_per_day numeric, p_parallel_capacity integer, p_efficiency_percent numeric)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   -- v3.74.827 — رسائل ثنائية اللغة (قرار المالك): كانت إنجليزية خام تصل
@@ -43863,6 +44274,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mwc_validate_work_center_context(p_company_id uuid, p_branch_id uuid, p_cost_center_id uuid, p_capacity_uom text, p_nominal_capacity_per_hour numeric, p_available_hours_per_day numeric, p_parallel_capacity integer, p_efficiency_percent numeric)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   PERFORM public.mwc_validate_work_center_cost_center_context(
@@ -43888,6 +44300,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.mwc_validate_work_center_cost_center_context(p_company_id uuid, p_branch_id uuid, p_cost_center_id uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_cost_center_company_id UUID;
@@ -43925,7 +44338,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.next_lot_number(p_company_id uuid)
  RETURNS text
  LANGUAGE plpgsql
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 DECLARE v_next bigint;
 BEGIN
@@ -43999,6 +44412,7 @@ END; $function$
 CREATE OR REPLACE FUNCTION public.normalize_booking_payment_status()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NEW.payment_status = 'partially_paid' THEN
@@ -44016,6 +44430,7 @@ CREATE OR REPLACE FUNCTION public.normalize_phone(phone text)
  RETURNS text
  LANGUAGE plpgsql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ BEGIN IF phone IS NULL OR phone = '' THEN RETURN NULL; END IF; RETURN regexp_replace(regexp_replace(phone, '^\+?2?0?', ''), '[^0-9]', '', 'g'); END; $function$
 ;
 
@@ -44025,7 +44440,7 @@ AS $function$ BEGIN IF phone IS NULL OR phone = '' THEN RETURN NULL; END IF; RET
 CREATE OR REPLACE FUNCTION public.notif_complete_actions()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 BEGIN
   UPDATE public.notifications
@@ -44226,6 +44641,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.notification_outbox_set_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at := NOW();
@@ -45068,6 +45484,7 @@ CREATE OR REPLACE FUNCTION public.payment_journal_reference_types()
  RETURNS text[]
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT ARRAY['invoice_payment', 'bill_payment']::text[];
 $function$
@@ -45099,7 +45516,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.payment_requires_revenue_je_trg()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 BEGIN
   IF NEW.invoice_id IS NULL THEN
@@ -46281,7 +46698,7 @@ CREATE OR REPLACE FUNCTION public.policy_knocked_function_names(p_anon_readable_
  RETURNS text[]
  LANGUAGE sql
  STABLE
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
   SELECT COALESCE(array_agg(DISTINCT s.nm), '{}'::text[])
     FROM (
@@ -48403,6 +48820,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.post_purchase_transaction(p_transaction_type text, p_company_id uuid, p_bill_data jsonb DEFAULT NULL::jsonb, p_bill_items jsonb DEFAULT NULL::jsonb, p_journal_entry jsonb DEFAULT NULL::jsonb, p_inventory_transactions jsonb DEFAULT NULL::jsonb, p_bill_id uuid DEFAULT NULL::uuid, p_purchase_return jsonb DEFAULT NULL::jsonb, p_return_items jsonb DEFAULT NULL::jsonb, p_vendor_credit jsonb DEFAULT NULL::jsonb, p_vendor_credit_items jsonb DEFAULT NULL::jsonb, p_bill_update jsonb DEFAULT NULL::jsonb, p_update_source jsonb DEFAULT NULL::jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_result              JSONB := '{}';
@@ -48738,6 +49156,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_audit_log_modification()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   RAISE EXCEPTION 'system_audit_log is immutable. UPDATE and DELETE are not allowed.';
@@ -48751,6 +49170,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_bill_deletion_with_vendor_credit()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_vc_count INTEGER;
@@ -48776,6 +49196,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_bill_overpayment()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_bill_total NUMERIC;
@@ -48892,6 +49313,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_critical_account_changes()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   has_transactions BOOLEAN;
@@ -48957,6 +49379,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_customer_debit_item_deletion()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_journal_entry_id UUID; v_debit_note_number VARCHAR(50); BEGIN SELECT journal_entry_id, debit_note_number INTO v_journal_entry_id, v_debit_note_number FROM customer_debit_notes WHERE id = OLD.customer_debit_note_id; IF v_journal_entry_id IS NOT NULL THEN RAISE EXCEPTION 'Cannot delete item from customer debit note % - it has a posted journal entry', v_debit_note_number; END IF; RETURN OLD; END; $function$
 ;
 
@@ -48966,6 +49389,7 @@ AS $function$ DECLARE v_journal_entry_id UUID; v_debit_note_number VARCHAR(50); 
 CREATE OR REPLACE FUNCTION public.prevent_customer_debit_note_deletion()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ BEGIN IF OLD.applied_amount > 0 THEN RAISE EXCEPTION 'Cannot delete customer debit note - it has been applied'; END IF; IF OLD.approval_status IN ('approved', 'pending_approval') THEN RAISE EXCEPTION 'Cannot delete customer debit note - it is approved or pending'; END IF; RETURN OLD; END; $function$
 ;
 
@@ -48975,6 +49399,7 @@ AS $function$ BEGIN IF OLD.applied_amount > 0 THEN RAISE EXCEPTION 'Cannot delet
 CREATE OR REPLACE FUNCTION public.prevent_customer_debit_note_modification()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ BEGIN IF OLD.approval_status = 'approved' AND (NEW.total_amount != OLD.total_amount OR NEW.customer_id != OLD.customer_id OR NEW.source_invoice_id != OLD.source_invoice_id OR NEW.reference_type != OLD.reference_type) THEN RAISE EXCEPTION 'Cannot modify approved customer debit note % (only draft/pending can be modified)', OLD.debit_note_number; END IF; IF OLD.applied_amount > 0 AND (NEW.total_amount < OLD.total_amount OR NEW.customer_id != OLD.customer_id) THEN RAISE EXCEPTION 'Cannot modify customer debit note % - it has been applied (%.2f applied)', OLD.debit_note_number, OLD.applied_amount; END IF; RETURN NEW; END; $function$
 ;
 
@@ -48984,6 +49409,7 @@ AS $function$ BEGIN IF OLD.approval_status = 'approved' AND (NEW.total_amount !=
 CREATE OR REPLACE FUNCTION public.prevent_direct_debit_application()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ BEGIN IF current_setting('application.name', TRUE) != 'apply_customer_debit_note' THEN RAISE NOTICE 'Direct INSERT into customer_debit_note_applications is discouraged. Use apply_customer_debit_note() function instead.'; END IF; RETURN NEW; END; $function$
 ;
 
@@ -48993,6 +49419,7 @@ AS $function$ BEGIN IF current_setting('application.name', TRUE) != 'apply_custo
 CREATE OR REPLACE FUNCTION public.prevent_duplicate_cogs_entries()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_existing_count INTEGER;
@@ -49020,6 +49447,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_duplicate_customer_phone()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE normalized_phone text; existing_count int; existing_name text; BEGIN normalized_phone := normalize_phone(NEW.phone); IF normalized_phone IS NULL OR normalized_phone = '' THEN RETURN NEW; END IF; SELECT COUNT(*), MAX(name) INTO existing_count, existing_name FROM customers WHERE company_id = NEW.company_id AND normalize_phone(phone) = normalized_phone AND id != COALESCE(NEW.id, '00000000-0000-0000-0000-000000000000'::uuid); IF existing_count > 0 THEN RAISE EXCEPTION 'DUPLICATE_PHONE: العميل مسجل مسبقاً بنفس رقم الهاتف (%)', existing_name; END IF; RETURN NEW; END; $function$
 ;
 
@@ -49029,6 +49457,7 @@ AS $function$ DECLARE normalized_phone text; existing_count int; existing_name t
 CREATE OR REPLACE FUNCTION public.prevent_duplicate_inventory_transactions()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   existing_count INTEGER;
@@ -49064,6 +49493,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_duplicate_journal_entry_v2()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_count INT;
@@ -49108,6 +49538,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_inventory_for_cancelled()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   invoice_status TEXT;
@@ -49162,6 +49593,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_inventory_in_closed_period()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_transaction_date DATE;
@@ -49215,6 +49647,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_inventory_on_draft_invoice()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE invoice_status TEXT; bill_status TEXT; BEGIN IF NEW.transaction_type = 'sale' AND NEW.reference_id IS NOT NULL THEN SELECT status INTO invoice_status FROM invoices WHERE id = NEW.reference_id; IF invoice_status = 'draft' THEN RAISE EXCEPTION 'النمط المحاسبي: لا يمكن إنشاء حركة مخزون لفاتورة مبيعات مسودة DRAFT'; END IF; END IF; IF NEW.transaction_type = 'purchase' AND NEW.reference_id IS NOT NULL THEN SELECT status INTO bill_status FROM bills WHERE id = NEW.reference_id; IF bill_status = 'draft' THEN RAISE EXCEPTION 'النمط المحاسبي: لا يمكن إنشاء حركة مخزون لفاتورة شراء مسودة DRAFT'; END IF; END IF; RETURN NEW; END; $function$
 ;
 
@@ -49224,6 +49657,7 @@ AS $function$ DECLARE invoice_status TEXT; bill_status TEXT; BEGIN IF NEW.transa
 CREATE OR REPLACE FUNCTION public.prevent_invoice_edit_after_journal()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE has_journal BOOLEAN;
 BEGIN
@@ -49247,6 +49681,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_invoice_in_closed_period()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   -- التحقق من حالة الفترة
@@ -49267,6 +49702,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_invoice_overpayment()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_invoice_total  NUMERIC;
@@ -49305,6 +49741,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_journal_in_closed_period()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   -- التحقق من حالة الفترة
@@ -49361,6 +49798,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_linked_inventory_modification()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
     journal_status TEXT;
@@ -49393,6 +49831,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_negative_branch_inventory()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
     v_tracked       boolean;
@@ -49477,6 +49916,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_paid_invoice_items_modification()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   inv_status TEXT;
@@ -49525,6 +49965,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_paid_invoice_modification()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   allowed_fields TEXT[] := ARRAY[
@@ -49577,6 +50018,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_payment_in_closed_period()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   -- التحقق من حالة الفترة
@@ -49597,6 +50039,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_posted_je_lines_deletion()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   DECLARE v_je_status TEXT;
   BEGIN
@@ -49620,6 +50063,7 @@ AS $function$
 CREATE OR REPLACE FUNCTION public.prevent_posted_journal_modification()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   -- Administrative bypass
@@ -49667,6 +50111,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_posted_line_modification()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   DECLARE
     v_entry_id UUID;
@@ -49692,6 +50137,7 @@ AS $function$
 CREATE OR REPLACE FUNCTION public.prevent_return_creating_overpay()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_bill_total NUMERIC;
@@ -49791,6 +50237,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.prevent_vendor_credit_deletion()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   -- Allow deletion only if status is 'draft' or 'cancelled'
@@ -51709,7 +52156,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.protect_branch_outlets()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 BEGIN
   IF OLD.provider_code = 'branch_outlet' THEN
@@ -51789,6 +52236,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.protect_paid_invoice_revenue_je()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE v_invoice_status TEXT;
 BEGIN
@@ -51966,6 +52414,7 @@ CREATE OR REPLACE FUNCTION public.purchase_line_net(p_quantity numeric, p_unit_p
  RETURNS numeric
  LANGUAGE plpgsql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_qty numeric := COALESCE(p_quantity, 0);
@@ -52099,7 +52548,7 @@ CREATE OR REPLACE FUNCTION public.purchase_return_bill_discount_ratio(p_bill_id 
  RETURNS numeric
  LANGUAGE plpgsql
  STABLE
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
   v_bill_subtotal NUMERIC;
@@ -52287,7 +52736,7 @@ CREATE OR REPLACE FUNCTION public.purchase_return_priced_line(p_bill_id uuid, p_
  RETURNS TABLE(unit_price numeric, tax_rate numeric, discount_percent numeric, line_total numeric)
  LANGUAGE plpgsql
  STABLE
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
   v_bi     RECORD;
@@ -52638,6 +53087,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.recalc_bill_on_allocation_change()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF TG_OP = 'DELETE' THEN 
@@ -52700,6 +53150,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.recalc_bills_for_payment()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_bill_id UUID;
@@ -52724,6 +53175,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.recalc_invoice_on_allocation_change()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF TG_OP = 'DELETE' THEN
@@ -52746,6 +53198,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.recalc_invoices_for_payment()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_payment_id UUID;
@@ -53122,6 +53575,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.reclassify_account_safe(p_company_id uuid, p_source_account_id uuid, p_target_account_id uuid, p_reason text DEFAULT 'إعادة تصنيف وفق معايير Zoho Books'::text)
  RETURNS uuid
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
     v_balance DECIMAL(15, 2);
@@ -53626,6 +54080,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.recurring_template_balance_check_trg()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_debit  numeric;
@@ -53767,6 +54222,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.refresh_material_requirement_issue_tracking()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_issued_qty NUMERIC;
@@ -54039,6 +54495,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.register_asset_addition(p_asset_id uuid, p_amount numeric, p_date date, p_description text, p_user_id uuid)
  RETURNS uuid
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_asset RECORD;
@@ -54202,6 +54659,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.reject_customer_debit_note(p_debit_note_id uuid, p_rejected_by uuid, p_rejection_reason text)
  RETURNS TABLE(success boolean, message text)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_debit_note RECORD; BEGIN SELECT * INTO v_debit_note FROM customer_debit_notes WHERE id = p_debit_note_id; IF NOT FOUND THEN RETURN QUERY SELECT FALSE, 'Debit note not found'; RETURN; END IF; IF v_debit_note.applied_amount > 0 THEN RETURN QUERY SELECT FALSE, 'Cannot reject debit note - it has been applied'; RETURN; END IF; UPDATE customer_debit_notes SET approval_status = 'rejected', rejection_reason = p_rejection_reason, updated_at = NOW() WHERE id = p_debit_note_id; RETURN QUERY SELECT TRUE, 'Debit note rejected'; END; $function$
 ;
 
@@ -55503,7 +55961,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.require_revenue_je_before_paid()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 BEGIN
   IF NEW.status = 'paid' AND OLD.status NOT IN ('paid','cancelled','fully_returned') THEN
@@ -55996,6 +56454,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.restructure_coa_zoho_books(p_company_id uuid)
  RETURNS TABLE(step text, accounts_processed integer, journal_entries_created integer, total_amount numeric)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
     v_duplicate_code TEXT;
@@ -56542,6 +57001,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.revalue_asset(p_asset_id uuid, p_new_value numeric, p_date date, p_reason text, p_user_id uuid)
  RETURNS uuid
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_asset RECORD;
@@ -56588,7 +57048,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.reverse_bonuses_on_booking_delete()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 BEGIN
   UPDATE public.user_bonuses
@@ -56614,7 +57074,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.reverse_bonuses_on_invoice_delete()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 BEGIN
   UPDATE public.user_bonuses
@@ -56639,6 +57099,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.reverse_cogs_journal_for_return(p_invoice_id uuid)
  RETURNS uuid
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_original_cogs_entry RECORD; v_invoice RECORD; v_new_journal_entry_id UUID; BEGIN SELECT * INTO v_invoice FROM invoices WHERE id = p_invoice_id; IF NOT FOUND THEN RAISE EXCEPTION 'Invoice not found: %', p_invoice_id; END IF; SELECT je.* INTO v_original_cogs_entry FROM journal_entries je WHERE je.reference_type = 'invoice_cogs' AND je.reference_id = p_invoice_id LIMIT 1; IF NOT FOUND THEN RETURN NULL; END IF; IF EXISTS (SELECT 1 FROM journal_entries WHERE reference_type = 'sales_return_cogs' AND reference_id = p_invoice_id) THEN RETURN NULL; END IF; INSERT INTO journal_entries (company_id, reference_type, reference_id, entry_date, description, status, branch_id, cost_center_id, warehouse_id) VALUES (v_invoice.company_id, 'sales_return_cogs', p_invoice_id, CURRENT_DATE, 'عكس تكلفة البضاعة المباعة - مرتجع فاتورة ' || v_invoice.invoice_number, 'posted', v_invoice.branch_id, v_invoice.cost_center_id, v_invoice.warehouse_id) RETURNING id INTO v_new_journal_entry_id; INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description, branch_id, cost_center_id) SELECT v_new_journal_entry_id, account_id, credit_amount, debit_amount, 'عكس: ' || description, branch_id, cost_center_id FROM journal_entry_lines WHERE journal_entry_id = v_original_cogs_entry.id; UPDATE inventory_transactions SET journal_entry_id = v_new_journal_entry_id WHERE transaction_type = 'sale_return' AND reference_id = p_invoice_id AND journal_entry_id IS NULL; RETURN v_new_journal_entry_id; END; $function$
 ;
 
@@ -57094,6 +57555,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.route_system_events_to_notifications()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
     v_role VARCHAR;
@@ -57306,6 +57768,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.run_all_critical_tests()
  RETURNS TABLE(test_name text, result text)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   RETURN QUERY
@@ -58273,6 +58736,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.seed_default_asset_categories(p_company_id uuid)
  RETURNS integer
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_count INTEGER := 0;
@@ -58324,6 +58788,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.seed_default_chart_of_accounts(p_company_id uuid, p_lang text DEFAULT 'ar'::text)
  RETURNS integer
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_existing INTEGER;
@@ -58686,6 +59151,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.service_products_set_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN NEW.updated_at := NOW(); RETURN NEW; END;
 $function$
@@ -58708,6 +59174,7 @@ AS $function$ BEGIN IF NEW.created_by IS NULL THEN NEW.created_by := auth.uid();
 CREATE OR REPLACE FUNCTION public.set_default_branch_for_document()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_branch_id UUID; v_cost_center_id UUID; v_warehouse_id UUID; BEGIN IF NEW.branch_id IS NULL THEN SELECT b.id INTO v_branch_id FROM branches b WHERE b.company_id = NEW.company_id AND b.is_main = true LIMIT 1; NEW.branch_id := v_branch_id; END IF; IF NEW.cost_center_id IS NULL AND NEW.branch_id IS NOT NULL THEN SELECT cc.id INTO v_cost_center_id FROM cost_centers cc WHERE cc.branch_id = NEW.branch_id AND cc.is_main = true LIMIT 1; IF v_cost_center_id IS NULL THEN SELECT cc.id INTO v_cost_center_id FROM cost_centers cc WHERE cc.branch_id = NEW.branch_id LIMIT 1; END IF; NEW.cost_center_id := v_cost_center_id; END IF; IF NEW.warehouse_id IS NULL AND NEW.branch_id IS NOT NULL THEN SELECT w.id INTO v_warehouse_id FROM warehouses w WHERE w.branch_id = NEW.branch_id AND w.is_main = true LIMIT 1; IF v_warehouse_id IS NULL THEN SELECT w.id INTO v_warehouse_id FROM warehouses w WHERE w.company_id = NEW.company_id AND w.is_main = true LIMIT 1; END IF; NEW.warehouse_id := v_warehouse_id; END IF; RETURN NEW; END; $function$
 ;
 
@@ -58783,6 +59250,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.set_employee_bonus_config_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at := now();
@@ -59739,6 +60207,7 @@ AS '$libdir/pg_trgm', $function$strict_word_similarity_op$function$
 CREATE OR REPLACE FUNCTION public.submit_debit_note_for_approval(p_debit_note_id uuid, p_submitted_by uuid)
  RETURNS TABLE(success boolean, message text, requires_owner_approval boolean)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_debit_note RECORD; v_requires_owner BOOLEAN := FALSE; BEGIN SELECT * INTO v_debit_note FROM customer_debit_notes WHERE id = p_debit_note_id; IF NOT FOUND THEN RETURN QUERY SELECT FALSE, 'Debit note not found', FALSE; RETURN; END IF; IF v_debit_note.approval_status != 'draft' THEN RETURN QUERY SELECT FALSE, 'Debit note is not in draft status', FALSE; RETURN; END IF; IF v_debit_note.reference_type IN ('penalty', 'correction') THEN v_requires_owner := TRUE; END IF; UPDATE customer_debit_notes SET approval_status = 'pending_approval', updated_at = NOW() WHERE id = p_debit_note_id; RETURN QUERY SELECT TRUE, 'Debit note submitted for approval', v_requires_owner; END; $function$
 ;
 
@@ -59923,6 +60392,7 @@ AS '$libdir/vector', $function$halfvec_subvector$function$
 CREATE OR REPLACE FUNCTION public.suggest_fix_for_unbalanced_entry(p_journal_entry_id uuid, p_account_id uuid DEFAULT NULL::uuid)
  RETURNS TABLE(journal_entry_id uuid, current_debit numeric, current_credit numeric, difference numeric, suggested_debit numeric, suggested_credit numeric, account_suggestion uuid)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_debit DECIMAL;
@@ -60023,7 +60493,7 @@ CREATE OR REPLACE FUNCTION public.supplier_payment_decision_error(p_status text,
  RETURNS text
  LANGUAGE plpgsql
  IMMUTABLE
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
   v_status text := lower(btrim(coalesce(p_status,'')));
@@ -60071,7 +60541,7 @@ CREATE OR REPLACE FUNCTION public.supplier_payment_stage_next_status(p_status te
  RETURNS text
  LANGUAGE sql
  IMMUTABLE
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
   SELECT CASE
     WHEN lower(btrim(coalesce(p_status,''))) = 'pending_approval'
@@ -60172,6 +60642,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.svc_assert_service_accessible(p_service_id uuid, p_company_id uuid)
  RETURNS services
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE v_service public.services;
 BEGIN
@@ -60189,6 +60660,7 @@ END; $function$
 CREATE OR REPLACE FUNCTION public.svc_assert_service_bookable(p_service_id uuid, p_company_id uuid)
  RETURNS services
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE v_service public.services;
 BEGIN
@@ -60209,6 +60681,7 @@ END; $function$
 CREATE OR REPLACE FUNCTION public.svc_generate_service_code(p_company_id uuid)
  RETURNS text
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_next INTEGER;
@@ -60237,6 +60710,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.svc_guard_service_code_immutable()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NEW.service_code IS DISTINCT FROM OLD.service_code THEN
@@ -60294,6 +60768,7 @@ CREATE OR REPLACE FUNCTION public.svc_is_valid_service_type(p_type text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT COALESCE(BTRIM(p_type), '') IN ('individual','group','hourly','session','daily');
 $function$
@@ -60305,6 +60780,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.svc_set_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN NEW.updated_at := NOW(); RETURN NEW; END; $function$
 ;
@@ -60353,6 +60829,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.svc_trg_validate_schedule()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_exclude_id uuid;
@@ -60422,6 +60899,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.svc_validate_schedule_no_overlap(p_service_id uuid, p_day_of_week integer, p_start_time time without time zone, p_end_time time without time zone, p_exclude_id uuid DEFAULT NULL::uuid)
  RETURNS void
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE v_conflict_count INTEGER;
 BEGIN
@@ -60543,6 +61021,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.sync_all_companies_chart_of_accounts()
  RETURNS json
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
     v_company_record RECORD;
@@ -60681,6 +61160,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.sync_bill_to_purchase_order_safe()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   po_record RECORD;
@@ -60716,6 +61196,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.sync_booking_from_invoice_trg()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NEW.paid_amount IS NOT DISTINCT FROM OLD.paid_amount
@@ -60745,6 +61226,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.sync_company_chart_of_accounts(p_company_id uuid)
  RETURNS json
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
     v_template_record RECORD;
@@ -61041,6 +61523,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.sync_customer_debit_note_applied_amount()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_total_applied DECIMAL(15,2);
@@ -61067,6 +61550,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.sync_display_totals_from_total()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   -- Base-currency rows only. FX rows store the localised total in
@@ -61092,6 +61576,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.sync_document_paid_amount()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_invoice_id UUID;
@@ -61176,6 +61661,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.sync_invited_users_currency()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF OLD.base_currency IS DISTINCT FROM NEW.base_currency THEN
@@ -61197,6 +61683,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.sync_invoice_to_sales_order()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ BEGIN IF NEW.sales_order_id IS NOT NULL THEN UPDATE sales_orders SET subtotal = NEW.subtotal, tax_amount = NEW.tax_amount, total = NEW.total_amount, returned_amount = NEW.returned_amount, return_status = NEW.return_status, status = CASE WHEN NEW.status = 'fully_returned' THEN 'fully_returned' WHEN NEW.status = 'partially_returned' THEN 'partially_returned' WHEN NEW.status = 'paid' THEN 'paid' WHEN NEW.status = 'partially_paid' THEN 'partially_paid' WHEN NEW.status = 'sent' THEN 'sent' ELSE status END, updated_at = NOW() WHERE id = NEW.sales_order_id; END IF; RETURN NEW; END; $function$
 ;
 
@@ -61206,6 +61693,7 @@ AS $function$ BEGIN IF NEW.sales_order_id IS NOT NULL THEN UPDATE sales_orders S
 CREATE OR REPLACE FUNCTION public.sync_invoice_to_sales_order_safe()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   so_record RECORD;
@@ -61235,6 +61723,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.sync_invoice_warehouse_from_items_trg()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_invoice_id uuid := COALESCE(NEW.invoice_id, OLD.invoice_id);
@@ -61273,6 +61762,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.sync_legacy_customer_payment_allocation()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   -- v3.74.545 — skip VOID rows and non-positive payments (see the
@@ -61334,6 +61824,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.sync_legacy_payment_unallocated()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   IF NEW.bill_id IS NOT NULL THEN
@@ -61371,6 +61862,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.sync_product_quantity_on_hand()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE v_product_id UUID; v_new_qty NUMERIC;
 BEGIN
@@ -61390,6 +61882,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.sync_purchase_order_to_bill_safe()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE bill_record RECORD; BEGIN SELECT * INTO bill_record FROM bills WHERE purchase_order_id = NEW.id LIMIT 1; IF bill_record IS NULL THEN RETURN NEW; END IF; IF bill_record.subtotal = NEW.subtotal AND bill_record.tax_amount = NEW.tax_amount AND bill_record.total_amount = NEW.total AND COALESCE(bill_record.returned_amount, 0) = COALESCE(NEW.returned_amount, 0) AND COALESCE(bill_record.return_status, '') = COALESCE(NEW.return_status, '') THEN RETURN NEW; END IF; UPDATE bills SET subtotal = NEW.subtotal, tax_amount = NEW.tax_amount, total_amount = NEW.total, returned_amount = COALESCE(NEW.returned_amount, 0), return_status = NEW.return_status, updated_at = NOW() WHERE purchase_order_id = NEW.id; RETURN NEW; END; $function$
 ;
 
@@ -61399,6 +61892,7 @@ AS $function$ DECLARE bill_record RECORD; BEGIN SELECT * INTO bill_record FROM b
 CREATE OR REPLACE FUNCTION public.sync_sales_order_to_invoice()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ BEGIN UPDATE invoices SET subtotal = NEW.subtotal, tax_amount = NEW.tax_amount, total_amount = NEW.total, returned_amount = COALESCE(NEW.returned_amount, 0), return_status = NEW.return_status, status = CASE WHEN NEW.status = 'fully_returned' THEN 'fully_returned' WHEN NEW.status = 'partially_returned' THEN 'partially_returned' WHEN NEW.status = 'paid' THEN 'paid' WHEN NEW.status = 'partially_paid' THEN 'partially_paid' WHEN NEW.status = 'sent' THEN 'sent' ELSE status END, updated_at = NOW() WHERE sales_order_id = NEW.id; RETURN NEW; END; $function$
 ;
 
@@ -61408,6 +61902,7 @@ AS $function$ BEGIN UPDATE invoices SET subtotal = NEW.subtotal, tax_amount = NE
 CREATE OR REPLACE FUNCTION public.sync_sales_order_to_invoice_safe()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE inv_record RECORD; BEGIN SELECT * INTO inv_record FROM invoices WHERE sales_order_id = NEW.id LIMIT 1; IF inv_record IS NULL THEN RETURN NEW; END IF; IF inv_record.subtotal = NEW.subtotal AND inv_record.tax_amount = NEW.tax_amount AND inv_record.total_amount = NEW.total AND COALESCE(inv_record.returned_amount, 0) = COALESCE(NEW.returned_amount, 0) AND COALESCE(inv_record.return_status, '') = COALESCE(NEW.return_status, '') AND inv_record.status = NEW.status THEN RETURN NEW; END IF; UPDATE invoices SET subtotal = NEW.subtotal, tax_amount = NEW.tax_amount, total_amount = NEW.total, returned_amount = COALESCE(NEW.returned_amount, 0), return_status = NEW.return_status, status = NEW.status, updated_at = NOW() WHERE sales_order_id = NEW.id; RETURN NEW; END; $function$
 ;
 
@@ -61475,6 +61970,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.test_accounting_period_lock()
  RETURNS text
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_test_result TEXT := 'PASS';
@@ -61518,6 +62014,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.test_audit_trail()
  RETURNS text
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_test_result TEXT := 'PASS';
@@ -61562,6 +62059,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.test_journal_entry_balance()
  RETURNS text
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_test_result TEXT := 'PASS';
@@ -61596,6 +62094,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.test_prevent_customer_deletion_with_invoices()
  RETURNS text
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_test_result TEXT := 'PASS';
@@ -61624,6 +62123,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.test_prevent_invoice_edit_after_journal()
  RETURNS text
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_test_result TEXT := 'PASS';
@@ -61658,6 +62158,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.test_prevent_return_for_cancelled_invoice()
  RETURNS text
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_test_result TEXT := 'PASS';
@@ -61678,6 +62179,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.test_prevent_sale_without_inventory()
  RETURNS text
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_company_id UUID;
@@ -61722,6 +62224,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.touch_ai_conversations_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at := NOW();
@@ -61736,6 +62239,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.touch_company_ai_settings()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN NEW.updated_at = now(); RETURN NEW; END;
 $function$
@@ -62008,6 +62512,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.trg_prevent_bill_modification()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
     -- Only protect bills that are received or paid in some form
@@ -62048,6 +62553,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.trg_seed_company_accounts()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   -- Skeleton via the historical hardcoded path (creates ~31 accounts and
@@ -62355,6 +62861,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.trigger_validate_bill_matching()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_bill RECORD;
@@ -62434,6 +62941,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.update_asset_book_value()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.book_value := NEW.purchase_cost - NEW.accumulated_depreciation;
@@ -62749,6 +63257,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.update_cogs_transactions_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at = NOW();
@@ -62763,6 +63272,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.update_commission_advance_timestamp()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
     NEW.updated_at = NOW();
@@ -62777,6 +63287,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.update_customer_debit_note_status()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   -- Update status based on applied_amount vs total_amount
@@ -62802,6 +63313,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.update_expenses_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at = NOW();
@@ -62816,6 +63328,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.update_grn_totals()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   UPDATE goods_receipts
@@ -63058,6 +63571,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.update_jobs_queue_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at = now();
@@ -63505,6 +64019,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.update_onboarding_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at = now();
@@ -63529,6 +64044,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.update_product_quantity()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ BEGIN IF TG_OP = 'INSERT' THEN UPDATE products SET quantity_on_hand = COALESCE(quantity_on_hand, 0) + NEW.quantity_change WHERE id = NEW.product_id; ELSIF TG_OP = 'UPDATE' THEN IF OLD.is_deleted = false AND NEW.is_deleted = true THEN UPDATE products SET quantity_on_hand = COALESCE(quantity_on_hand, 0) - OLD.quantity_change WHERE id = OLD.product_id; ELSIF OLD.is_deleted = true AND NEW.is_deleted = false THEN UPDATE products SET quantity_on_hand = COALESCE(quantity_on_hand, 0) + NEW.quantity_change WHERE id = NEW.product_id; ELSIF OLD.quantity_change != NEW.quantity_change THEN UPDATE products SET quantity_on_hand = COALESCE(quantity_on_hand, 0) - OLD.quantity_change + NEW.quantity_change WHERE id = NEW.product_id; END IF; ELSIF TG_OP = 'DELETE' THEN IF OLD.is_deleted = false THEN UPDATE products SET quantity_on_hand = COALESCE(quantity_on_hand, 0) - OLD.quantity_change WHERE id = OLD.product_id; END IF; RETURN OLD; END IF; RETURN NEW; END; $function$
 ;
 
@@ -63538,6 +64054,7 @@ AS $function$ BEGIN IF TG_OP = 'INSERT' THEN UPDATE products SET quantity_on_han
 CREATE OR REPLACE FUNCTION public.update_rate_limits_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at = now();
@@ -63552,6 +64069,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.update_sales_return_requests_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at = now();
@@ -63627,6 +64145,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.update_subscriptions_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at = now();
@@ -63641,6 +64160,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.update_supplier_debit_credits_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at = NOW();
@@ -63695,6 +64215,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at = now();
@@ -63775,6 +64296,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.update_vendor_credit_on_application()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_total_applied DECIMAL(15,2);
@@ -63813,6 +64335,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.update_vendor_credit_status()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   -- v3.74.900 — حالات المصفوفة لا تُعاد كتابتها من المبالغ: إشعارٌ بلا
@@ -64016,6 +64539,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.update_write_off_updated_at()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   NEW.updated_at = now();
@@ -64098,7 +64622,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.validate_booking_staff_from_service()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public'
+ SET search_path TO 'public', 'pg_temp'
 AS $function$
 BEGIN
   -- Only when the staff or the service actually changes.
@@ -64135,6 +64659,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.validate_cogs_amount()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_invoice_total NUMERIC;
@@ -64200,7 +64725,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.validate_customer_branch_isolation()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public', 'pg_catalog'
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 -- v3.74.719 — a document may not name a customer belonging to another branch.
 --
@@ -64245,6 +64770,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.validate_customer_debit_application()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ DECLARE v_total_amount DECIMAL(15,2); v_current_applied DECIMAL(15,2); v_new_total DECIMAL(15,2); BEGIN SELECT total_amount, applied_amount INTO v_total_amount, v_current_applied FROM customer_debit_notes WHERE id = NEW.customer_debit_note_id; SELECT COALESCE(SUM(amount_applied), 0) INTO v_new_total FROM customer_debit_note_applications WHERE customer_debit_note_id = NEW.customer_debit_note_id AND id != COALESCE(NEW.id, '00000000-0000-0000-0000-000000000000'::UUID); v_new_total := v_new_total + NEW.amount_applied; IF v_new_total > v_total_amount THEN RAISE EXCEPTION 'Cannot apply %.2f - would exceed debit note total of %.2f (%.2f already applied)', NEW.amount_applied, v_total_amount, v_current_applied; END IF; RETURN NEW; END; $function$
 ;
 
@@ -64254,6 +64780,7 @@ AS $function$ DECLARE v_total_amount DECIMAL(15,2); v_current_applied DECIMAL(15
 CREATE OR REPLACE FUNCTION public.validate_depreciation_schedule(p_asset_id uuid)
  RETURNS TABLE(is_valid boolean, errors text[])
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_asset RECORD;
@@ -64341,6 +64868,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.validate_journal_entry_balance()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_total_debit NUMERIC;
@@ -64445,6 +64973,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.validate_reports_integrity(p_company_id uuid, p_as_of_date date DEFAULT CURRENT_DATE)
  RETURNS TABLE(check_name text, status text, expected_value numeric, actual_value numeric, difference numeric, is_critical boolean)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
     total_debits NUMERIC;
@@ -64677,6 +65206,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.validate_vendor_credit()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   -- Ensure company_id is set
@@ -64715,6 +65245,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.validate_write_off_approval()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_item RECORD;
@@ -64777,6 +65308,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.validate_write_off_items()
  RETURNS trigger
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 DECLARE
   v_write_off RECORD;
@@ -65439,6 +65971,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.verify_all_journal_entries_balanced()
  RETURNS TABLE(journal_entry_id uuid, entry_date date, description text, total_debit numeric, total_credit numeric, difference numeric)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ BEGIN RETURN QUERY SELECT je.id, je.entry_date, je.description, COALESCE(SUM(jel.debit_amount), 0) as total_debit, COALESCE(SUM(jel.credit_amount), 0) as total_credit, COALESCE(SUM(jel.debit_amount), 0) - COALESCE(SUM(jel.credit_amount), 0) as difference FROM journal_entries je LEFT JOIN journal_entry_lines jel ON jel.journal_entry_id = je.id GROUP BY je.id, je.entry_date, je.description HAVING ABS(COALESCE(SUM(jel.debit_amount), 0) - COALESCE(SUM(jel.credit_amount), 0)) > 0.01 ORDER BY je.entry_date DESC; END; $function$
 ;
 
@@ -65448,6 +65981,7 @@ AS $function$ BEGIN RETURN QUERY SELECT je.id, je.entry_date, je.description, CO
 CREATE OR REPLACE FUNCTION public.verify_coa_restructure(p_company_id uuid)
  RETURNS TABLE(check_type text, status text, details text, count integer, amount numeric)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
     -- 1. التحقق من عدم وجود حسابات مكررة نشطة
@@ -65515,6 +66049,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.verify_cogs_entries_for_sales(p_company_id uuid)
  RETURNS TABLE(invoice_id uuid, invoice_number text, invoice_date date, has_cogs_entry boolean, expected_cogs numeric, actual_cogs numeric)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
 BEGIN
   RETURN QUERY
@@ -65611,6 +66146,7 @@ $function$
 CREATE OR REPLACE FUNCTION public.verify_inventory_journal_links()
  RETURNS TABLE(transaction_id uuid, product_id uuid, transaction_type text, quantity_change integer, reference_id uuid, has_journal_link boolean)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ BEGIN RETURN QUERY SELECT it.id, it.product_id, it.transaction_type, it.quantity_change::INTEGER, it.reference_id, (it.journal_entry_id IS NOT NULL) as has_journal_link FROM inventory_transactions it WHERE it.transaction_type IN ('sale', 'purchase', 'write_off', 'sale_return') ORDER BY it.created_at DESC; END; $function$
 ;
 
@@ -65620,6 +66156,7 @@ AS $function$ BEGIN RETURN QUERY SELECT it.id, it.product_id, it.transaction_typ
 CREATE OR REPLACE FUNCTION public.verify_invoices_have_cogs()
  RETURNS TABLE(invoice_id uuid, invoice_number text, invoice_date date, status text, has_inventory_items boolean, has_cogs_entry boolean)
  LANGUAGE plpgsql
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$ BEGIN RETURN QUERY SELECT i.id, i.invoice_number, i.invoice_date, i.status, EXISTS (SELECT 1 FROM invoice_items ii JOIN products p ON p.id = ii.product_id WHERE ii.invoice_id = i.id AND p.item_type = 'product') as has_inventory_items, EXISTS (SELECT 1 FROM journal_entries je WHERE je.reference_type = 'invoice_cogs' AND je.reference_id = i.id) as has_cogs_entry FROM invoices i WHERE i.status IN ('sent', 'paid') ORDER BY i.invoice_date DESC; END; $function$
 ;
 
@@ -65977,6 +66514,7 @@ CREATE OR REPLACE FUNCTION public.workflow_status_is_open(p_status text)
  RETURNS boolean
  LANGUAGE sql
  IMMUTABLE
+ SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT CASE
     WHEN COALESCE(trim(p_status), '') = '' THEN TRUE          -- بلا حالة ⇒ مفتوح
