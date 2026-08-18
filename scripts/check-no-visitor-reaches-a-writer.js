@@ -46,44 +46,24 @@
  */
 "use strict"
 
-/** قِيسَ يومَ v3.75.58 على الإنتاجِ وعلى بيتِ الاختبارِ فتطابقا. */
-const PINNED = 28
+/**
+ * **v3.75.61 — سُدِّدَ الدَّينُ كلُّه فنزلَ الرقمُ إلى صفر.** كان ٢٨ يومَ وُلد
+ * هذا الحارس. ثمّ أُغلقت أبوابُ الزائرِ كلُّها (٢١٣ باباً، منها هؤلاءِ الـ٢٨)
+ * بنزعِ منحةِ **عمومِ الأدوارِ** و**anon** معاً، فصارَ الحىُّ **صفراً** على
+ * البيتَين.
+ *
+ * **ويبقى الحارسُ قائماً** لأنّ صفراً غيرَ محروسٍ يعودُ واحداً صامتاً:
+ * أىُّ كاتبٍ جديدٍ يبلغُه الزائرُ **يُوقِفُ الشجرةَ عندَ أوّلِ ظهور**.
+ * **ومكسبٌ لا يُثبَّتُ يُلتَفُّ عليه.**
+ */
+const PINNED = 0
 
 /**
  * **والاسمُ مُثبَّتٌ لا العددُ وحدَه.** هؤلاءِ كُتّابٌ **بصلاحيّاتِ مُنادِيهم**
  * يملكُ الزائرُ تنفيذَهم اليوم. وليس فى القائمةِ حكمٌ بأنّهم صوابٌ — بل أنّهم
  * **معلومون ومعدودون**، وكلُّ زيادةٍ عليهم تُوقِفُ الشجرة.
  */
-const DECLARED = [
-  "apply_customer_debit_note",
-  "approve_customer_debit_note",
-  "bkg_sync_payment_status",
-  "claim_next_job",
-  "close_accounting_period",
-  "create_cogs_journal_for_invoice",
-  "create_missing_invoice_journals_safe",
-  "create_opening_stock_fifo_lots",
-  "create_vendor_credit_from_bill_return",
-  "delete_empty_journal_entries_safe",
-  "fix_unbalanced_journal_entries_safe",
-  "fn_recalc_bill_paid_status",
-  "fn_recalc_invoice_paid_status",
-  "generate_depreciation_schedule",
-  "ir_refresh_allocation_from_consumptions",
-  "ir_refresh_header_totals",
-  "ir_refresh_line_totals",
-  "migrate_existing_purchases_to_fifo",
-  "mpoe_refresh_open_reservation_status",
-  "next_lot_number",
-  "post_purchase_transaction",
-  "register_asset_addition",
-  "reject_customer_debit_note",
-  "revalue_asset",
-  "reverse_cogs_journal_for_return",
-  "seed_default_asset_categories",
-  "submit_debit_note_for_approval",
-  "sync_company_chart_of_accounts",
-]
+const DECLARED = []
 
 // ═══════════════════════════════════════════════════════════════════════════
 // الأحكامُ الخالصة — تُقاسُ فى الفخِّ الذاتىِّ بلا قاعدة
@@ -145,13 +125,19 @@ if (process.argv.includes("--selftest")) {
   t("ويرفضُ نقصاً لم يُثبَّتْ — ومكسبٌ لا يُثبَّتُ يُلتَفُّ عليه", judgePin(27, 28), "shrank")
   t("ويرفضُ الصفرَ غيرَ المُثبَّت", judgePin(0, 28), "shrank")
 
-  t("والقائمةُ تُطابقُ نفسَها", judgeRoster(DECLARED, DECLARED), { added: [], gone: [] })
-  t("ويمسكُ اسماً جديداً", judgeRoster(DECLARED.concat(["drop_the_world"]), DECLARED).added, ["drop_the_world"])
-  t("ويمسكُ اسماً سُدِّدَ ولم يُنزَّلْ من القائمة", judgeRoster(DECLARED.slice(1), DECLARED).gone, [DECLARED[0]])
-  // **والعددُ وحدَه يُخدَع**: بابٌ أُغلقَ وآخَرُ فُتِح — العددُ ٢٨ كما هو
-  const swapped = DECLARED.slice(1).concat(["a_new_open_writer"])
-  t("والعددُ وحدَه لا يرى التبديل", judgePin(swapped.length, PINNED), "ok")
-  t("والاسمُ يراه", judgeRoster(swapped, DECLARED), { added: ["a_new_open_writer"], gone: [DECLARED[0]] })
+  // **وفخٌّ لا يُشغَّلُ ليس فخّاً**: القائمةُ الحيّةُ صارت فارغةً بعدَ السداد،
+  // فيُختبَرُ الحكمُ بقائمةٍ صناعيّةٍ ثابتةٍ **فيبقى مُختبَراً بعدَ أن سُدِّد**.
+  const SAMPLE = ["apply_customer_debit_note", "next_lot_number", "revalue_asset"]
+  t("والقائمةُ تُطابقُ نفسَها", judgeRoster(SAMPLE, SAMPLE), { added: [], gone: [] })
+  t("ويمسكُ اسماً جديداً", judgeRoster(SAMPLE.concat(["drop_the_world"]), SAMPLE).added, ["drop_the_world"])
+  t("ويمسكُ اسماً سُدِّدَ ولم يُنزَّلْ من القائمة", judgeRoster(SAMPLE.slice(1), SAMPLE).gone, [SAMPLE[0]])
+  // **والعددُ وحدَه يُخدَع**: بابٌ أُغلقَ وآخَرُ فُتِح — العددُ كما هو
+  const swapped = SAMPLE.slice(1).concat(["a_new_open_writer"])
+  t("والعددُ وحدَه لا يرى التبديل", judgePin(swapped.length, SAMPLE.length), "ok")
+  t("والاسمُ يراه", judgeRoster(swapped, SAMPLE), { added: ["a_new_open_writer"], gone: [SAMPLE[0]] })
+  // **والصفرُ المُثبَّتُ يُختبَرُ بعينِه**: بابٌ واحدٌ يُفتَحُ بعدَ السدادِ يُرفَض
+  t("والصفرُ المُثبَّتُ يرفضُ باباً واحداً يُفتَحُ بعدَه", judgePin(1, 0), "grew")
+  t("ويقبلُ الصفرَ حين يكونُ صفراً", judgePin(0, 0), "ok")
 
   t("ولا كاتبةَ بصلاحيّاتٍ كاملةٍ اليوم", judgeDefiners([{ proname: "x", prosecdef: 0 }]), [])
   t("ويرفضُ كاتبةً بصلاحيّاتٍ كاملةٍ يبلغُها الزائر",

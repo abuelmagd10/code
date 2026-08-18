@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-18T15:12:32.546Z
--- Routines: 1406
+-- Generated: 2026-08-18T16:09:55.513Z
+-- Routines: 1407
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -8574,6 +8574,109 @@ BEGIN
 
   RETURN format('v3.75.60 ok — دوالُّنا %s كلُّها تحملُ مسارَها ويذكرُ pg_temp · صلاحيّاتٌ كاملةٌ يسبقُها المُنادى %s · لحمُ امتداداتٍ معدودٌ لم يُمَسّ %s',
                 n_ours_total, n_definer_bad, n_foreign);
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_61_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_61_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
+AS $function$
+DECLARE
+  n_anon      int;
+  n_outside   int;
+  n_missing   int;
+  n_orphan    int;
+  n_writers   int;
+  KEEP        text[] := ARRAY[
+    'ai_current_user_allowed_resources','ai_current_user_is_full_access','ai_normalize_for_fts',
+    'auth_email_state','can_access_bank_rec_lines','can_access_bill_items','can_access_bill_row',
+    'can_access_booking','can_access_booking_row','can_access_invoice_items','can_access_journal_lines',
+    'can_access_purchase_order_items','can_access_purchase_order_row','can_access_purchase_return_item_row',
+    'can_access_purchase_return_row','can_access_record_branch','can_access_vc_items','can_approve_discount',
+    'can_delete_resource','can_manage_supplier_row','can_modify_data','can_modify_invoice_items',
+    'can_review_company_ai','current_user_branch_id','current_user_is_branch_unbounded',
+    'current_user_resource_visibility','find_user_by_login','fn_user_company_access','fn_user_company_ids',
+    'get_inventory_reservation_balances','get_user_company_ids','has_shared_access','ic_user_can_access_company',
+    'ic_user_can_access_consolidation_group','ic_user_can_access_legal_entity','ic_user_can_manage_company',
+    'is_company_member','is_owner_or_admin','supplier_is_active_in_my_branch'];
+BEGIN
+  -- (أ) **لا بابَ للزائرِ خارجَ المُعلَنِ بالاسم** — والاسمُ مُثبَّتٌ لا العددُ وحدَه.
+  SELECT count(*) INTO n_outside
+    FROM pg_proc p JOIN pg_language l ON l.oid = p.prolang
+   WHERE p.pronamespace = 'public'::regnamespace AND p.prokind = 'f'
+     AND l.lanname IN ('plpgsql', 'sql')
+     AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                      WHERE d.objid = p.oid AND d.classid = 'pg_proc'::regclass AND d.deptype = 'e')
+     AND has_function_privilege('anon', p.oid, 'EXECUTE')
+     AND NOT (p.proname = ANY(KEEP));
+
+  IF n_outside <> 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: % باباً يبلغُه الزائرُ خارجَ المُعلَن (v3.75.61)', n_outside
+      USING ERRCODE = '23514';
+  END IF;
+
+  -- (ب) **وغيابُ اسمٍ من المُعلَنِ يُرفَضُ كما تُرفَضُ زيادةٌ**: حارسُ حمايةِ
+  --     صفوفٍ فقدَ منحتَه يُعطِّلُ السياسةَ التى تنادِيه — وبحثٌ لا يجد ليس دليلَ غياب.
+  SELECT count(*) INTO n_missing
+    FROM unnest(KEEP) AS k(nm)
+   WHERE NOT EXISTS (
+     SELECT 1 FROM pg_proc p
+      WHERE p.pronamespace = 'public'::regnamespace AND p.proname = k.nm
+        AND has_function_privilege('anon', p.oid, 'EXECUTE'));
+
+  IF n_missing <> 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: % اسماً من المُعلَنِ لم يعُدْ يبلغُه الزائرُ (v3.75.61)', n_missing
+      USING ERRCODE = '23514';
+  END IF;
+
+  -- (ج) **ولا بابَ أُغلقَ على أهلِه.**
+  SELECT count(*) INTO n_orphan
+    FROM pg_proc p JOIN pg_language l ON l.oid = p.prolang
+   WHERE p.pronamespace = 'public'::regnamespace AND p.prokind = 'f'
+     AND l.lanname IN ('plpgsql', 'sql')
+     AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                      WHERE d.objid = p.oid AND d.classid = 'pg_proc'::regclass AND d.deptype = 'e')
+     AND NOT has_function_privilege('authenticated', p.oid, 'EXECUTE')
+     AND NOT has_function_privilege('service_role', p.oid, 'EXECUTE');
+
+  IF n_orphan <> 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: % دالّةً لا يبلغُها المستخدِمُ ولا مفتاحُ الخدمة (v3.75.61)', n_orphan
+      USING ERRCODE = '23514';
+  END IF;
+
+  -- (د) **ولا كاتبَ يبلغُه الزائرُ** — الحكمُ بالأثر: من يذكرُ كتابةً فى جسدِه.
+  --     ونمطُ حجبِ التعليقاتِ يُبنى بـchr(45) لا بكتابةِ الشرطتَين حرفاً،
+  --     **لئلّا يبتلعَ حاجبُ التعليقاتِ سطرَه فيمرَّ فحصٌ سلبىٌّ لسببٍ خاطئ**.
+  SELECT count(*) INTO n_writers
+    FROM pg_proc p JOIN pg_language l ON l.oid = p.prolang
+   WHERE p.pronamespace = 'public'::regnamespace AND p.prokind = 'f'
+     AND l.lanname IN ('plpgsql', 'sql')
+     AND has_function_privilege('anon', p.oid, 'EXECUTE')
+     AND (lower(regexp_replace(pg_get_functiondef(p.oid), chr(45) || chr(45) || '[^' || chr(10) || ']*', ' ', 'g')) LIKE '%insert into%'
+       OR lower(regexp_replace(pg_get_functiondef(p.oid), chr(45) || chr(45) || '[^' || chr(10) || ']*', ' ', 'g')) LIKE '%update %'
+       OR lower(regexp_replace(pg_get_functiondef(p.oid), chr(45) || chr(45) || '[^' || chr(10) || ']*', ' ', 'g')) LIKE '%delete from%');
+
+  IF n_writers <> 0 THEN
+    RAISE EXCEPTION 'BASELINE FAIL: % كاتباً يبلغُه الزائرُ (v3.75.61)', n_writers
+      USING ERRCODE = '23514';
+  END IF;
+
+  SELECT count(*) INTO n_anon
+    FROM pg_proc p JOIN pg_language l ON l.oid = p.prolang
+   WHERE p.pronamespace = 'public'::regnamespace AND p.prokind = 'f'
+     AND l.lanname IN ('plpgsql', 'sql')
+     AND NOT EXISTS (SELECT 1 FROM pg_depend d
+                      WHERE d.objid = p.oid AND d.classid = 'pg_proc'::regclass AND d.deptype = 'e')
+     AND has_function_privilege('anon', p.oid, 'EXECUTE');
+
+  RETURN format('v3.75.61 ok — يبلغُ الزائرَ %s بابا كلُّها مُعلَنةٌ بالاسم · خارجَ المُعلَن %s · مفقودٌ من المُعلَن %s · يتامى %s · كُتّابٌ يبلغُهم الزائرُ %s',
+                n_anon, n_outside, n_missing, n_orphan, n_writers);
 END
 $function$
 ;
