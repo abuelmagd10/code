@@ -1172,49 +1172,42 @@ export default function SettingsPage() {
     }
   }, [currency])
 
-  // Fetch exchange rate
-  const fetchExchangeRate = async (from: string, to: string): Promise<number> => {
+  // v3.75.62 — «والدفترُ يُعادُ حسابُه فى خزانتِه»: السعرُ من جدولِ أسعارِ
+  // الشركةِ وحدَه. لا موقعَ إنترنت خارجىّ، ولا «واحد» افتراضىّ — إن غابَ
+  // السعرُ رجعنا null وامتنعَ التحويلُ حتى يُسجَّلَ فى صفحةِ أسعارِ الصرف.
+  const fetchExchangeRate = async (from: string, to: string): Promise<number | null> => {
     if (from === to) return 1
+    if (!companyId) return null
     try {
-      // Try database first - direct rate
-      if (companyId) {
-        const { data } = await supabase
-          .from('exchange_rates')
-          .select('rate')
-          .eq('company_id', companyId)
-          .eq('from_currency', from)
-          .eq('to_currency', to)
-          .order('rate_date', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        if (data?.rate) return Number(data.rate)
+      const { data } = await supabase
+        .from('exchange_rates')
+        .select('rate')
+        .eq('company_id', companyId)
+        .eq('from_currency', from)
+        .eq('to_currency', to)
+        .order('rate_date', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (data?.rate && Number(data.rate) > 0) return Number(data.rate)
 
-        // Try reverse rate (1 / rate)
-        const { data: reverseData } = await supabase
-          .from('exchange_rates')
-          .select('rate')
-          .eq('company_id', companyId)
-          .eq('from_currency', to)
-          .eq('to_currency', from)
-          .order('rate_date', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        if (reverseData?.rate && Number(reverseData.rate) > 0) {
-          return 1 / Number(reverseData.rate)
-        }
-      }
-      // Fallback to API
-      const res = await fetch(`https://api.exchangerate-api.com/v4/latest/${from}`)
-      if (res.ok) {
-        const data = await res.json()
-        return data.rates?.[to] || 1
+      // السعرُ العكسىُّ إن وُجد وحدَه: 1 / السعر
+      const { data: reverseData } = await supabase
+        .from('exchange_rates')
+        .select('rate')
+        .eq('company_id', companyId)
+        .eq('from_currency', to)
+        .eq('to_currency', from)
+        .order('rate_date', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (reverseData?.rate && Number(reverseData.rate) > 0) {
+        return 1 / Number(reverseData.rate)
       }
     } catch (e) {
       console.error('Error fetching rate:', e)
     }
-    return 1
+    return null
   }
-
   // Handle currency change - show dialog for conversion options
   const handleCurrencyChange = async (newCurrency: string) => {
     if (newCurrency === currency) return
@@ -1222,112 +1215,44 @@ export default function SettingsPage() {
     setPreviousCurrency(currency)
     setPendingCurrency(newCurrency)
 
-    // Fetch exchange rate
-    const rate = await fetchExchangeRate(originalSystemCurrency, newCurrency)
-    setConversionRate(rate)
+    // v3.75.62 — السعرُ يُقرأُ من عملةِ الأساسِ الحاليّةِ فى القاعدةِ لا من
+    // ذاكرةِ المتصفّح. إن غابَ السعرُ لم يُفتَحْ بابُ التحويلِ أصلاً.
+    const rate = await fetchExchangeRate(currency, newCurrency)
+    if (rate === null && isCompanyOwner) {
+      toastActionError(
+        toast,
+        language === 'en' ? 'Exchange Rate' : 'سعر الصرف',
+        language === 'en' ? 'Missing' : 'غير مسجل',
+        language === 'en'
+          ? `No saved exchange rate between ${currency} and ${newCurrency}. Add it in Settings \u2190 Exchange Rates first.`
+          : `لا سعر صرف محفوظاً بين ${currency} و${newCurrency}. سجله أولاً فى الإعدادات ← أسعار الصرف.`
+      )
+      return
+    }
+    setConversionRate(rate ?? 1)
     setShowCurrencyDialog(true)
   }
-
-  // Apply currency change with conversion and revaluation
+  // v3.75.62 — «والدفترُ يُعادُ حسابُه فى خزانتِه»: تغييرُ العملةِ الأساسيّةِ
+  // كلُّه معاملةٌ واحدةٌ داخلَ القاعدةِ (change_base_currency): تحقُّقُ
+  // الصلاحيّةِ والسعرِ، إعادةُ حسابِ المحفوظِ، اشتقاقُ الأسعارِ، تسجيلُ
+  // الأثرِ، ثم تبديلُ العملةِ عبرَ البابِ المُسمّى. المتصفّحُ لا يكتبُ فى
+  // الدفاترِ حرفاً — إن فشلَ حرفٌ فى القاعدةِ رجعَ كلُّ شىءٍ كأنْ لم يكن.
   const applyCurrencyWithConversion = async () => {
     if (!companyId) return
 
     setIsConverting(true)
     try {
-      // Import the conversion function dynamically and set authenticated client
-      const { convertAllToDisplayCurrency, setAuthClient } = await import('@/lib/currency-conversion-system')
-      const { performCurrencyRevaluation } = await import('@/lib/currency-service')
+      const { data, error } = await supabase.rpc('change_base_currency', {
+        p_company_id: companyId,
+        p_new_currency: pendingCurrency,
+      })
+      if (error) throw new Error(error.message)
 
-      // Set the authenticated Supabase client
-      setAuthClient(supabase)
+      const appliedRate = Number(data?.rate ?? conversionRate)
+      const rowsScaled = Number(data?.rows_scaled ?? 0)
 
-      // Step 1: Perform accounting revaluation (creates journal entries for differences)
-      const revalResult = await performCurrencyRevaluation(
-        supabase,
-        companyId,
-        originalSystemCurrency,
-        pendingCurrency,
-        conversionRate,
-        userId || undefined
-      )
-
-      if (!revalResult.success) {
-        console.warn('Revaluation warning:', revalResult.error)
-        // Continue even if revaluation fails - it's not critical
-      }
-
-      // Step 2: Convert all display amounts to new currency
-      const result = await convertAllToDisplayCurrency(companyId, pendingCurrency, conversionRate)
-
-      if (!result.success) {
-        throw new Error(result.error || 'Conversion failed')
-      }
-
-      // Step 3: Update base currency in database
-      // v3.74.886 — الخطوات الثلاث تُفحص: فشلٌ صامت فى أىٍّ منها يترك
-      // شركةً بعملتَى أساسٍ أو بلا عملة أساس، وكل المبالغ تُعرض خطأ.
-      const { error: clearBaseErr } = await supabase
-        .from('currencies')
-        .update({ is_base: false })
-        .eq('company_id', companyId)
-      if (clearBaseErr) throw new Error(`فشل إلغاء عملة الأساس السابقة: ${clearBaseErr.message}`)
-
-      // Set new currency as base
-      const { data: existingCurrency } = await supabase
-        .from('currencies')
-        .select('id')
-        .eq('company_id', companyId)
-        .eq('code', pendingCurrency)
-        .maybeSingle()
-
-      if (existingCurrency) {
-        const { error: setBaseErr } = await supabase
-          .from('currencies')
-          .update({ is_base: true, is_active: true })
-          .eq('id', existingCurrency.id)
-        if (setBaseErr) throw new Error(`فشل تعيين عملة الأساس الجديدة: ${setBaseErr.message}`)
-      } else {
-        // Create new currency as base
-        const currencyInfo = FALLBACK_CURRENCIES.find(c => c.code === pendingCurrency)
-        const { error: newBaseErr } = await supabase.from('currencies').insert({
-          company_id: companyId,
-          code: pendingCurrency,
-          name: currencyInfo?.name || pendingCurrency,
-          name_ar: currencyInfo?.nameAr || pendingCurrency,
-          symbol: currencyInfo?.symbol || pendingCurrency,
-          decimals: 2,
-          is_active: true,
-          is_base: true
-        })
-        if (newBaseErr) throw new Error(`فشل إنشاء عملة الأساس الجديدة: ${newBaseErr.message}`)
-      }
-
-      // ⚠️ v3.74.865 — كان هنا `currency` وهو **عمودٌ لا وجود له** فى
-      // `companies`؛ الحقيقى `base_currency` (وهو ما يستعمله باقى الملف،
-      // كسطر ١٠٠٤ و١٠٨١). فكان التحديث يفشل كاملاً **بينما تُحدَّث الشاشة
-      // والـlocalStorage والكوكى بنجاح** ⇒ تعرض الواجهة عملةً جديدة
-      // والقاعدة ما زالت على القديمة. وهو أسوأ من فشلٍ ظاهر: انقسامٌ صامت
-      // بين ما يراه المستخدم وما تحسب عليه الدفاتر.
-      const { error: currencyUpdateError } = await supabase
-        .from('companies')
-        .update({ base_currency: pendingCurrency })
-        .eq('id', companyId)
-
-      if (currencyUpdateError) {
-        console.error(
-          `COMPANY_BASE_CURRENCY_UPDATE_FAILED: company=${companyId} → ${pendingCurrency} — ${currencyUpdateError.message}`
-        )
-        alert(
-          language === 'en'
-            ? `Failed to change the base currency: ${currencyUpdateError.message}`
-            : `تعذّر تغيير عملة الشركة: ${currencyUpdateError.message}`
-        )
-        return
-      }
-
-      // Update local state and storage
       setCurrency(pendingCurrency)
-      setOriginalSystemCurrency(pendingCurrency) // Update original since base changed
+      setOriginalSystemCurrency(pendingCurrency)
       localStorage.setItem('app_currency', pendingCurrency)
       localStorage.setItem('original_system_currency', pendingCurrency)
       document.cookie = `app_currency=${pendingCurrency}; path=/; max-age=31536000`
@@ -1335,19 +1260,12 @@ export default function SettingsPage() {
 
       setShowCurrencyDialog(false)
 
-      // Show success with revaluation info
-      const revalInfo = revalResult.success && revalResult.revaluedAccounts > 0
-        ? (language === 'en'
-          ? ` | Revaluation: ${revalResult.revaluedAccounts} accounts, Gain: ${revalResult.totalGain.toFixed(2)}, Loss: ${revalResult.totalLoss.toFixed(2)}`
-          : ` | إعادة التقييم: ${revalResult.revaluedAccounts} حساب، ربح: ${revalResult.totalGain.toFixed(2)}، خسارة: ${revalResult.totalLoss.toFixed(2)}`)
-        : ''
-
       toastActionSuccess(
         toast,
         language === 'en' ? 'Base Currency Changed' : 'تم تغيير العملة الأساسية',
         language === 'en'
-          ? `Currency changed to ${pendingCurrency} with rate ${conversionRate.toFixed(4)}${revalInfo}`
-          : `تم تغيير العملة إلى ${pendingCurrency} بسعر ${conversionRate.toFixed(4)}${revalInfo}`
+          ? `Converted inside the database in one transaction to ${pendingCurrency} at rate ${appliedRate.toFixed(4)} (${rowsScaled} rows)`
+          : `تم التحويل داخل القاعدة فى معاملة واحدة إلى ${pendingCurrency} بسعر ${appliedRate.toFixed(4)} (${rowsScaled} صفاً)`
       )
     } catch (e: any) {
       toastActionError(
@@ -1360,50 +1278,6 @@ export default function SettingsPage() {
       setIsConverting(false)
     }
   }
-
-  // Reset to original currency
-  const resetToOriginalCurrency = async () => {
-    if (!companyId) return
-
-    setIsConverting(true)
-    try {
-      const { resetToOriginalCurrency: resetFn, setAuthClient } = await import('@/lib/currency-conversion-system')
-
-      // Set the authenticated Supabase client
-      setAuthClient(supabase)
-
-      const result = await resetFn(companyId)
-
-      if (!result.success) {
-        throw new Error(result.error || 'Reset failed')
-      }
-
-      // Update to original currency
-      setCurrency(originalSystemCurrency)
-      localStorage.setItem('app_currency', originalSystemCurrency)
-      document.cookie = `app_currency=${originalSystemCurrency}; path=/; max-age=31536000`
-      window.dispatchEvent(new Event('app_currency_changed'))
-
-      setShowCurrencyDialog(false)
-      toastActionSuccess(
-        toast,
-        language === 'en' ? 'Currency' : 'العملة',
-        language === 'en'
-          ? `Restored to original currency ${originalSystemCurrency}`
-          : `تم العودة للعملة الأصلية ${originalSystemCurrency}`
-      )
-    } catch (e: any) {
-      toastActionError(
-        toast,
-        language === 'en' ? 'Reset' : 'الاستعادة',
-        language === 'en' ? 'Failed' : 'فشل',
-        e?.message
-      )
-    } finally {
-      setIsConverting(false)
-    }
-  }
-
   // Change display only without converting data
   const changeDisplayOnly = () => {
     setCurrency(pendingCurrency)
@@ -2806,7 +2680,7 @@ export default function SettingsPage() {
                   </span>
                 </div>
                 <p className="text-sm text-blue-700 dark:text-blue-300">
-                  1 {originalSystemCurrency} = {conversionRate.toFixed(4)} {pendingCurrency}
+                  1 {currency} = {conversionRate.toFixed(4)} {pendingCurrency}
                 </p>
               </div>
 
@@ -2816,8 +2690,8 @@ export default function SettingsPage() {
                   {language === 'en' ? 'Company Base Currency' : 'العملة الأساسية للشركة'}
                 </p>
                 <div className="flex items-center gap-2">
-                  <span className="text-lg">{CURRENCY_FLAGS[originalSystemCurrency] || '💱'}</span>
-                  <p className="font-medium text-gray-900 dark:text-white">{originalSystemCurrency}</p>
+                  <span className="text-lg">{CURRENCY_FLAGS[currency] || '💱'}</span>
+                  <p className="font-medium text-gray-900 dark:text-white">{currency}</p>
                   <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800">
                     {language === 'en' ? 'Base' : 'أساسية'}
                   </Badge>
@@ -2841,8 +2715,8 @@ export default function SettingsPage() {
                         </p>
                         <p className="text-violet-600 dark:text-violet-400">
                           {language === 'en'
-                            ? 'Changes the base currency and converts all amounts. Original values are preserved for reversal.'
-                            : 'يغير العملة الأساسية ويحول جميع المبالغ. يتم حفظ القيم الأصلية للعودة إليها.'
+                            ? 'Changes the base currency and recalculates all stored amounts inside the database in a single transaction.'
+                            : 'يغير العملة الأساسية ويعيد حساب كل المبالغ المحفوظة داخل قاعدة البيانات فى معاملة واحدة.'
                           }
                         </p>
                       </div>
@@ -2863,22 +2737,6 @@ export default function SettingsPage() {
                       </div>
                     </div>
 
-                    {currency !== originalSystemCurrency && (
-                      <div className="flex items-start gap-2 p-2 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
-                        <History className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="font-medium text-amber-700 dark:text-amber-300">
-                            {language === 'en' ? 'Reset to Original' : 'العودة للأصل'}
-                          </p>
-                          <p className="text-amber-600 dark:text-amber-400">
-                            {language === 'en'
-                              ? 'Restores all amounts to their original values before any conversion.'
-                              : 'يستعيد جميع المبالغ إلى قيمها الأصلية قبل أي تحويل.'
-                            }
-                          </p>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               )}
@@ -2906,19 +2764,6 @@ export default function SettingsPage() {
                 </>
               ) : (
                 <>
-                  {/* Reset to original button - only show if not already on original */}
-                  {currency !== originalSystemCurrency && (
-                    <Button
-                      variant="outline"
-                      onClick={resetToOriginalCurrency}
-                      disabled={isConverting}
-                      className="flex-1 border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-300"
-                    >
-                      <History className="w-4 h-4 mr-2" />
-                      {language === 'en' ? 'Reset to Original' : 'العودة للأصل'}
-                    </Button>
-                  )}
-
                   <Button
                     variant="outline"
                     onClick={changeDisplayOnly}

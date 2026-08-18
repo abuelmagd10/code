@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-18T16:09:53.862Z
+-- Generated: 2026-08-18T23:04:07.327Z
 -- Tables: 256 | Policies: 784 | Triggers: 582 | Constraints: 1841
 -- =====================================================================
 
@@ -11079,6 +11079,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_60_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_60_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_61_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_61_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_62_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_62_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;
@@ -11515,6 +11517,9 @@ REVOKE ALL ON FUNCTION public.cb_validate_elimination_trace_link() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.cb_validate_elimination_trace_link() TO service_role;
 REVOKE ALL ON FUNCTION public.cb_validate_statement_run_version() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.cb_validate_statement_run_version() TO service_role;
+REVOKE ALL ON FUNCTION public.change_base_currency(p_company_id uuid, p_new_currency text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.change_base_currency(p_company_id uuid, p_new_currency text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.change_base_currency(p_company_id uuid, p_new_currency text) TO service_role;
 REVOKE ALL ON FUNCTION public.check_account_cycle() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.check_account_cycle() TO service_role;
 REVOKE ALL ON FUNCTION public.check_accounting_integrity(p_company_id uuid) FROM PUBLIC;
@@ -11702,7 +11707,6 @@ GRANT EXECUTE ON FUNCTION public.confirm_warehouse_allocation(p_allocation_id uu
 REVOKE ALL ON FUNCTION public.consume_fifo_lots(p_company_id uuid, p_product_id uuid, p_quantity numeric, p_consumption_type text, p_reference_type text, p_reference_id uuid, p_consumption_date date, p_branch_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.consume_fifo_lots(p_company_id uuid, p_product_id uuid, p_quantity numeric, p_consumption_type text, p_reference_type text, p_reference_id uuid, p_consumption_date date, p_branch_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.convert_product_display_prices(p_company_id uuid, p_rate numeric, p_currency text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.convert_product_display_prices(p_company_id uuid, p_rate numeric, p_currency text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.convert_product_display_prices(p_company_id uuid, p_rate numeric, p_currency text) TO service_role;
 REVOKE ALL ON FUNCTION public.convert_purchase_request_to_po(p_request_id uuid, p_user_id uuid, p_company_id uuid, p_supplier_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.convert_purchase_request_to_po(p_request_id uuid, p_user_id uuid, p_company_id uuid, p_supplier_id uuid) TO authenticated;
@@ -13929,7 +13933,6 @@ GRANT EXECUTE ON FUNCTION public.similarity_op(text, text) TO anon;
 GRANT EXECUTE ON FUNCTION public.similarity_op(text, text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.similarity_op(text, text) TO service_role;
 REVOKE ALL ON FUNCTION public.snapshot_product_original_prices(p_company_id uuid, p_currency text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.snapshot_product_original_prices(p_company_id uuid, p_currency text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.snapshot_product_original_prices(p_company_id uuid, p_currency text) TO service_role;
 REVOKE ALL ON FUNCTION public.so_branch_manager_notify_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.so_branch_manager_notify_trg() TO service_role;
