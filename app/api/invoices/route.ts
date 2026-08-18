@@ -393,7 +393,11 @@ export async function POST(req: NextRequest) {
         adjustment: Number(invoiceData.adjustment || 0),
         total: Number(invoiceData.total_amount || 0),
         total_amount: Number(invoiceData.total_amount || 0),
-        currency: invoiceData.currency_code || 'EGP',
+        // v3.75.58 — **والارتدادُ اختراعٌ مؤجَّل**: صمتُ الشاشةِ لا يُملأُ هنا
+        // بجنيهٍ مُخترَع. تُمرَّرُ القيمةُ كما هى، فإن كانت فارغةً قرأت
+        // create_sales_order_atomic أساسَ الشركةِ من صفِّها (منذ v3.75.57)
+        // عبرَ البيتِ الواحدِ erp_company_base_currency. **ولا تُخترَعُ عملة.**
+        currency: invoiceData.currency_code || null,
         exchange_rate: Number(invoiceData.exchange_rate || 1) || 1,
         total_base: Number(invoiceData.base_currency_total || invoiceData.total_amount || 0),
         tax_inclusive: !!invoiceData.tax_inclusive,
