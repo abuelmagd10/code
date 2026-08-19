@@ -4,6 +4,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
 import { SupplierPaymentCommandService, isPrivilegedRole, type CreateSupplierPaymentCommand } from "@/lib/services/supplier-payment-command.service"
+import { getBaseCurrency } from "@/lib/currency-service"
 
 type RawAllocation = {
   billId?: string
@@ -43,7 +44,8 @@ export async function POST(request: NextRequest) {
     const warehouseId = body?.warehouseId || body?.warehouse_id || null
     const referenceNumber = body?.referenceNumber || body?.reference_number || null
     const notes = body?.notes || null
-    const currencyCode = String(body?.currencyCode || body?.currency_code || "EGP").trim() || "EGP"
+    const currencyCode = String(body?.currencyCode || body?.currency_code || "").trim()
+      || (await getBaseCurrency(createServiceClient(), context.companyId))
     const exchangeRate = Number(body?.exchangeRate || body?.exchange_rate || 1)
     const baseCurrencyAmount = Number(body?.baseCurrencyAmount || body?.base_currency_amount || amount)
     const originalAmount = Number(body?.originalAmount || body?.original_amount || amount)

@@ -162,7 +162,7 @@ export async function POST(req: NextRequest) {
       p_cost_center_id:      body.cost_center_id ?? null,
       p_image_url:           body.image_url ?? null,
       p_color_code:          body.color_code ?? null,
-      p_currency_code:       body.currency_code ?? 'EGP',
+      p_currency_code:       body.currency_code ?? null,
       p_is_bookable:         body.is_bookable ?? true,
       p_requires_approval:   body.requires_approval ?? false,
       p_notes:               body.notes ?? null,

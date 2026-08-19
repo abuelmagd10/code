@@ -3,6 +3,7 @@ import { getAccrualAccountMapping } from "@/lib/accrual-accounting-engine"
 import { createCompleteJournalEntry } from "@/lib/journal-entry-governance"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
 import { linkTraceEntity } from "@/lib/services/financial-trace"
+import { getBaseCurrency } from "@/lib/currency-service"
 
 const CREATE_COMMAND_EVENT = "supplier_payment_command"
 const SUPPLIER_PAYMENT_EVENT = "supplier_payment_posting"
@@ -1399,12 +1400,7 @@ export class SupplierPaymentCommandService {
     if (billErr || !bill) return
 
     // Company base currency
-    const { data: company } = await this.adminSupabase
-      .from("companies")
-      .select("base_currency")
-      .eq("id", params.companyId)
-      .maybeSingle()
-    const baseCurrency = String(company?.base_currency || "EGP").toUpperCase()
+    const baseCurrency = await getBaseCurrency(this.adminSupabase, params.companyId)
     const billCurrency = String(bill.currency_code || baseCurrency).toUpperCase()
     if (billCurrency === baseCurrency) return  // not an FC bill, no FX adjustment
 

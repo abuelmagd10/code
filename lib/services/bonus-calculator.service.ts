@@ -209,7 +209,7 @@ export async function calculateBonusForPaidInvoice(
       invoice_id: invoiceId,
       sales_order_id: invoice.sales_order_id || null,
       bonus_amount: bonusAmount,
-      bonus_currency: invoice.currency || (company as any).base_currency || (company as any).currency || "EGP",
+      bonus_currency: invoice.currency || (company as any).base_currency || (company as any).currency || null,
       bonus_type: effective.bonus_type,
       calculation_base: invoiceTotal,
       calculation_rate: calculationRate,

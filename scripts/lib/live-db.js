@@ -65,6 +65,51 @@ const SQLSTATE_CONNECTION = /^08[0-9A-Z]{3}$|^57P0[123]$/
 const LAST_RESORT_TEXT =
   /not queryable|Connection terminated|Connection ended unexpectedly|socket hang up|server closed the connection|Client was closed/i
 
+// ═══════════════════════════════════════════════════════════════════════════
+// **والغلافُ ليس الخطأ** — v3.75.65
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// حين يُترجَمُ اسمُ المضيفِ إلى أكثرَ من عنوان (ومضيفُ القاعدةِ يُترجَمُ إلى
+// ثلاثة)، يطرقُ `node` العناوينَ كلَّها، فإن سقطت جميعاً لفَّ أخطاءَها فى
+// `AggregateError` **نصُّها فارغٌ تماماً**، ورمزُها رمزُ أوّلِها لا رمزُ
+// أشدِّها. فالحكمُ على الغلافِ وحدَه يقرأُ فراغاً ويُسمّيه نتيجةَ قياس.
+// وقد قِيس ذلك حرفاً بحرف: غلافٌ رمزُه `EAFNOSUPPORT` وداخلَه `ECONNREFUSED`.
+//
+// **فيُفتَحُ الغلافُ ويُحكَمُ على ما فيه** — و`errors` و`cause` سواءٌ فى ذلك.
+/** أخطاءُ الداخلِ دونَ الغلافِ نفسِه — بعمقٍ محدودٍ ولا تدورُ على نفسِها. */
+function innerErrorsOf(err) {
+  const out = []
+  const seen = new Set()
+  const walk = (e, depth) => {
+    if (!e || depth > 4 || seen.has(e)) return
+    seen.add(e)
+    if (depth > 0) out.push(e)
+    const kids = Array.isArray(e.errors) ? e.errors : e.cause ? [e.cause] : []
+    for (const k of kids) walk(k, depth + 1)
+  }
+  walk(err, 0)
+  return out
+}
+
+/**
+ * نصٌّ يقولُ ما جرى فعلاً — **وخطأٌ لا يُقرَأُ لا يُصلَح**. رسالةُ الغلافِ
+ * فارغةٌ فيُطبَعُ اسمُ صنفِه وحدَه بلا خبر، فتُضَمُّ إليه رموزُ الداخلِ
+ * وعناوينُها. ويُحجَبُ نصُّ الاتّصالِ إن ظهرَ فيه.
+ */
+function describe(err) {
+  if (!err) return "(لا خطأ)"
+  const head = String((err && err.message) || "").trim() || String((err && err.name) || err)
+  const inner = innerErrorsOf(err)
+    .map((e) => {
+      const c = String((e && e.code) || "") || String((e && e.message) || "")
+      const at = e && e.address ? ` @${e.address}:${e.port}` : ""
+      return (c + at).trim()
+    })
+    .filter(Boolean)
+  const all = inner.length ? `${head} — ${inner.join(" · ")}` : head
+  return all.replace(/postgres(ql)?:\/\/[^\s"']+/g, "postgresql://<redacted>")
+}
+
 /**
  * هل هذا الخطأُ انقطاعُ اتّصالٍ (فيُعادُ القياس)، أم نتيجةُ قياسٍ (فتُرفَع)؟
  * @param {unknown} err الخطأُ الملتقَط.
@@ -77,6 +122,10 @@ function isConnectionFailure(err, client) {
   // خادمٌ أجاب: قولُه هو الفصل — ولا يُعادُ قياسٌ ردَّ عليه الخادمُ برأى.
   if (answered) return SQLSTATE_CONNECTION.test(code)
   if (NET_ERRNO.has(code)) return true
+  // **والغلافُ ليس الخطأ**: يُفتَحُ فيُحكَمُ على رموزِ الداخل.
+  for (const inner of innerErrorsOf(err)) {
+    if (NET_ERRNO.has(String((inner && inner.code) || ""))) return true
+  }
   if (client && client._queryable === false) return true
   return LAST_RESORT_TEXT.test(String((err && err.message) || ""))
 }
@@ -117,12 +166,35 @@ function isConnectionFailure(err, client) {
 //
 // ═══ والمهلةُ ليست رقماً يُخمَّن ═══
 //
-// لا يُنتظَرُ زمنٌ مُقدَّر، بل **تُنتظَرُ عودةُ الشبكةِ نفسِها**: يُسأَلُ نظامُ
-// الأسماءِ عن مضيفِ القاعدة، فإن أجاب عادت المحاولةُ **فوراً**، وإن لم يُجبْ
-// أُعيدت عند السقفِ **مرّةً واحدةً كما كانت** — فلا يُفقَدُ سلوكٌ كان قائماً،
-// ولا يُنتظَرُ بلا نهاية. **ومعدودٌ لا مسكوتٌ عنه**: تُطبَعُ المدّةُ المنتظَرة.
+// لا يُنتظَرُ زمنٌ مُقدَّر، بل **تُنتظَرُ عودةُ الشبكةِ نفسِها**: فإن عادت عادت
+// المحاولةُ **فوراً**، وإن لم تعُدْ أُعيدت عند السقفِ **مرّةً واحدةً كما كانت** —
+// فلا يُفقَدُ سلوكٌ كان قائماً، ولا يُنتظَرُ بلا نهاية. **ومعدودٌ لا مسكوتٌ عنه**:
+// تُطبَعُ المدّةُ المنتظَرة.
+//
+// ═══════════════════════════════════════════════════════════════════════════
+// **وسؤالُ الاسمِ ليس سؤالَ الباب** — الحادثةُ التى وُلد منها هذا التصحيح
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// سقطت دفعةُ v3.75.65 مرّتين، على حارسَين **مختلفَين**، وكلاهما مرَّ بعدَها
+// بثوانٍ على نفسِ القاعدةِ ونفسِ الكود:
+//
+//     X failed: AggregateError
+//     ! سقط الاتّصالُ بالقاعدة — انتُظرت الشبكةُ 61ms ثمّ يُعادُ تشغيلُه مرّةً واحدة.
+//     X Connection terminated unexpectedly
+//     ! سقط الاتّصالُ بالقاعدة — انتُظرت الشبكةُ 59ms ثمّ يُعادُ تشغيلُه مرّةً واحدة.
+//
+// **وواحدٌ وستّون مللى ثانيةً ليست مهلة.** والسببُ أنّ المهلةَ كانت تسألُ
+// **نظامَ الأسماء**: هل يُترجَمُ اسمُ المضيف؟ والاسمُ لم يكنْ ساقطاً قطّ — هو
+// يُترجَمُ إلى ثلاثةِ عناوينَ سليمةٍ فى كلِّ الأحوال — فيُجيبُ فوراً فتُعادُ
+// المحاولةُ **فى نفسِ اللحظةِ** على بابٍ ما زال مغلقاً. أى أنّ المهلةَ التى
+// وُلدت فى v3.75.29 لتُنصِفَ الشبكةَ كانت **تقيسُ الشىءَ الخطأ منذ يومِها**،
+// ولم يظهرْ ذلك إلّا حين صارَ الساقطُ هو البابَ لا الاسم.
+//
+// **فالمقيسُ الآن هو البابُ نفسُه**: يُطرَقُ منفذُ القاعدةِ طرقاً حقيقيّاً،
+// فإن فُتح عادت المحاولةُ، وإلّا انتُظر إلى السقف. **والحكمُ بالأثرِ لا بالاسم.**
 const RETRY_CEILING_MS = 15000   // أقصى انتظارٍ قبلَ إعادةِ المحاولةِ على أىِّ حال
-const RETRY_PROBE_MS = 500       // بين سؤالَين عن الاسم
+const RETRY_PROBE_MS = 500       // بين طرقتَين
+const KNOCK_TIMEOUT_MS = 2000    // أقصى انتظارٍ لطرقةٍ واحدةٍ قبلَ عدِّها مغلقة
 
 /** مضيفُ القاعدةِ من نصِّ الاتّصال — ولا يُقرأُ منه شىءٌ آخر. */
 function hostOf(url) {
@@ -132,20 +204,61 @@ function hostOf(url) {
   } catch { return null }
 }
 
+/** منفذُ القاعدةِ من نصِّ الاتّصال — وافتراضُ بوستجرس حين يُسكَتُ عنه. */
+function portOf(url) {
+  try {
+    const u = new URL(String(url))
+    if (!u.hostname) return null
+    return u.port ? Number(u.port) : 5432
+  } catch { return null }
+}
+
 /**
- * ينتظرُ حتى يُترجَمَ اسمُ المضيفِ إلى عنوان، أو حتى السقف. يعيدُ المدّةَ
- * المنتظَرةَ بالمللى ثانية. **ولا يُبنى بيتٌ ثانٍ**: هذه سياسةُ المهلةِ الوحيدة،
+ * طرقةٌ واحدةٌ على الباب: هل تقبلُ القاعدةُ جلسةً الآن؟
+ *
+ * **ولا يُطرَقُ البابُ بغيرِ ما سيُدخَلُ به**: الطرقةُ هى **نفسُ المصافحةِ**
+ * التى ستُعيدُها المحاولةُ — لا فتحُ مقبسٍ عارٍ ولا سؤالٌ عن اسم. فمُجمِّعُ
+ * الاتّصالاتِ قد يقبلُ المقبسَ ثمّ يقطعُ الجلسة، فطرقةٌ أخفُّ من الدخولِ
+ * تُجيبُ «مفتوح» عن بابٍ لا يُدخَلُ منه. **والحكمُ بالأثرِ لا بالاسم.**
+ */
+function knock(url, timeoutMs, ssl) {
+  return new Promise((resolve) => {
+    let settled = false
+    const client = new PgClient({
+      connectionString: url,
+      ssl: ssl === undefined ? { rejectUnauthorized: false } : ssl,
+      connectionTimeoutMillis: Math.max(1, timeoutMs),
+    })
+    let timer = null
+    const finish = (open) => {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      try { client.end().catch(() => {}) } catch { /* already gone */ }
+      resolve(open)
+    }
+    timer = setTimeout(() => finish(false), Math.max(1, timeoutMs))
+    client.on("error", () => finish(false))
+    client.connect().then(() => finish(true)).catch(() => finish(false))
+  })
+}
+
+/**
+ * ينتظرُ حتى يفتحَ بابُ القاعدةِ، أو حتى السقف. يعيدُ المدّةَ المنتظَرةَ
+ * بالمللى ثانية. **ولا يُبنى بيتٌ ثانٍ**: هذه سياسةُ المهلةِ الوحيدة،
  * ومسارُ الخروجِ المتزامنُ ينفّذُها نفسَها فى عمليّةٍ صغيرة.
  */
-async function waitForNetwork(url, ceilingMs, probeMs) {
+async function waitForNetwork(url, ceilingMs, probeMs, ssl) {
   const ceiling = typeof ceilingMs === "number" ? ceilingMs : RETRY_CEILING_MS
   const probe = typeof probeMs === "number" ? probeMs : RETRY_PROBE_MS
   const host = hostOf(url)
+  const port = portOf(url)
   const t0 = Date.now()
-  const dns = require("dns").promises
   for (;;) {
-    if (host) {
-      try { await dns.lookup(host); return Date.now() - t0 } catch { /* not back yet */ }
+    if (host && port) {
+      const left = ceiling - (Date.now() - t0)
+      const budget = Math.min(KNOCK_TIMEOUT_MS, Math.max(50, left))
+      if (await knock(url, budget, ssl)) return Date.now() - t0
     }
     if (Date.now() - t0 >= ceiling) return Date.now() - t0
     await new Promise((r) => setTimeout(r, probe))
@@ -154,20 +267,32 @@ async function waitForNetwork(url, ceilingMs, probeMs) {
 
 /** نصُّ العمليّةِ الصغيرةِ التى تنفّذُ السياسةَ نفسَها من مسارٍ متزامن. */
 const WAIT_CHILD_SRC =
-  'const dns=require("dns"),h=process.argv[1],c=+process.argv[2],p=+process.argv[3],t0=Date.now();' +
-  "(function tick(){dns.lookup(h,function(e){" +
-  "if(!e)return process.exit(0);" +
+  "const PG=require(process.argv[1]).Client,u=process.argv[2]," +
+  "c=+process.argv[3],p=+process.argv[4],k=+process.argv[5]," +
+  'S=process.argv[6]==="0"?false:{rejectUnauthorized:false},t0=Date.now();' +
+  "(function tick(){var settled=false,tm=null;" +
+  "var cl=new PG({connectionString:u,ssl:S," +
+  "connectionTimeoutMillis:Math.max(1,Math.min(k,Math.max(50,c-(Date.now()-t0))))});" +
+  "var fin=function(open){if(settled)return;settled=true;if(tm)clearTimeout(tm);" +
+  "try{cl.end().catch(function(){})}catch(e){}" +
+  "if(open)return process.exit(0);" +
   "if(Date.now()-t0>=c)return process.exit(1);" +
-  "setTimeout(tick,p)})})()"
+  "setTimeout(tick,p)};" +
+  "tm=setTimeout(function(){fin(false)},Math.max(1,Math.min(k,Math.max(50,c-(Date.now()-t0)))));" +
+  'cl.on("error",function(){fin(false)});' +
+  "cl.connect().then(function(){fin(true)}).catch(function(){fin(false)})})()"
 
 /** انتظارٌ متزامنٌ بالسياسةِ نفسِها. يعيدُ المدّةَ المنتظَرة. */
-function waitForNetworkSync(url, ceilingMs, probeMs) {
+function waitForNetworkSync(url, ceilingMs, probeMs, ssl) {
   const ceiling = typeof ceilingMs === "number" ? ceilingMs : RETRY_CEILING_MS
   const probe = typeof probeMs === "number" ? probeMs : RETRY_PROBE_MS
   const host = hostOf(url)
+  const port = portOf(url)
   const t0 = Date.now()
-  if (!host) {
-    // لا اسمَ يُسأَلُ عنه — فتُعطى الشبكةُ مهلةً واحدةً بالسقفِ لا أكثر.
+  let pgPath = null
+  try { pgPath = require.resolve("pg") } catch { pgPath = null }
+  if (!host || !port || !pgPath) {
+    // لا بابَ يُطرَق — فتُعطى الشبكةُ مهلةً واحدةً بالسقفِ لا أكثر.
     const sab = new Int32Array(new SharedArrayBuffer(4))
     Atomics.wait(sab, 0, 0, Math.min(ceiling, RETRY_CEILING_MS))
     return Date.now() - t0
@@ -175,10 +300,11 @@ function waitForNetworkSync(url, ceilingMs, probeMs) {
   try {
     require("child_process").execFileSync(
       process.execPath,
-      ["-e", WAIT_CHILD_SRC, host, String(ceiling), String(probe)],
+      ["-e", WAIT_CHILD_SRC, pgPath, String(url), String(ceiling), String(probe),
+        String(KNOCK_TIMEOUT_MS), ssl === false ? "0" : "1"],
       { stdio: "ignore", timeout: ceiling + 5000 }
     )
-  } catch { /* لم تعُدْ قبلَ السقف — تُعادُ المحاولةُ على أىِّ حال */ }
+  } catch { /* لم يُفتحْ قبلَ السقف — تُعادُ المحاولةُ على أىِّ حال */ }
   return Date.now() - t0
 }
 
@@ -205,10 +331,10 @@ async function withLiveDatabase(url, work, opts) {
       if (attempt < ATTEMPTS && isConnectionFailure(e, client)) {
         try { await client.end() } catch { /* already gone */ }
         // **وإعادةُ محاولةٍ بلا مهلةٍ ليست إعادةَ محاولة** — تُنتظَرُ عودةُ الشبكة.
-        const waited = await waitForNetwork(url, ceiling, probe)
+        const waited = await waitForNetwork(url, ceiling, probe, ssl)
         console.log(
-          `! سقط الاتّصالُ بالقاعدة (${(e && e.message) || e}) — ` +
-            `انتُظرت الشبكةُ ${waited}ms ثمّ يُقاسُ مرّةً أخرى، مرّةً واحدة.`
+          `! سقط الاتّصالُ بالقاعدة (${describe(e)}) — ` +
+            `طُرِقَ البابُ ${waited}ms ثمّ يُقاسُ مرّةً أخرى، مرّةً واحدة.`
         )
         continue
       }
@@ -241,9 +367,17 @@ async function withLiveDatabase(url, work, opts) {
 const RETRY_FLAG = "ERB_GUARD_SOCKET_RETRY"
 let sawDrop = false
 
-/** يُسجَّلُ أنّ المقبسَ سقط — بالخاصّيّةِ نفسِها لا بشكلِ نصّ. */
+/**
+ * يُسجَّلُ أنّ المقبسَ سقط — بالخاصّيّةِ نفسِها لا بشكلِ نصّ. ويُقالُ **مرّةً
+ * واحدةً** ما جرى بالرموزِ والعناوين: فرسالةُ الغلافِ فارغةٌ، والحارسُ يطبعُها
+ * فيقولُ `AggregateError` وحدَها بلا خبر — **وخطأٌ لا يُقرَأُ لا يُصلَح**.
+ */
 function noteIfDropped(err, client) {
-  if (isConnectionFailure(err, client)) { sawDrop = true; return true }
+  if (isConnectionFailure(err, client)) {
+    if (!sawDrop) console.error(`! انقطاعُ اتّصال: ${describe(err)}`)
+    sawDrop = true
+    return true
+  }
   return false
 }
 
@@ -299,5 +433,8 @@ module.exports = {
   isConnectionFailure, withLiveDatabase, NET_ERRNO, SQLSTATE_CONNECTION,
   Client, // بديلُ `pg` فى الحراسِ التى لا تُعيدُ القياسَ داخلَ عمليّتِها
   // سياسةُ المهلةِ قبلَ الإعادة — تُصدَّرُ لِتُقاسَ فى الفخِّ لا لِتُنسَخ.
-  hostOf, waitForNetwork, waitForNetworkSync, RETRY_CEILING_MS, RETRY_PROBE_MS,
+  hostOf, portOf, knock, waitForNetwork, waitForNetworkSync,
+  RETRY_CEILING_MS, RETRY_PROBE_MS, KNOCK_TIMEOUT_MS,
+  // وقراءةُ الخطأِ كما هو — غلافاً وما فيه.
+  innerErrorsOf, describe,
 }

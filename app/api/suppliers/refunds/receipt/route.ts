@@ -6,6 +6,7 @@ import {
   SupplierRefundReceiptCommandService,
   type SupplierRefundReceiptCommand,
 } from "@/lib/services/supplier-refund-receipt-command.service"
+import { getBaseCurrency } from "@/lib/currency-service"
 
 export async function POST(request: NextRequest) {
   const { context, errorResponse } = await apiGuard(request)
@@ -15,7 +16,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const supplierId = String(body?.supplierId || body?.supplier_id || "").trim()
     const amount = Number(body?.amount || 0)
-    const currencyCode = String(body?.currencyCode || body?.currency || "EGP").trim() || "EGP"
+    const currencyCode = String(body?.currencyCode || body?.currency || "").trim()
+      || (await getBaseCurrency(createServiceClient(), context.companyId))
     const exchangeRate = Number(body?.exchangeRate || body?.exchange_rate || 1)
     const baseAmount = Number(body?.baseAmount || body?.base_amount || amount)
     const receiptAccountId = String(body?.receiptAccountId || body?.receipt_account_id || "").trim()

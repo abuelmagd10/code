@@ -4,6 +4,7 @@ import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-g
 import { emitEvent } from "@/lib/event-bus"
 import { enterpriseFinanceFlags } from "@/lib/enterprise-finance-flags"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
+import { getBaseCurrency } from "@/lib/currency-service"
 
 type SupabaseLike = any
 
@@ -476,12 +477,7 @@ export class SalesInvoicePaymentCommandService {
     if (invErr || !inv) return
 
     // Company base currency for sanity check
-    const { data: company } = await this.adminSupabase
-      .from("companies")
-      .select("base_currency")
-      .eq("id", params.companyId)
-      .maybeSingle()
-    const baseCurrency = String(company?.base_currency || "EGP").toUpperCase()
+    const baseCurrency = await getBaseCurrency(this.adminSupabase, params.companyId)
     const invoiceCurrency = String(inv.currency_code || baseCurrency).toUpperCase()
     if (invoiceCurrency === baseCurrency) return  // not an FC invoice
     const originalRate = Number(inv.exchange_rate || 0)

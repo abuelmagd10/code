@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { getBaseCurrency } from "@/lib/currency-service"
 
 /**
  * GET /api/cron/fx-revaluation-reminder
@@ -71,7 +72,7 @@ export async function GET(req: NextRequest) {
 
   for (const company of (companies || [])) {
     processed++
-    const baseCur = String(company.base_currency || 'EGP').toUpperCase()
+    const baseCur = await getBaseCurrency(supabase, company.id)
 
     // Open FC invoices: not in base currency, total > paid
     const { data: openInvs } = await supabase

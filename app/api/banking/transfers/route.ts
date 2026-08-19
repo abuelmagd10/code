@@ -3,6 +3,7 @@ import { apiGuard } from "@/lib/core/security/api-guard"
 import { buildFinancialRequestHash, resolveFinancialIdempotencyKey } from "@/lib/financial-operation-utils"
 import { createServiceClient } from "@/lib/supabase/server"
 import { BankTransferCommandService, isPrivilegedBankingRole, type BankTransferCommand } from "@/lib/services/bank-transfer-command.service"
+import { getBaseCurrency } from "@/lib/currency-service"
 
 export async function POST(request: NextRequest) {
   const { context, errorResponse } = await apiGuard(request)
@@ -19,7 +20,8 @@ export async function POST(request: NextRequest) {
     const amount = Number(body?.amount || 0)
     const transferDate = String(body?.transferDate || body?.date || "").trim()
     const description = body?.description || null
-    const currencyCode = String(body?.currencyCode || body?.currency || "EGP").trim() || "EGP"
+    const currencyCode = String(body?.currencyCode || body?.currency || "").trim()
+      || (await getBaseCurrency(createServiceClient(), context.companyId))
     const exchangeRate = Number(body?.exchangeRate || body?.exchange_rate || 1)
     const baseAmount = Number(body?.baseAmount || body?.base_amount || amount)
     const exchangeRateId = body?.exchangeRateId || body?.exchange_rate_id || null

@@ -13,6 +13,7 @@
 
 import { getLeafAccountIds } from "./accounts"
 import { createCompleteJournalEntry, type JournalReferenceType } from "./journal-entry-governance"
+import { getBaseCurrency } from "@/lib/currency-service"
 
 export interface AccrualJournalEntry {
   id?: string
@@ -591,12 +592,8 @@ export async function preparePaymentJournalFromData(
 
   try {
     // Fetch base currency for the company
-    const { data: companyRow } = await supabase
-      .from('companies')
-      .select('base_currency')
-      .eq('id', companyId)
-      .maybeSingle()
-    const baseCurrency = (companyRow?.base_currency || 'EGP').toUpperCase()
+    // v3.75.65 — يُسألُ البيتُ الواحدُ ولا يُقرأُ العمودُ ثمّ يُخترَعُ عندَ صمتِه.
+    const baseCurrency = await getBaseCurrency(supabase, companyId)
 
     // v3.23.0: If the payment is in FC and base_currency_amount is set,
     // use it as the authoritative base-currency amount. This rescues callers
@@ -706,12 +703,9 @@ export async function preparePaymentJournalFromData(
   let cashAccountInAcctCcy: number = amount       // default: account is in base, value equal
   let cashAccountToBaseRate: number = 1
   try {
-    const baseCurrencyForAcct = await (async () => {
-      try {
-        const { data: c } = await supabase.from('companies').select('base_currency').eq('id', companyId).maybeSingle()
-        return String((c as any)?.base_currency || 'EGP').toUpperCase()
-      } catch { return 'EGP' }
-    })()
+    // v3.75.65 — يُسألُ البيتُ الواحد، ولا يُبتلَعُ الخطأُ فيُخترَعَ جنيهٌ
+    // فى قيدٍ محاسبىٍّ لشركةٍ ليست عملتُها الجنيه.
+    const baseCurrencyForAcct = await getBaseCurrency(supabase, companyId)
     const { data: cashAcct } = await supabase
       .from('chart_of_accounts')
       .select('original_currency')

@@ -2,6 +2,7 @@ import { randomUUID } from "crypto"
 import { requireOpenFinancialPeriod } from "@/lib/core/security/financial-lock-guard"
 import { rollbackJournalEntry } from "@/lib/services/rollback-journal-entry"
 import { purgeTrace, linkTraceEntity } from "@/lib/services/financial-trace"
+import { getBaseCurrency } from "@/lib/currency-service"
 
 const CUSTOMER_REFUND_EVENT = "customer_credit_refund_posting"
 
@@ -195,12 +196,7 @@ export class CustomerRefundCommandService {
       //     • same as refund currency → command.amount
       //     • base currency           → command.baseAmount
       //     • cross-currency          → command.baseAmount (best-effort)
-      const { data: companyRow } = await this.adminSupabase
-        .from("companies")
-        .select("base_currency")
-        .eq("id", command.companyId)
-        .maybeSingle()
-      const baseCurrency = String(companyRow?.base_currency || "EGP").toUpperCase()
+      const baseCurrency = await getBaseCurrency(this.adminSupabase, command.companyId)
       const refundCurrency = String(command.currencyCode || baseCurrency).toUpperCase()
 
       // v3.74.200 — Resolve the account's native currency. Prefer what the
@@ -484,7 +480,8 @@ export class CustomerRefundCommandService {
     if (!inv) return
 
     const invoiceCurrency = String(inv.currency_code || params.baseCurrency).toUpperCase()
-    const baseCur = String(params.baseCurrency || "EGP").toUpperCase()
+    // v3.75.65 — عملةُ الأساسِ تصلُ من نداءِ البيتِ أعلاه، فلا ارتدادَ إلى حرف.
+    const baseCur = String(params.baseCurrency).toUpperCase()
     if (invoiceCurrency === baseCur) return
 
     const originalRate = Number(inv.exchange_rate || 0)
@@ -587,7 +584,7 @@ export class CustomerRefundCommandService {
     // v3.74.225 — persist FX context so the /payments list and details
     // modal show "0.01 $ ≈ 0.55 £" instead of just "-0.55 £" for cross-
     // currency refunds. Mirrors v3.74.219 on the invoice-payment side.
-    const ccy = String(params.currencyCode || 'EGP').toUpperCase()
+    const ccy = String(params.currencyCode || (await getBaseCurrency(this.adminSupabase, params.companyId))).toUpperCase()
     const baseAmt = Number(params.baseAmount ?? params.amount)
     const rate = Number(params.exchangeRate || 1) || 1
     const payload: Record<string, any> = {

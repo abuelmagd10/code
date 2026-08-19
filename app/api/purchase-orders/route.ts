@@ -584,7 +584,7 @@ export async function POST(request: NextRequest) {
           shipping_provider_id: body.shipping_provider_id || null,
           adjustment: dataWithGovernance.adjustment,
           status: "draft",
-          currency_code: dataWithGovernance.currency || "EGP",
+          currency_code: dataWithGovernance.currency || null,
           exchange_rate: dataWithGovernance.exchange_rate || 1,
           purchase_order_id: newOrder.id,
           branch_id: dataWithGovernance.branch_id,

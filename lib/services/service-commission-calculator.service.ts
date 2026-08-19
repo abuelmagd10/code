@@ -131,7 +131,7 @@ export async function recordServiceCommissionForInvoice(
       booking_id:       booking.id,
       source:           'service_commission',
       bonus_amount:     amount,
-      bonus_currency:   service.currency_code || 'EGP',
+      bonus_currency:   service.currency_code || null,
       bonus_type:       'percentage',
       calculation_base: subtotal,
       calculation_rate: rate,

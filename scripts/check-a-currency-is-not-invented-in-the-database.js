@@ -210,6 +210,12 @@ function judgeHome(row) {
     if (Number(r.secdef)) out.push(HOME + " صارَ بصلاحيّاتٍ كاملة — وكان بصلاحيّاتِ مُنادِيه عن قصد، فحمايةُ الصفوفِ تحرسُه، والمنحةُ المُعلَنةُ تصيرُ عندئذٍ باباً لصفوفِ غيرِ صاحبِها")
     if (!Number(r.rls)) out.push("رُفعت حمايةُ الصفوفِ عن جدولِ companies — **وهى الحارسُ الحقيقىُّ للبيتِ لا إغلاقُه**")
     if (Number(r.open_)) out.push(HOME + " صارَ يبلغُه زائرٌ أو عمومُ الأدوار (" + r.open_ + " صلاحيّة)")
+    // v3.75.65 — **والمكسبُ يُثبَّتُ يومَ يُعتمَدُ عليه.** كانت منحةُ المستخدِمِ
+    // المسجَّلِ تُعَدُّ وتُعرَضُ ولا تُشترَط، لأنّ أحداً لم يكن يعتمدُ عليها.
+    // ومنذ v3.75.65 صارَ بيتُ الشيفرةِ getBaseCurrency ينادى هذا البيتَ نفسَه
+    // بحقِّ صاحبِ العمليّة — فسقوطُ المنحةِ يُسقِطُ كلَّ سؤالٍ عن عملةٍ فى
+    // الشاشات. **فصارت شرطاً مقيساً لا رقماً يُعرَض.**
+    if (Number(r.auth) !== 1) out.push(HOME + " فقدَ منحةَ المستخدِمِ المسجَّلِ المُعلَنة — وبيتُ الشيفرةِ ينادِيه بحقِّ صاحبِ العمليّة منذ v3.75.65")
   }
   return out
 }
@@ -264,21 +270,26 @@ if (process.argv.includes("--selftest")) {
 
   // ── البيتُ الواحدُ يُحاكَمُ بخاصّيّتِه لا بإغلاقِه (v3.75.56) ────────────
   t("يقبلُ بيتاً قائماً بصلاحيّاتِ مُنادِيه وجدولُه محمىٌّ ولا يبلغُه زائر",
-    judgeHome({ exists_: 1, secdef: 0, rls: 1, open_: 0 }).length, 0)
-  t("ويرفضُ غيابَه", judgeHome({ exists_: 0 }).length, 1)
-  t("ويرفضُ أن يصيرَ بصلاحيّاتٍ كاملة", judgeHome({ exists_: 1, secdef: 1, rls: 1, open_: 0 }).length, 1)
+    judgeHome({ exists_: 1, secdef: 0, rls: 1, open_: 0, auth: 1 }).length, 0)
+  t("ويرفضُ غيابَه", judgeHome({ exists_: 0, auth: 1 }).length, 1)
+  t("ويرفضُ أن يصيرَ بصلاحيّاتٍ كاملة", judgeHome({ exists_: 1, secdef: 1, rls: 1, open_: 0, auth: 1 }).length, 1)
   t("ويرفضُ أن تُرفَعَ حمايةُ الصفوفِ عن جدولِ الشركات — وهى الحارسُ الحقيقىّ",
-    judgeHome({ exists_: 1, secdef: 0, rls: 0, open_: 0 }).length, 1)
+    judgeHome({ exists_: 1, secdef: 0, rls: 0, open_: 0, auth: 1 }).length, 1)
   t("ويُسمّى الجدولَ الذى رُفعت عنه الحمايةُ بعينِه",
-    judgeHome({ exists_: 1, secdef: 0, rls: 0, open_: 0 })[0].indexOf("companies") >= 0, true)
-  t("ويرفضُ أن يبلغَه زائرٌ أو عمومُ الأدوار", judgeHome({ exists_: 1, secdef: 0, rls: 1, open_: 2 }).length, 1)
+    judgeHome({ exists_: 1, secdef: 0, rls: 0, open_: 0, auth: 1 })[0].indexOf("companies") >= 0, true)
+  t("ويرفضُ أن يبلغَه زائرٌ أو عمومُ الأدوار", judgeHome({ exists_: 1, secdef: 0, rls: 1, open_: 2, auth: 1 }).length, 1)
   // **والحكمُ بالأثرِ لا بالاسم**: منحةُ المستخدِمِ المسجَّلِ مُعلَنةٌ ومقصودةٌ
   // ولا تُوسِّعُ معلومة، فلا تُعَدُّ عطباً — وتُعَدُّ وتُعرَضُ فى التقرير،
   // **ومعدودٌ لا مسكوتٌ عنه**.
   t("ولا يصرخُ على منحةِ المستخدِمِ المسجَّلِ المُعلَنة — والحكمُ بالأثرِ لا بالاسم",
     judgeHome({ exists_: 1, secdef: 0, rls: 1, open_: 0, auth: 1 }).length, 0)
-  t("ويجمعُ العطبَينِ الحقيقيَّين", judgeHome({ exists_: 1, secdef: 1, rls: 0, open_: 0 }).length, 2)
-  t("ويجمعُ الثلاثةَ حين تجتمع", judgeHome({ exists_: 1, secdef: 1, rls: 0, open_: 1 }).length, 3)
+  t("ويجمعُ العطبَينِ الحقيقيَّين", judgeHome({ exists_: 1, secdef: 1, rls: 0, open_: 0, auth: 1 }).length, 2)
+  // v3.75.65 — **والمنحةُ المُعتمَدُ عليها تُقاسُ لا تُعرَضُ فحسب**
+  t("ويرفضُ سقوطَ منحةِ المستخدِمِ المسجَّلِ — فبيتُ الشيفرةِ ينادِيه بحقِّ صاحبِ العمليّة",
+    judgeHome({ exists_: 1, secdef: 0, rls: 1, open_: 0, auth: 0 }).length, 1)
+  t("ويُسمّى المنحةَ الساقطةَ بعينِها",
+    judgeHome({ exists_: 1, secdef: 0, rls: 1, open_: 0, auth: 0 })[0].indexOf("المستخدِمِ المسجَّل") >= 0, true)
+  t("ويجمعُ الثلاثةَ حين تجتمع", judgeHome({ exists_: 1, secdef: 1, rls: 0, open_: 1, auth: 1 }).length, 3)
 
   // ── والمُسدَّدُ يُحاكَمُ بالنداءِ لا بالاسم ──────────────────────────────
   const OK3 = HEALED.map((h) => ({ proname: h.name, prosecdef: 1, names_currency: 0, calls_home: 1 }))
@@ -438,7 +449,7 @@ const BLANK = "regexp_replace(regexp_replace(p.prosrc, '/\\*.*?\\*/', ' ', 'gs')
   console.log("  البيتُ الواحدُ " + HOME + ": بصلاحيّاتِ مُنادِيه=" + (Number(data.home.secdef) ? "لا" : "نعم") +
     "   ·   حمايةُ صفوفِ companies=" + (Number(data.home.rls) ? "مفعَّلة" : "مرفوعة") +
     "   ·   لزائرٍ أو لعموم=" + Number(data.home.open_) +
-    "   ·   وللمستخدِمِ المسجَّل=" + Number(data.home.auth) + " (معلَنٌ ومقصود — v3.75.56)")
+    "   ·   وللمستخدِمِ المسجَّل=" + Number(data.home.auth) + " (**شرطٌ مقيس** منذ v3.75.65 — بيتُ الشيفرةِ ينادِيه بحقِّ صاحبِ العمليّة)")
 
   if (vFuncs === "grew" || vSites === "grew" || vDefaults === "grew") {
     problems.push(["زادَ ما يُسمّى عملةً فى القاعدة — **ولا تُخترَعُ عملةٌ، بل تُقرأُ من صاحبِها**", [

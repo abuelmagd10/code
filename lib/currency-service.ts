@@ -64,23 +64,26 @@ const CACHE_TTL = 60 * 1000 // 60 seconds
  * Get the base currency for a company (from companies.base_currency field)
  */
 export async function getBaseCurrency(supabase: SupabaseClient, companyId?: string): Promise<string> {
-  try {
-    if (companyId) {
-      // Get base_currency directly from companies table
-      const { data: company } = await supabase
-        .from('companies')
-        .select('base_currency')
-        .eq('id', companyId)
-        .maybeSingle()
-
-      if (company?.base_currency) {
-        return company.base_currency
-      }
-    }
-    return 'EGP'
-  } catch {
-    return 'EGP'
+  // v3.75.65 — **وعنوانُ السؤالِ واحد**: هذا البيتُ لم يعُدْ يقرأُ العمودَ بنفسِه
+  // ثمّ يرتدُّ إلى حرفٍ عندَ الصمت، بل ينادى **بيتَ القاعدةِ الواحد**
+  // erp_company_base_currency (v3.75.52) — وهو يصرخُ ولا يخترع. فصارَ للمشروعِ
+  // كلِّه بيتٌ واحدٌ للعملةِ الأساسيّة، **ولا يُبنى بيتٌ ثانٍ**.
+  //
+  // ومنحةُ المستخدِمِ المسجَّلِ على البيتِ (المُعلَنةُ فى v3.75.56) صارت
+  // **مُعتمَداً عليها** من هذه الدفعة، فثُبِّتت باسمِها فى حارسِ القاعدة —
+  // **ومكسبٌ لا يُثبَّتُ يُلتَفُّ عليه**.
+  if (!companyId) {
+    throw new Error('لا تُقرأُ عملةٌ أساسيّةٌ بلا رقمِ شركة')
   }
+  const { data, error } = await supabase.rpc('erp_company_base_currency', { p_company_id: companyId })
+  if (error) {
+    throw new Error(`تعذّرت قراءةُ عملةِ الشركةِ الأساسيّة: ${error.message}`)
+  }
+  const code = String(data ?? '').trim().toUpperCase()
+  if (!code) {
+    throw new Error('لا شركةَ بهذا الرقمِ أو عملتُها الأساسيّةُ فارغة')
+  }
+  return code
 }
 
 /**
@@ -130,16 +133,10 @@ export async function setRateMode(
 export async function getActiveCurrencies(supabase: SupabaseClient, companyId?: string): Promise<Currency[]> {
   try {
     // Get company's base currency
-    let baseCurrencyCode = 'EGP'
+    // v3.75.65 — يُسألُ البيتُ الواحد؛ وبلا رقمِ شركةٍ لا تُوسَمُ عملةُ أساسٍ أصلاً.
+    let baseCurrencyCode = ''
     if (companyId) {
-      const { data: company } = await supabase
-        .from('companies')
-        .select('base_currency')
-        .eq('id', companyId)
-        .maybeSingle()
-      if (company?.base_currency) {
-        baseCurrencyCode = company.base_currency
-      }
+      baseCurrencyCode = await getBaseCurrency(supabase, companyId)
     }
 
     // Get all currencies from global table
@@ -733,7 +730,7 @@ export async function revaluePeriodEndFXBalances(
       .eq('id', params.companyId)
       .single()
     if (compErr || !company) throw new Error('Company not found')
-    const baseCurrency = (company.base_currency || 'EGP').toUpperCase()
+    const baseCurrency = await getBaseCurrency(supabase, params.companyId)
 
     // 2. Resolve FX accounts (will fall back to 4320/5310 if not linked)
     const { gainId: fxGainAccountId, lossId: fxLossAccountId } =

@@ -4,6 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 import { apiGuard } from '@/lib/core/security/api-guard';
 import { ErrorHandler } from '@/lib/core/errors/error-handler';
 import { asyncAuditLog } from '@/lib/core/audit/async-audit-engine';
+import { getBaseCurrency } from "@/lib/currency-service"
 
 /**
  * POST /api/accounting-periods/lock
@@ -62,12 +63,7 @@ export async function POST(req: NextRequest) {
         .maybeSingle()
 
       if (periodRow?.period_start && periodRow?.period_end) {
-        const { data: companyRow } = await admin
-          .from('companies')
-          .select('base_currency')
-          .eq('id', context!.companyId)
-          .maybeSingle()
-        const baseCur = String(companyRow?.base_currency || 'EGP').toUpperCase()
+        const baseCur = await getBaseCurrency(admin, context!.companyId)
 
         const { data: openInvs } = await admin
           .from('invoices')

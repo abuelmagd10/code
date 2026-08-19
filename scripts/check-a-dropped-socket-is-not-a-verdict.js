@@ -154,6 +154,31 @@ function fakeServer(mode) {
   })
 }
 
+/**
+ * الخادمُ الوهمىُّ نفسُه **فى عمليّةٍ مستقلّة** — لأنّ المسارَ المتزامنَ يُجمِّدُ
+ * حلقةَ هذه العمليّة، فخادمٌ يسكنُها لا يستطيعُ أن يُجيبَ فيبدو البابُ مغلقاً
+ * وهو مفتوح. **وفخٌّ يمرُّ لسببٍ خاطئ ليس فخّاً.**
+ */
+const FAKE_PG_CHILD_SRC =
+  'const net=require("net"),p=+process.argv[1];' +
+  "net.createServer(function(sock){var started=false;" +
+  'sock.on("data",function(){if(!started){started=true;' +
+  'var a=Buffer.alloc(9);a.write("R",0);a.writeInt32BE(8,1);a.writeInt32BE(0,5);' +
+  'var z=Buffer.alloc(6);z.write("Z",0);z.writeInt32BE(5,1);z.write("I",5);' +
+  "sock.write(Buffer.concat([a,z]));return}sock.destroy()});" +
+  'sock.on("error",function(){})}).listen(p,"127.0.0.1")'
+
+/** منفذٌ حرٌّ الآن — يُحجَزُ ثمّ يُطلَقُ ليُعطى للعمليّةِ المستقلّة. */
+function freePort() {
+  return new Promise((resolve) => {
+    const s = net.createServer()
+    s.listen(0, "127.0.0.1", () => {
+      const p = s.address().port
+      s.close(() => resolve(p))
+    })
+  })
+}
+
 async function liveFire(mode, work) {
   const { withLiveDatabase } = require("./lib/live-db")
   const s = await fakeServer(mode)
@@ -161,7 +186,12 @@ async function liveFire(mode, work) {
   let attempts = 0
   let message = ""
   try {
-    await withLiveDatabase(url, work, { ssl: false, onAttempt: () => { attempts++ } })
+    await withLiveDatabase(url, work, {
+      ssl: false, onAttempt: () => { attempts++ },
+      // الطرقةُ صارت مصافحةً كاملة، فيُقصَّرُ السقفُ هنا كى لا يطولَ الفخّ —
+      // **مِفصلٌ للفخِّ وحدَه**، وافتراضُه هو ما تستعملُه الحراسُ كلُّها.
+      retryCeilingMs: 400, retryProbeMs: 100,
+    })
   } catch (e) { message = String((e && e.message) || e) }
   await new Promise((r) => s.close(r))
   return { attempts, message }
@@ -222,22 +252,94 @@ async function selftest() {
   // ── وإعادةُ محاولةٍ بلا مهلةٍ ليست إعادةَ محاولة (v3.75.30) ──────────
   //    وُلدت من حادثةٍ حقيقيّة: سقطَ المقبسُ، فأُعيدت المحاولةُ فى نفسِ
   //    اللحظةِ والشبكةُ لم تعُدْ، فتوقّفت دفعةٌ سليمةٌ تماماً.
-  const { hostOf, waitForNetwork, waitForNetworkSync } = require("./lib/live-db")
+  const {
+    hostOf, portOf, waitForNetwork, waitForNetworkSync, innerErrorsOf, describe,
+  } = require("./lib/live-db")
   const DEAD = "postgresql://u:p@erb-no-such-host.invalid:5432/d"
-  const LIVE = "postgresql://u:p@127.0.0.1:5432/d"
 
   t("يقرأُ مضيفَ القاعدةِ من نصِّ الاتّصال", hostOf(DEAD), "erb-no-such-host.invalid")
   t("ولا يسقطُ على نصٍّ ليس عنواناً", hostOf("not a url at all"), null)
 
-  const waitedDead = await waitForNetwork(DEAD, 700, 200)
-  t("وينتظرُ حتى السقفِ حين لا يعودُ الاسم", waitedDead >= 700, true)
-  const waitedLive = await waitForNetwork(LIVE, 5000, 200)
-  t("ويعودُ فورَ أن يُترجَمَ الاسم — ولا ينتظرُ بلا سبب", waitedLive < 200, true)
+  // ── **وسؤالُ الاسمِ ليس سؤالَ الباب** (v3.75.65) ──────────────────────
+  //    المقيسُ هو المنفذُ نفسُه لا ترجمةُ الاسم. وهذا هو الفخُّ الذى يمنعُ
+  //    عودةَ العطبِ الذى أسقطَ دفعتَين: اسمٌ يُترجَمُ فى 61ms وبابٌ مغلق.
+  t("يقرأُ منفذَ القاعدةِ من نصِّ الاتّصال", portOf(DEAD), 5432)
+  t("ويفترضُ منفذَ بوستجرس حين يُسكَتُ عنه", portOf("postgresql://u:p@h/d"), 5432)
+  t("ولا يخترعُ منفذاً لنصٍّ ليس عنواناً", portOf("not a url at all"), null)
 
-  const syncDead = waitForNetworkSync(DEAD, 700, 200)
+  // **بابٌ يُدخَلُ منه حقّاً**: خادمٌ يُتِمُّ المصافحةَ — لا مقبسٌ عارٍ يقبلُ
+  // ثمّ يقطع. فالطرقةُ هى نفسُ المصافحةِ التى ستُعيدُها المحاولة.
+  const open = await fakeServer("die-after-startup")
+  const OPEN_URL = `postgresql://u:p@127.0.0.1:${open.address().port}/d`
+  // **وبابٌ مقبسُه يُفتَحُ ولا تُتِمُّ المصافحة** — وهو مُجمِّعُ الاتّصالاتِ
+  // حين يمرض: طرقةٌ أخفُّ من الدخولِ كانت ستقولُ «مفتوح» عن بابٍ لا يُدخَل.
+  const half = await fakeServer("drop-now")
+  const HALF_URL = `postgresql://u:p@127.0.0.1:${half.address().port}/d`
+  // وبابٌ مغلقٌ تماماً **واسمُه يُترجَمُ فوراً** — وهذه هى الحالةُ التى خدعت
+  // المهلةَ القديمة: كانت تعودُ فى مللى ثوانٍ لأنّ الاسمَ أجاب.
+  const shut = await fakeServer("drop-now")
+  const SHUT_PORT = shut.address().port
+  await new Promise((r) => shut.close(r))
+  const SHUT_URL = `postgresql://u:p@127.0.0.1:${SHUT_PORT}/d`
+
+  const waitedDead = await waitForNetwork(DEAD, 700, 200, false)
+  t("وينتظرُ حتى السقفِ حين لا يُترجَمُ الاسمُ أصلاً", waitedDead >= 700, true)
+  const waitedOpen = await waitForNetwork(OPEN_URL, 5000, 200, false)
+  t("ويعودُ فورَ أن تتِمَّ المصافحة — ولا ينتظرُ بلا سبب", waitedOpen < 1000, true)
+  const waitedShut = await waitForNetwork(SHUT_URL, 900, 200, false)
+  t("**وينتظرُ حتى السقفِ والاسمُ يُجيبُ والبابُ مغلق** — وهو العطبُ الذى أسقطَ دفعتَين",
+    waitedShut >= 900, true)
+  const waitedHalf = await waitForNetwork(HALF_URL, 900, 200, false)
+  t("**ولا يُخدَعُ بمقبسٍ يُفتَحُ ثمّ يُقطَع** — فالطرقةُ هى الدخولُ نفسُه",
+    waitedHalf >= 900, true)
+
+  const syncDead = waitForNetworkSync(DEAD, 700, 200, false)
   t("والمسارُ المتزامنُ ينتظرُ بالسياسةِ نفسِها", syncDead >= 700, true)
-  const syncLive = waitForNetworkSync(LIVE, 5000, 200)
-  t("ويعودُ هو أيضاً فورَ عودةِ الاسم", syncLive < 1500, true)
+  const farPort = await freePort()
+  const farServer = require("child_process").spawn(
+    process.execPath, ["-e", FAKE_PG_CHILD_SRC, String(farPort)], { stdio: "ignore" }
+  )
+  await new Promise((r) => setTimeout(r, 700))
+  const syncOpen = waitForNetworkSync(`postgresql://u:p@127.0.0.1:${farPort}/d`, 5000, 200, false)
+  t("ويعودُ هو أيضاً فورَ أن تتِمَّ المصافحة", syncOpen < 2500, true)
+  try { farServer.kill() } catch { /* already gone */ }
+  const syncShut = waitForNetworkSync(SHUT_URL, 900, 200, false)
+  t("ولا يخدعه هو أيضاً اسمٌ يُجيبُ وبابٌ مغلق", syncShut >= 900, true)
+  const syncHalf = waitForNetworkSync(HALF_URL, 900, 200, false)
+  t("ولا يخدعه مقبسٌ يُفتَحُ ثمّ يُقطَع", syncHalf >= 900, true)
+  await new Promise((r) => open.close(r))
+  await new Promise((r) => half.close(r))
+
+  // ── **والغلافُ ليس الخطأ** (v3.75.65) ─────────────────────────────────
+  //    happy-eyeballs يلفُّ سقوطَ كلِّ العناوين فى AggregateError نصُّها
+  //    **فارغٌ** ورمزُها رمزُ أوّلِها — فحُكمٌ على الغلافِ وحدَه يقرأُ فراغاً.
+  const wrapped = new AggregateError(
+    [
+      Object.assign(new Error("connect EAFNOSUPPORT ::1:5432"), { code: "EAFNOSUPPORT", address: "::1", port: 5432 }),
+      Object.assign(new Error("connect ECONNREFUSED 10.0.0.1:5432"), { code: "ECONNREFUSED", address: "10.0.0.1", port: 5432 }),
+    ],
+    ""
+  )
+  wrapped.code = "EAFNOSUPPORT"
+  t("ورسالةُ الغلافِ فارغةٌ فعلاً — فلا خبرَ فى طباعتِها", String(wrapped.message), "")
+  t("**ويُفتَحُ الغلافُ فيُرى الانقطاعُ داخلَه**", isConnectionFailure(wrapped), true)
+  t("ولا يقفُ عند رمزِ الغلافِ وحدَه",
+    require("./lib/live-db").NET_ERRNO.has("EAFNOSUPPORT"), false)
+  t("ويعُدُّ أخطاءَ الداخلِ دونَ الغلاف", innerErrorsOf(wrapped).length, 2)
+  t("ويصلُ إلى السببِ المتسلسلِ cause أيضاً",
+    isConnectionFailure(Object.assign(new Error("wrapper"), {
+      cause: Object.assign(new Error("x"), { code: "ECONNRESET" }),
+    })), true)
+  const circular = new Error("wrapper")
+  circular.errors = [circular]
+  t("ولا يدورُ على نفسِه حين يلفُّ الخطأُ نفسَه", innerErrorsOf(circular).length, 0)
+  t("ولا يُسمّى غلافاً كلُّ ما فيه نتيجةُ قياسٍ انقطاعاً",
+    isConnectionFailure(new AggregateError([Object.assign(new Error("nope"), { code: "42P01", severity: "ERROR" })], "")), false)
+  t("والنصُّ المطبوعُ يقولُ رموزَ الداخلِ وعناوينَها",
+    /ECONNREFUSED @10\.0\.0\.1:5432/.test(describe(wrapped)), true)
+  t("ولا يُسمّى الغلافَ بلا خبر", describe(wrapped) !== "AggregateError", true)
+  t("ويحجبُ نصَّ الاتّصالِ إن ظهرَ فيه",
+    describe(new Error("bad postgresql://u:p@h:5432/d here")).includes("u:p@"), false)
 
   // **ولا يُفقَدُ سلوكٌ كان قائماً**: لو لم تعُدِ الشبكةُ أُعيدت المحاولةُ
   // مرّةً واحدةً كما كانت قبلَ المهلة — المهلةُ تؤخّرُ ولا تمنع.

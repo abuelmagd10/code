@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSSR } from '@/lib/supabase/server'
 import { getActiveCompanyId } from '@/lib/company'
+import { getBaseCurrency } from "@/lib/currency-service"
 
 export async function POST(req: NextRequest) {
   try {
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    const companyCurrency = company.base_currency || 'EGP'
+    const companyCurrency = await getBaseCurrency(supabase, companyId)
     const isOwner = company.user_id === user.id
 
     // For invited users, force company currency
@@ -149,7 +150,7 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    const companyCurrency = company.base_currency || 'EGP'
+    const companyCurrency = await getBaseCurrency(supabase, companyId)
     const isOwner = company.user_id === user.id
     const userCurrency = member?.preferred_currency || companyCurrency
     const syncEnabled = member?.currency_sync_enabled !== false

@@ -7,6 +7,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js'
 import { getActiveCompanyId } from './company'
+import { getBaseCurrency } from "@/lib/currency-service"
 
 /**
  * Sync user's display currency with company's base currency
@@ -37,7 +38,7 @@ export async function syncUserCurrency(supabase: SupabaseClient): Promise<string
 
     if (!company) return 'EGP'
 
-    const companyCurrency = company.base_currency || 'EGP'
+    const companyCurrency = await getBaseCurrency(supabase, companyId)
     const isOwner = company.user_id === user.id
 
     // For invited users, always force company currency
