@@ -52,8 +52,11 @@
 const { withLiveDatabase } = require("./lib/live-db")
 
 /** الأرقامُ المُثبَّتة — قِيست حيّةً على البيتَين يومَ v3.75.52. */
-const PINNED_FUNCS = 27
-const PINNED_SITES = 27
+// v3.75.63 — «والعملةُ تُسألُ لا تُفترَض»: السبعُ والعشرون شُفيت كلُّها فى
+// دفعةٍ واحدةٍ، فصارَ كلُّ افتراضِ عملةٍ نداءً للبيتِ الواحد — والرقمُ صفرٌ
+// مُثبَّتٌ فى الاتّجاهَين. **والدفعةُ التى كسبَت هى التى تُثبِّت.**
+const PINNED_FUNCS = 0
+const PINNED_SITES = 0
 const PINNED_DEFAULTS = 30
 
 /** البيتُ الواحدُ وعنوانُ السداد. */
@@ -83,6 +86,38 @@ const HEALED = [
   { name: "create_customer_debit_note",                 arg: "p_company_id" },
   { name: "create_sales_order_atomic",                  arg: "(p_so_data->>'company_id')::uuid" },
   { name: "create_vendor_credit_with_items",            arg: "(p_credit->>'company_id')::UUID" },
+  // v3.75.63 — «والعملةُ تُسألُ لا تُفترَض»: السبعُ والعشرون التى كانت
+  // تفترضُ «EGP» صارَ كلٌّ منها ينادى البيتَ بوسيطِه هو. (نسخةُ الدفعِ
+  // القديمةُ ذاتُ الخمسةَ عشرَ وسيطاً باسمِ process_invoice_payment_atomic_v2
+  // لا تقرأُ عملةً أصلاً فلا تُحاكَمُ هنا كى لا يصرخَ الحارسُ على معلوم —
+  // ونسخةُ العشرين وسيطاً تُثبَّتُ بعددِ وسائطِها داخلَ
+  // assert_baseline_v3_75_63_check فى القاعدةِ نفسِها، **فلا مسكوتَ عنه**.)
+  { name: "apply_customer_credit_to_invoice",           arg: "p_company_id" },
+  { name: "auto_create_payment_journal",                arg: "NEW.company_id" },
+  { name: "dispose_asset",                              arg: "v_company_id" },
+  { name: "execute_payment_correction",                 arg: "p_company_id" },
+  { name: "execute_vendor_payment_correction",          arg: "p_company_id" },
+  { name: "post_depreciation",                          arg: "v_asset_company_id" },
+  { name: "run_fx_revaluation",                         arg: "p_company_id" },
+  { name: "create_auto_invoice_from_sales_order",       arg: "v_so.company_id" },
+  { name: "po_evaluate_discount_approval",              arg: "v_po.company_id" },
+  { name: "so_evaluate_discount_approval",              arg: "v_so.company_id" },
+  { name: "prevent_bill_overpayment",                   arg: "b.company_id" },
+  { name: "prevent_return_creating_overpay",            arg: "b.company_id" },
+  { name: "post_expense_atomic",                        arg: "p_company_id" },
+  { name: "bill_branch_manager_notify_trg",             arg: "NEW.company_id" },
+  { name: "bill_notify_accountant_trg",                 arg: "NEW.company_id" },
+  { name: "invoice_branch_manager_notify_trg",          arg: "NEW.company_id" },
+  { name: "invoice_notify_accountant_trg",              arg: "NEW.company_id" },
+  { name: "payment_branch_manager_notify_trg",          arg: "NEW.company_id" },
+  { name: "payment_customer_branch_manager_notify_trg", arg: "NEW.company_id" },
+  { name: "payment_supplier_notify_approval_trg",       arg: "NEW.company_id" },
+  { name: "po_branch_manager_notify_trg",               arg: "NEW.company_id" },
+  { name: "purchase_return_branch_manager_notify_trg",  arg: "NEW.company_id" },
+  { name: "purchase_return_notify_approval_trg",        arg: "NEW.company_id" },
+  { name: "sales_return_branch_manager_notify_trg",     arg: "NEW.company_id" },
+  { name: "sales_return_notify_approval_trg",           arg: "NEW.company_id" },
+  { name: "so_branch_manager_notify_trg",               arg: "NEW.company_id" },
 ]
 
 /**

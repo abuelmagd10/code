@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-18T23:04:09.217Z
--- Routines: 1409
+-- Generated: 2026-08-19T11:36:32.445Z
+-- Routines: 1410
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -1421,8 +1421,8 @@ BEGIN
     ORDER BY is_main DESC NULLS LAST, name LIMIT 1;
   END IF;
 
-  SELECT base_currency INTO v_company_base_ccy FROM companies WHERE id = p_company_id;
-  v_company_base_ccy := COALESCE(v_company_base_ccy, 'EGP');
+  -- v3.75.63 — العملةُ تُسألُ من بيتِها الواحدِ ولا تُفترَض («ولا تُخترَعُ عملة»).
+  v_company_base_ccy := public.erp_company_base_currency(p_company_id);
 
   -- v3.74.205 — reference_id is a per-call UUID, not p_invoice_id, so a
   -- second application against the same invoice does not collide with the
@@ -8786,6 +8786,146 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- assert_baseline_v3_75_63_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_63_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
+AS $function$
+DECLARE
+  v_sites int;
+  v_missing text := '';
+  v_home_n int; v_home_secdef int; v_rls int; v_home_screams int;
+  v_pv2 int;
+  v_mute text := '';
+  r record;
+BEGIN
+  -- (أ) صفرُ حرفِ عملةٍ فى دوالِّ public كلِّها — التعليقُ محجوبٌ قبلَ الحكم،
+  --     والفحوصُ المرجعيّةُ مستثناةٌ بالاسمِ فلا يعدُّ الفحصُ نفسَه.
+  SELECT count(*) INTO v_sites FROM (
+    SELECT t.line
+    FROM pg_proc p,
+         LATERAL regexp_split_to_table(
+           regexp_replace(
+             regexp_replace(p.prosrc, '/\*.*?\*/', ' ', 'gs'),
+             '[-]{2}[^' || chr(10) || ']*', ' ', 'g'),
+           chr(10)) AS t(line)
+    WHERE p.pronamespace = 'public'::regnamespace
+      AND p.prokind IN ('f','p')
+      AND p.proname NOT LIKE 'assert\_baseline\_%'
+      AND t.line ~ ('''' || '(EGP|USD|SAR|EUR|GBP|AED|KWD|JOD|QAR|BHD|OMR)' || '''')
+  ) s;
+  IF v_sites <> 0 THEN
+    RAISE EXCEPTION 'v3.75.63: % سطراً فى دوالِّ القاعدةِ يُسمّى عملةً بعينِها — والمقيسُ يومَ الشحنِ صفر. عادَ الافتراضُ خلسةً.', v_sites;
+  END IF;
+
+  -- (ب) السبعُ والعشرون تنادى البيتَ كلٌّ بوسيطِه — والذِّكرُ ليس نداءً بغيرِ وسيطِ صاحبِه.
+  FOR r IN
+    SELECT * FROM (VALUES
+      ('apply_customer_credit_to_invoice',           'p_company_id'),
+      ('auto_create_payment_journal',                'NEW.company_id'),
+      ('dispose_asset',                              'v_company_id'),
+      ('execute_payment_correction',                 'p_company_id'),
+      ('execute_vendor_payment_correction',          'p_company_id'),
+      ('post_depreciation',                          'v_asset_company_id'),
+      ('run_fx_revaluation',                         'p_company_id'),
+      ('create_auto_invoice_from_sales_order',       'v_so.company_id'),
+      ('po_evaluate_discount_approval',              'v_po.company_id'),
+      ('so_evaluate_discount_approval',              'v_so.company_id'),
+      ('prevent_bill_overpayment',                   'b.company_id'),
+      ('prevent_return_creating_overpay',            'b.company_id'),
+      ('post_expense_atomic',                        'p_company_id'),
+      ('bill_branch_manager_notify_trg',             'NEW.company_id'),
+      ('bill_notify_accountant_trg',                 'NEW.company_id'),
+      ('invoice_branch_manager_notify_trg',          'NEW.company_id'),
+      ('invoice_notify_accountant_trg',              'NEW.company_id'),
+      ('payment_branch_manager_notify_trg',          'NEW.company_id'),
+      ('payment_customer_branch_manager_notify_trg', 'NEW.company_id'),
+      ('payment_supplier_notify_approval_trg',       'NEW.company_id'),
+      ('po_branch_manager_notify_trg',               'NEW.company_id'),
+      ('purchase_return_branch_manager_notify_trg',  'NEW.company_id'),
+      ('purchase_return_notify_approval_trg',        'NEW.company_id'),
+      ('sales_return_branch_manager_notify_trg',     'NEW.company_id'),
+      ('sales_return_notify_approval_trg',           'NEW.company_id'),
+      ('so_branch_manager_notify_trg',               'NEW.company_id')
+    ) AS v(fn, arg)
+  LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_proc p
+      WHERE p.pronamespace = 'public'::regnamespace AND p.proname = r.fn
+        AND position('erp_company_base_currency(' || r.arg || ')' IN p.prosrc) > 0
+    ) THEN
+      v_missing := v_missing || r.fn || ' · ';
+    END IF;
+  END LOOP;
+  IF v_missing <> '' THEN
+    RAISE EXCEPTION 'v3.75.63: كفَّ عن نداءِ بيتِ العملةِ الواحدِ بوسيطِه: %', v_missing;
+  END IF;
+
+  -- (ب٢) ونسخةُ الدفعِ ذاتُ العشرين وسيطاً تُثبَّتُ بعددِ وسائطِها — فللاسمِ
+  --      نسخةٌ قديمةٌ لا تقرأُ عملةً أصلاً ولا تشفعُ نسخةٌ لأخرى.
+  SELECT count(*) INTO v_pv2 FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace
+    AND p.proname = 'process_invoice_payment_atomic_v2' AND p.pronargs = 20
+    AND position('erp_company_base_currency(p_company_id)' IN p.prosrc) > 0;
+  IF v_pv2 <> 1 THEN
+    RAISE EXCEPTION 'v3.75.63: نسخةُ الدفعِ ذاتُ العشرين وسيطاً لا تنادى البيتَ (وُجد %).', v_pv2;
+  END IF;
+
+  -- (ج) والبيتُ نفسُه قائمٌ: توقيعٌ واحدٌ، بصلاحيّاتِ مُنادِيه، يصرخُ ولا يخترع،
+  --     وجدولُ الشركاتِ محمىٌّ بحمايةِ الصفوف.
+  SELECT count(*),
+         count(*) FILTER (WHERE p.prosecdef),
+         count(*) FILTER (WHERE position('RAISE EXCEPTION' IN p.prosrc) > 0)
+    INTO v_home_n, v_home_secdef, v_home_screams
+  FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'erp_company_base_currency';
+  IF v_home_n <> 1 OR v_home_secdef <> 0 OR v_home_screams <> 1 THEN
+    RAISE EXCEPTION 'v3.75.63: بيتُ العملةِ الواحدُ تبدَّل (نسخ % · كاملُ الصلاحيّات % · يصرخ %).', v_home_n, v_home_secdef, v_home_screams;
+  END IF;
+  SELECT count(*) INTO v_rls FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'public' AND c.relname = 'companies' AND c.relrowsecurity;
+  IF v_rls <> 1 THEN
+    RAISE EXCEPTION 'v3.75.63: حمايةُ صفوفِ جدولِ الشركاتِ رُفعت.';
+  END IF;
+
+  -- (د) ولا حارسَ فقدَ صرختَه: حارسا السدادِ الزائدِ يرفضانِ بصلاحيّاتِ مُنادِيهما،
+  --     والمُخطِراتُ الثلاثَ عشرةَ ما زالت تُخطِرُ بصلاحيّاتِها الكاملةِ المحفوظة —
+  --     خمسٌ تُدرِجُ الإشعارَ بيدِها وثمانٍ تنادينَ مُبلِّغَ مديرِ الفرع.
+  --     (اسمُ المُبلِّغِ يُبنى وصلاً لا حرفاً واحداً: فجسدُ هذا الفحصِ بصلاحيّاتِ
+  --      مُنادِيه، وذِكرُ اسمٍ بشكلِ نداءٍ فيه يُحسَبُ عندَ حارسِ الأبوابِ طرقاً —
+  --      فيُقطَعُ الاسمُ كى لا يطرقَ الفحصُ باباً طرقاً كاذباً.)
+  FOR r IN
+    SELECT p.proname, p.prosecdef,
+           (position('RAISE EXCEPTION' IN p.prosrc) > 0) AS screams,
+           ((position('INSERT INTO' IN p.prosrc) > 0 AND position('notifications' IN p.prosrc) > 0)
+            OR position('notify_branch_' || 'manager(' IN p.prosrc) > 0) AS notifies
+    FROM pg_proc p
+    WHERE p.pronamespace = 'public'::regnamespace
+      AND p.proname IN ('prevent_bill_overpayment','prevent_return_creating_overpay',
+        'bill_branch_manager_notify_trg','bill_notify_accountant_trg','invoice_branch_manager_notify_trg',
+        'invoice_notify_accountant_trg','payment_branch_manager_notify_trg','payment_customer_branch_manager_notify_trg',
+        'payment_supplier_notify_approval_trg','po_branch_manager_notify_trg','purchase_return_branch_manager_notify_trg',
+        'purchase_return_notify_approval_trg','sales_return_branch_manager_notify_trg','sales_return_notify_approval_trg',
+        'so_branch_manager_notify_trg')
+  LOOP
+    IF r.proname IN ('prevent_bill_overpayment','prevent_return_creating_overpay') THEN
+      IF r.prosecdef OR NOT r.screams THEN v_mute := v_mute || r.proname || ' · '; END IF;
+    ELSE
+      IF NOT r.prosecdef OR NOT r.notifies THEN v_mute := v_mute || r.proname || ' · '; END IF;
+    END IF;
+  END LOOP;
+  IF v_mute <> '' THEN
+    RAISE EXCEPTION 'v3.75.63: حارسٌ فقدَ صرختَه أو تبدَّلت صلاحيّاتُه: %', v_mute;
+  END IF;
+
+  RETURN 'v3.75.63 ok — لا دالّةَ فى القاعدةِ تخترعُ عملةً، والسبعُ والعشرون تنادى البيتَ الواحدَ كلٌّ بوسيطِه، والبيتُ قائمٌ يصرخُ ولا يخترع، ولا حارسَ فقدَ صرخته';
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- assert_baseline_v3_75_6_check()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_6_check()
@@ -10453,8 +10593,8 @@ BEGIN
   END IF;
 
   -- v3.74.219 — Resolve the payment FX context from the row.
-  SELECT base_currency INTO v_base_ccy FROM companies WHERE id = NEW.company_id;
-  v_base_ccy := UPPER(COALESCE(v_base_ccy, 'EGP'));
+  -- v3.75.63 — العملةُ تُسألُ من بيتِها الواحدِ ولا تُفترَض («ولا تُخترَعُ عملة»).
+  v_base_ccy := public.erp_company_base_currency(NEW.company_id);
   v_pay_ccy := UPPER(COALESCE(NEW.currency_code, v_base_ccy));
   v_pay_rate := COALESCE(NULLIF(NEW.exchange_rate_used, 0), NULLIF(NEW.exchange_rate, 0), 1);
   v_pay_orig_amount := COALESCE(NEW.original_amount,
@@ -11857,7 +11997,7 @@ DECLARE
   v_currency text;
   v_actor uuid;
 BEGIN
-  v_currency := COALESCE(NEW.currency_code, 'EGP');
+  v_currency := COALESCE(NEW.currency_code, public.erp_company_base_currency(NEW.company_id));
   BEGIN
     SELECT name INTO v_supplier_name FROM public.suppliers WHERE id = NEW.supplier_id;
   EXCEPTION WHEN OTHERS THEN v_supplier_name := NULL; END;
@@ -12147,7 +12287,7 @@ DECLARE
   v_po_no text;
 BEGIN
   v_actor    := COALESCE(NEW.created_by_user_id, NEW.created_by);
-  v_currency := COALESCE(NEW.currency_code, 'EGP');
+  v_currency := COALESCE(NEW.currency_code, public.erp_company_base_currency(NEW.company_id));
 
   BEGIN
     SELECT name INTO v_supplier_name FROM public.suppliers WHERE id = NEW.supplier_id;
@@ -19696,7 +19836,7 @@ BEGIN
     v_so.cost_center_id,
     v_so.warehouse_id,
     v_so.created_by_user_id,
-    COALESCE(v_so.currency, 'EGP'),
+    COALESCE(v_so.currency, public.erp_company_base_currency(v_so.company_id)),
     COALESCE(v_so.total_amount, v_so.total, 0),
     v_invoice_number
   )
@@ -24158,8 +24298,8 @@ BEGIN
     END IF;
   END IF;
 
-  SELECT base_currency INTO v_base_ccy FROM companies WHERE id = v_company_id;
-  v_base_ccy := UPPER(COALESCE(v_base_ccy, 'EGP'));
+  -- v3.75.63 — العملةُ تُسألُ من بيتِها الواحدِ ولا تُفترَض («ولا تُخترَعُ عملة»).
+  v_base_ccy := public.erp_company_base_currency(v_company_id);
 
   INSERT INTO public.journal_entries (
     company_id, branch_id, cost_center_id,
@@ -26191,8 +26331,8 @@ BEGIN
   END IF;
 
   -- v3.74.546 — load base ccy up front.
-  SELECT base_currency INTO v_company_base_ccy FROM companies WHERE id = p_company_id;
-  v_company_base_ccy := UPPER(COALESCE(v_company_base_ccy, 'EGP'));
+  -- v3.75.63 — العملةُ تُسألُ من بيتِها الواحدِ ولا تُفترَض («ولا تُخترَعُ عملة»).
+  v_company_base_ccy := public.erp_company_base_currency(p_company_id);
 
   v_has_orig_journal := v_original.journal_entry_id IS NOT NULL;
   IF v_has_orig_journal THEN
@@ -26969,8 +27109,8 @@ BEGIN
   PERFORM set_config('app.correction_bypass', 'on', true);
 
   -- v3.74.546 — load base ccy up front so rate logic can see it.
-  SELECT base_currency INTO v_company_base_ccy FROM companies WHERE id = p_company_id;
-  v_company_base_ccy := UPPER(COALESCE(v_company_base_ccy, 'EGP'));
+  -- v3.75.63 — العملةُ تُسألُ من بيتِها الواحدِ ولا تُفترَض («ولا تُخترَعُ عملة»).
+  v_company_base_ccy := public.erp_company_base_currency(p_company_id);
 
   v_has_orig_journal := v_original.journal_entry_id IS NOT NULL;
   IF v_has_orig_journal THEN
@@ -37358,7 +37498,7 @@ AS $function$
 DECLARE
   v_customer_name text; v_currency text;
 BEGIN
-  v_currency := COALESCE(NEW.currency_code, 'EGP');
+  v_currency := COALESCE(NEW.currency_code, public.erp_company_base_currency(NEW.company_id));
   BEGIN
     SELECT name INTO v_customer_name FROM public.customers WHERE id = NEW.customer_id;
   EXCEPTION WHEN OTHERS THEN v_customer_name := NULL; END;
@@ -37501,7 +37641,7 @@ DECLARE
   v_branch_count int; v_so_no text;
 BEGIN
   v_actor    := NEW.created_by_user_id;
-  v_currency := COALESCE(NEW.currency_code, 'EGP');
+  v_currency := COALESCE(NEW.currency_code, public.erp_company_base_currency(NEW.company_id));
 
   BEGIN
     SELECT name INTO v_customer_name FROM public.customers WHERE id = NEW.customer_id;
@@ -45966,7 +46106,7 @@ BEGIN
   v_is_supplier := NEW.supplier_id IS NOT NULL OR NEW.bill_id IS NOT NULL;
   IF NOT v_is_supplier THEN RETURN NEW; END IF;
 
-  v_currency := COALESCE(NEW.currency_code, 'EGP');
+  v_currency := COALESCE(NEW.currency_code, public.erp_company_base_currency(NEW.company_id));
   BEGIN
     IF NEW.supplier_id IS NOT NULL THEN
       SELECT name INTO v_supplier_name FROM public.suppliers WHERE id = NEW.supplier_id;
@@ -46027,7 +46167,7 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  v_currency := COALESCE(NEW.currency_code, 'EGP');
+  v_currency := COALESCE(NEW.currency_code, public.erp_company_base_currency(NEW.company_id));
   BEGIN
     IF NEW.customer_id IS NOT NULL THEN
       SELECT name INTO v_customer_name FROM public.customers WHERE id = NEW.customer_id;
@@ -46264,7 +46404,7 @@ BEGIN
   IF NEW.status <> 'pending_approval' THEN RETURN NEW; END IF;
 
   v_requester := COALESCE(NEW.created_by_user_id, NEW.created_by);
-  v_currency  := COALESCE(NEW.currency_code, 'EGP');
+  v_currency := COALESCE(NEW.currency_code, public.erp_company_base_currency(NEW.company_id));
 
   BEGIN
     IF NEW.supplier_id IS NOT NULL THEN
@@ -46969,7 +47109,7 @@ DECLARE
   v_supplier_name text;
   v_currency text;
 BEGIN
-  v_currency := COALESCE(NEW.currency, 'EGP');
+  v_currency := COALESCE(NEW.currency, public.erp_company_base_currency(NEW.company_id));
   BEGIN
     SELECT name INTO v_supplier_name FROM public.suppliers WHERE id = NEW.supplier_id;
   EXCEPTION WHEN OTHERS THEN v_supplier_name := NULL; END;
@@ -47118,7 +47258,7 @@ BEGIN
   v_requester := v_po.created_by_user_id;
   IF v_requester IS NULL THEN RETURN; END IF;
 
-  v_currency := COALESCE(v_po.currency, 'EGP');
+  v_currency := COALESCE(v_po.currency, public.erp_company_base_currency(v_po.company_id));
 
   INSERT INTO public.discount_approvals (
     company_id, document_type, document_id, document_no,
@@ -48397,8 +48537,8 @@ BEGIN
     PERFORM public.require_open_financial_period_db(v_asset_company_id, v_period_date);
   EXCEPTION WHEN undefined_function THEN NULL; END;
 
-  SELECT base_currency INTO v_base_ccy FROM companies WHERE id = v_asset_company_id;
-  v_base_ccy := UPPER(COALESCE(v_base_ccy, 'EGP'));
+  -- v3.75.63 — العملةُ تُسألُ من بيتِها الواحدِ ولا تُفترَض («ولا تُخترَعُ عملة»).
+  v_base_ccy := public.erp_company_base_currency(v_asset_company_id);
 
   INSERT INTO journal_entries (
     company_id, branch_id, cost_center_id,
@@ -48529,7 +48669,7 @@ BEGIN
     jsonb_build_object('account_id', v_expense_account,
       'debit_amount', v_net_gl, 'credit_amount', 0,
       'description', 'مصروف ' || v_exp.expense_number ||
-        CASE WHEN v_exp_currency IS NOT NULL AND v_exp_currency <> 'EGP'
+        CASE WHEN v_exp_currency IS NOT NULL AND v_exp_currency <> public.erp_company_base_currency(p_company_id)
              THEN ' (' || v_exp_currency || ')' ELSE '' END,
       'original_debit', ROUND(v_exp.amount - v_tax_native, 2), 'original_credit', 0,
       'original_currency', v_exp_currency, 'exchange_rate_used', v_exp_rate),
@@ -49845,7 +49985,7 @@ BEGIN
   LOOP
     SELECT COALESCE(b.total_amount, 0),
            COALESCE(b.returned_amount, 0),
-           UPPER(COALESCE(b.currency_code, 'EGP')),
+           UPPER(COALESCE(b.currency_code, public.erp_company_base_currency(b.company_id))),
            COALESCE(NULLIF(b.exchange_rate, 0), 1)
     INTO v_bill_total, v_bill_returned, v_bill_currency, v_bill_rate
     FROM bills b WHERE id = v_alloc.bill_id;
@@ -50770,7 +50910,7 @@ BEGIN
 
   SELECT COALESCE(b.total_amount, 0),
          COALESCE(b.returned_amount, 0),
-         UPPER(COALESCE(b.currency_code, 'EGP')),
+         UPPER(COALESCE(b.currency_code, public.erp_company_base_currency(b.company_id))),
          COALESCE(NULLIF(b.exchange_rate, 0), 1)
   INTO v_bill_total, v_bill_returned, v_bill_currency, v_bill_rate
   FROM bills b WHERE id = NEW.bill_id;
@@ -51625,8 +51765,8 @@ BEGIN
   END IF;
 
   -- v3.74.219 — resolve FX context
-  SELECT base_currency INTO v_base_ccy FROM companies WHERE id = p_company_id;
-  v_base_ccy := UPPER(COALESCE(v_base_ccy, 'EGP'));
+  -- v3.75.63 — العملةُ تُسألُ من بيتِها الواحدِ ولا تُفترَض («ولا تُخترَعُ عملة»).
+  v_base_ccy := public.erp_company_base_currency(p_company_id);
   v_pay_ccy := UPPER(COALESCE(p_payment_currency, v_base_ccy));
   v_pay_rate := COALESCE(NULLIF(p_exchange_rate, 0), 1);
   v_pay_orig_amount := COALESCE(p_original_amount,
@@ -53199,7 +53339,7 @@ DECLARE
   v_supplier_name text;
   v_currency text;
 BEGIN
-  v_currency := COALESCE(NEW.original_currency, 'EGP');
+  v_currency := COALESCE(NEW.original_currency, public.erp_company_base_currency(NEW.company_id));
   BEGIN
     SELECT name INTO v_supplier_name FROM public.suppliers WHERE id = NEW.supplier_id;
   EXCEPTION WHEN OTHERS THEN v_supplier_name := NULL; END;
@@ -53302,7 +53442,7 @@ BEGIN
     (SELECT c.user_id FROM public.companies c WHERE c.id = NEW.company_id)
   );
 
-  v_currency  := COALESCE(NEW.original_currency, 'EGP');
+  v_currency := COALESCE(NEW.original_currency, public.erp_company_base_currency(NEW.company_id));
   BEGIN
     SELECT name INTO v_supplier_name FROM public.suppliers WHERE id = NEW.supplier_id;
   EXCEPTION WHEN OTHERS THEN v_supplier_name := NULL; END;
@@ -58651,9 +58791,8 @@ BEGIN
     PERFORM public.require_open_financial_period_db(p_company_id, p_revaluation_date);
   EXCEPTION WHEN undefined_function THEN NULL; END;
 
-  SELECT UPPER(base_currency) INTO v_base_ccy
-    FROM public.companies WHERE id = p_company_id;
-  v_base_ccy := COALESCE(v_base_ccy, 'EGP');
+  -- v3.75.63 — العملةُ تُسألُ من بيتِها الواحدِ ولا تُفترَض («ولا تُخترَعُ عملة»).
+  v_base_ccy := public.erp_company_base_currency(p_company_id);
 
   -- Locate P&L accounts (Arabic + English name match)
   SELECT id INTO v_fx_gain_acct FROM public.chart_of_accounts
@@ -59137,7 +59276,7 @@ AS $function$
 DECLARE
   v_customer_name text; v_currency text;
 BEGIN
-  v_currency := COALESCE(NEW.original_currency, 'EGP');
+  v_currency := COALESCE(NEW.original_currency, public.erp_company_base_currency(NEW.company_id));
   BEGIN
     SELECT name INTO v_customer_name FROM public.customers WHERE id = NEW.customer_id;
   EXCEPTION WHEN OTHERS THEN v_customer_name := NULL; END;
@@ -59186,7 +59325,7 @@ BEGIN
   IF TG_OP = 'UPDATE' AND OLD.status = NEW.status THEN RETURN NEW; END IF;
   IF NEW.status <> 'pending_approval' THEN RETURN NEW; END IF;
   v_requester := NEW.created_by_user_id;
-  v_currency  := COALESCE(NEW.original_currency, 'EGP');
+  v_currency := COALESCE(NEW.original_currency, public.erp_company_base_currency(NEW.company_id));
   BEGIN
     SELECT name INTO v_customer_name FROM public.customers WHERE id = NEW.customer_id;
   EXCEPTION WHEN OTHERS THEN v_customer_name := NULL; END;
@@ -60055,7 +60194,7 @@ AS $function$
 DECLARE
   v_customer_name text; v_currency text;
 BEGIN
-  v_currency := COALESCE(NEW.currency, 'EGP');
+  v_currency := COALESCE(NEW.currency, public.erp_company_base_currency(NEW.company_id));
   BEGIN
     SELECT name INTO v_customer_name FROM public.customers WHERE id = NEW.customer_id;
   EXCEPTION WHEN OTHERS THEN v_customer_name := NULL; END;
@@ -60217,7 +60356,7 @@ BEGIN
   v_requester := v_so.created_by_user_id;
   IF v_requester IS NULL THEN RETURN; END IF;
 
-  v_currency := COALESCE(v_so.currency, 'EGP');
+  v_currency := COALESCE(v_so.currency, public.erp_company_base_currency(v_so.company_id));
   v_so_no    := COALESCE(v_so.so_number, v_so.id::text);
 
   INSERT INTO public.discount_approvals (
