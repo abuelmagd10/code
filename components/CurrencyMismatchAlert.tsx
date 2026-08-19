@@ -44,7 +44,18 @@ export function CurrencyMismatchAlert({ lang = 'ar' }: CurrencyMismatchAlertProp
 
       if (!data.success || !data.company) return
 
-      const baseCurrency = data.company.base_currency || 'EGP'
+      // v3.75.71 — «فالعملةُ الأساسيّةُ لا تُقرَأُ إلا من بيتِها الواحد»:
+      // كان الارتدادُ هنا 'EGP' حرفاً عندَ غيابِ base_currency — وهذا
+      // المكوِّنُ مهمّتُه الوحيدةُ اكتشافُ تعارضِ العملة، فعملةٌ مخترَعةٌ
+      // هنا تُفسدُ الكشفَ نفسَه (تصمتُ عن تعارضٍ حقيقىٍّ أو تصرخُ بتعارضٍ
+      // وهمى). و/api/company-info تُعيدُ أصلاً القيمةَ المحكومةَ (v3.75.68)،
+      // فغيابُها هنا عطبٌ عابر — والفراغُ الصادقُ خيرٌ من عملةٍ مخترَعة:
+      // لا يُعرَضُ التنبيهُ أصلاً إن تعذّرَ معرفةُ العملةِ الحقيقيّة.
+      if (!data.company.base_currency) {
+        console.error('[CurrencyMismatchAlert] company.base_currency missing — skipping mismatch check to avoid a false result')
+        return
+      }
+      const baseCurrency = data.company.base_currency
       setCompanyCurrency(baseCurrency)
 
       // Get display currency

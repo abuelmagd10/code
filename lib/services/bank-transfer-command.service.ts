@@ -273,19 +273,19 @@ export class BankTransferCommandService {
 
   /**
    * v3.27.2: Resolve company's base currency from companies.base_currency.
-   * Falls back to 'EGP' if not configured.
+   *
+   * v3.75.71 — «فالعملةُ الأساسيّةُ لا تُقرَأُ إلا من بيتِها الواحد»: كانت
+   * هذه الدالّةُ تقرأُ العمودَ خاماً وترتدُّ إلى 'EGP' حرفاً عندَ الصمتِ أو
+   * عطبِ الاستعلام — نفسُ العطبِ الذى أُصلح فى v3.75.65-70 بنداءِ البيتِ
+   * الواحد getBaseCurrency (الذى يصرخُ لا يخترع). وهذه القيمةُ تُقرِّرُ أىَّ
+   * حسابٍ "أساسىٌّ" وأىُّه "أجنبىٌّ" فى تحويلٍ بنكىٍّ حقيقىٍّ يُرحَّلُ إلى
+   * الدفتر — فعملةٌ مخترَعةٌ هنا تُخاطرُ بقيدٍ محاسبىٍّ خاطئٍ لا بعرضٍ خاطئٍ
+   * فقط. والصراخُ هنا أسلمُ من الصمت: المعاملةُ كلُّها داخلَ محاولةٍ تتراجعُ
+   * (rollback) عند أىِّ خطأ — انظرِ الالتقاطَ أعلاه.
    */
   private async getCompanyBaseCurrency(companyId: string): Promise<string> {
-    try {
-      const { data } = await this.adminSupabase
-        .from("companies")
-        .select("base_currency")
-        .eq("id", companyId)
-        .maybeSingle()
-      return String(data?.base_currency || "EGP").toUpperCase()
-    } catch {
-      return "EGP"
-    }
+    const { getBaseCurrency } = await import("@/lib/currency-service")
+    return await getBaseCurrency(this.adminSupabase, companyId)
   }
 
   private async loadCashBankAccount(companyId: string, accountId: string) {

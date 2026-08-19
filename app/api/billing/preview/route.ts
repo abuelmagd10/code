@@ -50,7 +50,21 @@ export async function GET(req: NextRequest) {
         .select('base_currency, country')
         .eq('id', companyId)
         .maybeSingle()
-      if (!currency) currency = company?.base_currency || 'USD'
+      // v3.75.71 — العملةُ هنا تُقرأُ أوّلاً من بيتها الواحد (getBaseCurrency)
+      // لا من العمودِ الخام مباشرةً — نفسُ عقيدةِ v3.75.65-70. والارتدادُ
+      // النهائىُّ إلى 'USD' هنا ليس عملةً مخترَعةً بالمعنى المحاسبىِّ الذى
+      // أُصلح من قبل: إنّها BASE_CURRENCY المُعلَنةُ لتسعيرِ المنصّةِ نفسِها
+      // (pricing-engine.ts)، معنًى مختلفٌ تماماً عن عملةِ الشركةِ المحاسبيّة
+      // — هذا مجرَّدُ اختيارِ عملةِ عرضٍ لمعاينةِ سعرِ اشتراكٍ، لا رقمٍ يُرحَّلُ
+      // إلى دفتر.
+      if (!currency) {
+        try {
+          const { getBaseCurrency } = await import('@/lib/currency-service')
+          currency = await getBaseCurrency(admin, companyId)
+        } catch {
+          currency = company?.base_currency || 'USD'
+        }
+      }
       if (!country) country = company?.country || 'EG'  // default Egypt
     }
 
