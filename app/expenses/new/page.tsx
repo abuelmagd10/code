@@ -23,6 +23,7 @@ import { filterCashBankAccounts } from "@/lib/accounts"
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { AttachmentUploader, uploadAttachmentItems, type AttachmentItem } from "@/components/attachments-uploader"
+import { getBaseCurrency } from "@/lib/currency-service"
 
 type Account = {
   id: string
@@ -52,10 +53,10 @@ export default function NewExpensePage() {
   // فتُحمَّل الضريبة كلها مصروفاً ويضيع حق خصمها من تقرير ضريبة المدخلات.
   // «المبلغ» يبقى الإجمالى المدفوع، وهذا الحقل هو الضريبة داخله.
   const [taxAmount, setTaxAmount] = useState<number>(0)
-  const [currencyCode, setCurrencyCode] = useState("EGP")
+  const [currencyCode, setCurrencyCode] = useState("")
   const [exchangeRate, setExchangeRate] = useState<number>(1)
   // v3.18.0: base currency for FX dropdown (loaded from companies.base_currency)
-  const [baseCurrency, setBaseCurrency] = useState<string>("EGP")
+  const [baseCurrency, setBaseCurrency] = useState<string>("")
   const [exchangeRateId, setExchangeRateId] = useState<string | null>(null)
   const [rateSource, setRateSource] = useState<string | null>(null)
   const [expenseCategory, setExpenseCategory] = useState("")
@@ -107,17 +108,12 @@ export default function NewExpensePage() {
 
       // v3.18.0: load company base currency for FX dropdown
       try {
-        const { data: company } = await supabase
-          .from("companies")
-          .select("base_currency")
-          .eq("id", cid)
-          .maybeSingle()
-        if (company?.base_currency) {
-          const base = String(company.base_currency).toUpperCase()
-          setBaseCurrency(base)
-          setCurrencyCode(base)  // default expense currency = company base
-        }
-      } catch {}
+        const base = await getBaseCurrency(supabase, cid)
+        setBaseCurrency(base)
+        setCurrencyCode(base)  // default expense currency = company base
+      } catch (err) {
+        console.error("Failed to load company base currency:", err)
+      }
 
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return

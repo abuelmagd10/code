@@ -66,7 +66,7 @@ export default function CostCentersPage() {
   const [canWrite, setCanWrite] = useState(false)
   const [permChecked, setPermChecked] = useState(false)
   const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
-  const [baseCurrency, setBaseCurrency] = useState('EGP')
+  const [baseCurrency, setBaseCurrency] = useState('')
 
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingCC, setEditingCC] = useState<CostCenter | null>(null)

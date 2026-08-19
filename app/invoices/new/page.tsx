@@ -197,7 +197,7 @@ export default function NewInvoicePage() {
   // Currency support - using CurrencyService
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [invoiceCurrency, setInvoiceCurrency] = useState<string>(() => readAppCurrency())
-  const [baseCurrency, setBaseCurrency] = useState<string>('EGP')
+  const [baseCurrency, setBaseCurrency] = useState<string>('')
   const [exchangeRate, setExchangeRate] = useState<number>(1)
   const [exchangeRateId, setExchangeRateId] = useState<string | undefined>(undefined)
   const [rateSource, setRateSource] = useState<string>('api')

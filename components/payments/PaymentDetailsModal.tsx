@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useSupabase } from "@/lib/supabase/hooks"
+import { getBaseCurrency } from "@/lib/currency-service"
 import Link from "next/link"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -196,7 +197,7 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
   const [payment, setPayment] = useState<any>(null)
   const [allocations, setAllocations] = useState<any[]>([])
   const [auditLogs, setAuditLogs] = useState<any[]>([])
-  const [baseCurrency, setBaseCurrency] = useState<string>('EGP')
+  const [baseCurrency, setBaseCurrency] = useState<string>('')
 
   useEffect(() => {
     if (!paymentId || !isOpen) return
@@ -215,13 +216,11 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
         if (pData) {
           // company base currency — required so we never default to "SAR"
           try {
-            const { data: comp } = await supabase
-              .from("companies")
-              .select("base_currency")
-              .eq("id", pData.company_id)
-              .maybeSingle()
-            if (comp?.base_currency) setBaseCurrency(comp.base_currency)
-          } catch { }
+            const base = await getBaseCurrency(supabase, pData.company_id)
+            setBaseCurrency(base)
+          } catch (error) {
+            console.error('Failed to load base currency:', error)
+          }
 
           if (pData.account_id) {
             const { data: accData } = await supabase

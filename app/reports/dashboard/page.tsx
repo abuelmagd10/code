@@ -34,6 +34,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DollarSign, TrendingUp, TrendingDown, Wallet } from 'lucide-react'
 import { formatCurrency } from '@/lib/currency-utils'
+import { getBaseCurrency } from '@/lib/currency-service'
 import { useAccess } from '@/lib/access-context'
 import { useSupabase } from '@/lib/supabase/hooks'
 import { canAction } from '@/lib/authz'
@@ -71,7 +72,7 @@ export default function FinancialDashboardPage() {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [overview, setOverview] = useState<Overview | null>(null)
-    const [currency, setCurrency] = useState('EGP')
+    const [currency, setCurrency] = useState('')
 
     const fetchData = useCallback(async () => {
         if (!profile?.company_id) return
@@ -81,12 +82,11 @@ export default function FinancialDashboardPage() {
             const companyId = profile.company_id
 
             // عملة الشركة — لا علامة عملة ثابتة فى الشيفرة
-            const { data: comp } = await supabase
-                .from('companies')
-                .select('base_currency')
-                .eq('id', companyId)
-                .maybeSingle()
-            if (comp?.base_currency) setCurrency(String(comp.base_currency).toUpperCase())
+            try {
+                setCurrency(await getBaseCurrency(supabase, companyId))
+            } catch (err) {
+                console.error("Failed to load company base currency:", err)
+            }
 
             // ═══ البيت الأول: قائمة الدخل، محدودة بالمدّة ═══
             const isRes = await fetch(

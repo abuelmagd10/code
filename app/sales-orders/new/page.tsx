@@ -187,7 +187,7 @@ export default function NewSalesOrderPage() {
   // Currency support
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [soCurrency, setSoCurrency] = useState<string>(() => readAppCurrency())
-  const [baseCurrency, setBaseCurrency] = useState<string>('EGP')
+  const [baseCurrency, setBaseCurrency] = useState<string>('')
   const [exchangeRate, setExchangeRate] = useState<number>(1)
   const [exchangeRateId, setExchangeRateId] = useState<string | undefined>(undefined)
   const [rateSource, setRateSource] = useState<string>('api')

@@ -25,6 +25,7 @@ import { useBranchFilter } from "@/hooks/use-branch-filter"
 import { BranchFilter } from "@/components/BranchFilter"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+import { getBaseCurrency } from "@/lib/currency-service"
 
 // نوع بيانات الموظف للفلترة
 interface Employee {
@@ -60,7 +61,7 @@ export default function CustomerDebitNotesPage() {
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [searchQuery, setSearchQuery] = useState('')
   const [pageSize, setPageSize] = useState(10)
-  const [currencySymbol, setCurrencySymbol] = useState('EGP')
+  const [currencySymbol, setCurrencySymbol] = useState('')
 
   // User context and permissions
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
@@ -263,14 +264,11 @@ export default function CustomerDebitNotesPage() {
     setDebitNotes(formattedNotes)
 
     // Load currency from company's base_currency
-    const { data: company } = await supabase
-      .from('companies')
-      .select('base_currency')
-      .eq('id', companyId)
-      .single()
-
-    if (company?.base_currency) {
-      setCurrencySymbol(company.base_currency)
+    try {
+      const baseCurrency = await getBaseCurrency(supabase, companyId)
+      setCurrencySymbol(baseCurrency)
+    } catch (error) {
+      console.error('Failed to load base currency:', error)
     }
 
     setLoading(false)

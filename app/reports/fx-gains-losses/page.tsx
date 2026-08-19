@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { getFXAccounts, readAppCurrency } from "@/lib/currency-service"
+import { getFXAccounts, getBaseCurrency } from "@/lib/currency-service"
 import { ArrowLeft, TrendingUp, TrendingDown, Download, RefreshCw } from "lucide-react"
 import Link from "next/link"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
@@ -39,7 +39,7 @@ export default function FXGainsLossesReportPage() {
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
   const [totalGains, setTotalGains] = useState(0)
   const [totalLosses, setTotalLosses] = useState(0)
-  const [baseCurrency, setBaseCurrency] = useState('EGP')
+  const [baseCurrency, setBaseCurrency] = useState('')
 
   // v3.74.581 — financial report: requires financial_reports (top management only)
   const [permChecked, setPermChecked] = useState(false)
@@ -54,7 +54,6 @@ export default function FXGainsLossesReportPage() {
 
   useEffect(() => {
     try { setAppLang(localStorage.getItem('app_language') === 'en' ? 'en' : 'ar') } catch { }
-    setBaseCurrency(readAppCurrency())
     loadData()
   }, [])
 
@@ -73,6 +72,7 @@ export default function FXGainsLossesReportPage() {
       const cid = await getActiveCompanyId(supabase)
       if (!cid) return
       setCompanyId(cid)
+      try { setBaseCurrency(await getBaseCurrency(supabase, cid)) } catch (e) { console.error(e) }
 
       // ✅ جلب حسابات FX Gain/Loss (4320/5310 أو المُهيَّأة في الإعدادات)
       let fxGainAccountId: string

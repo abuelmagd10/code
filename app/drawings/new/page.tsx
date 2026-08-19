@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast"
 import { NumericInput } from "@/components/ui/numeric-input"
 import { createDrawing, getShareholders } from "@/app/actions/drawings"
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
+import { getBaseCurrency } from "@/lib/currency-service"
 
 type Account = {
     id: string
@@ -42,12 +43,12 @@ export default function NewDrawingPage() {
     const [drawingDate, setDrawingDate] = useState(new Date().toISOString().split("T")[0])
     const [paymentAccountId, setPaymentAccountId] = useState("")
     const [description, setDescription] = useState("")
-    const [currencyCode, setCurrencyCode] = useState("EGP")
+    const [currencyCode, setCurrencyCode] = useState("")
     const [exchangeRate, setExchangeRate] = useState<number>(1)
     // v3.74.517 — استثناء إظهار الحسابات بعملات أخرى
     const [showAllPayAccounts, setShowAllPayAccounts] = useState(false)
     // v3.18.0: base currency for FX selector (loaded from company)
-    const [baseCurrency, setBaseCurrency] = useState<string>("EGP")
+    const [baseCurrency, setBaseCurrency] = useState<string>("")
 
     useEffect(() => {
         setHydrated(true)
@@ -74,17 +75,12 @@ export default function NewDrawingPage() {
 
             // v3.18.0: load company base currency for FX selector
             try {
-                const { data: company } = await supabase
-                    .from("companies")
-                    .select("base_currency")
-                    .eq("id", cid)
-                    .maybeSingle()
-                if (company?.base_currency) {
-                    const base = String(company.base_currency).toUpperCase()
-                    setBaseCurrency(base)
-                    setCurrencyCode(base)
-                }
-            } catch {}
+                const base = await getBaseCurrency(supabase, cid)
+                setBaseCurrency(base)
+                setCurrencyCode(base)
+            } catch (error) {
+                console.error('Failed to load base currency:', error)
+            }
 
             // Load Shareholders
             const shareholdersData = await getShareholders(cid)

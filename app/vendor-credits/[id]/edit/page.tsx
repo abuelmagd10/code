@@ -29,7 +29,7 @@ import { Trash2, Plus, ArrowRight } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError } from "@/lib/notifications"
-import { getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { getActiveCurrencies, getBaseCurrency, type Currency } from "@/lib/currency-service"
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { ProductSearchSelect } from "@/components/ProductSearchSelect"
@@ -89,7 +89,7 @@ export default function EditVendorCreditPage() {
 
   const [currencies, setCurrencies] = useState<Currency[]>([])
   const [exchangeRate, setExchangeRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
-  const [baseCurrency, setBaseCurrency] = useState<string>("EGP")
+  const [baseCurrency, setBaseCurrency] = useState<string>("")
 
   useEffect(() => {
     ; (async () => {
@@ -118,10 +118,10 @@ export default function EditVendorCreditPage() {
         }
 
         try {
-          const { data: companyBC } = await supabase
-            .from("companies").select("base_currency").eq("id", loadedCompanyId).maybeSingle()
-          if (companyBC?.base_currency) setBaseCurrency(String(companyBC.base_currency).toUpperCase())
-        } catch {}
+          setBaseCurrency(await getBaseCurrency(supabase, loadedCompanyId))
+        } catch (err) {
+          console.error(err)
+        }
 
         const { data: memberDataVC } = await supabase
           .from("company_members")

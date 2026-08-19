@@ -22,6 +22,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { TrendingUp, TrendingDown, AlertCircle, Download, RefreshCw, DollarSign } from "lucide-react"
 import { getActiveCompanyId } from "@/lib/company"
+import { getBaseCurrency } from "@/lib/currency-service"
 import { canAction } from "@/lib/authz"
 import Link from "next/link"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
@@ -71,7 +72,7 @@ export default function ARByCurrencyReportPage() {
     })()
   }, [supabase])
   const [companyId, setCompanyId] = useState<string | null>(null)
-  const [baseCurrency, setBaseCurrency] = useState<string>('EGP')
+  const [baseCurrency, setBaseCurrency] = useState<string>('')
   const [groups, setGroups] = useState<CurrencyGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [grandTotalExposure, setGrandTotalExposure] = useState(0)
@@ -93,12 +94,7 @@ export default function ARByCurrencyReportPage() {
       if (!cid) return
       setCompanyId(cid)
 
-      const { data: company } = await supabase
-        .from('companies')
-        .select('base_currency')
-        .eq('id', cid)
-        .maybeSingle()
-      const base = (company?.base_currency || 'EGP').toUpperCase()
+      const base = await getBaseCurrency(supabase, cid)
       setBaseCurrency(base)
 
       // Fetch open foreign-currency invoices

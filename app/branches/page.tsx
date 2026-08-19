@@ -61,7 +61,7 @@ export default function BranchesPage() {
   const [canWrite, setCanWrite] = useState(false)
   const [permChecked, setPermChecked] = useState(false)
   const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
-  const [baseCurrency, setBaseCurrency] = useState('EGP')
+  const [baseCurrency, setBaseCurrency] = useState('')
 
   // Dialog state
   const [isDialogOpen, setIsDialogOpen] = useState(false)

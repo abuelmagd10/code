@@ -39,7 +39,7 @@ export default function ExchangeRatesPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [companyId, setCompanyId] = useState<string>("")
-  const [baseCurrency, setBaseCurrency] = useState<string>("EGP")
+  const [baseCurrency, setBaseCurrency] = useState<string>("")
   const [newFromCurrency, setNewFromCurrency] = useState<string>("")
   const [newToCurrency, setNewToCurrency] = useState<string>("")
   const [newRate, setNewRate] = useState<string>("")

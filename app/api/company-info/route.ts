@@ -18,6 +18,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getActiveCompanyId } from "@/lib/company"
 import { apiSuccess, apiError, API_ERROR_CODES } from "@/lib/api-response"
+import { getBaseCurrency } from "@/lib/currency-service"
 
 // =====================================================
 // Types
@@ -146,6 +147,19 @@ export async function GET(req: NextRequest) {
         "الشركة غير موجودة",
         "Company not found"
       )
+    }
+
+    // v3.75.68 — **بيتٌ واحدٌ للعملةِ الأساسيّة هنا أيضاً**: هذا المسارُ كان
+    // يُعيدُ عمودَ companies.base_currency كما قرأه مباشرةً — بيتٌ ثانٍ يتجاوزُ
+    // بيتَ v3.75.65 (getBaseCurrency، الذى ينادى erp_company_base_currency
+    // ويعتمدُ منحةَ المستخدِمِ المسجَّلِ أيضاً). فتُستبدَلُ القيمةُ بنداءِ
+    // البيتِ الواحد؛ وإن صرخ (شركةٌ مؤقّتةٌ لم تُتَح بعد، أو عطبٌ عابر) يبقى
+    // العمودُ الخامُ كما قُرئ — لأنّ هذا المسارَ يخدمُ أيضاً الاسمَ والعنوانَ
+    // وغيرَهما، ولا يجوزُ أن يُسقِطَهما عطبُ العملةِ وحدَها.
+    try {
+      company.base_currency = await getBaseCurrency(supabase, companyId)
+    } catch (bcError: any) {
+      console.error('[API /company-info] getBaseCurrency fallback to raw column:', bcError?.message)
     }
 
     // ✅ 5. Return Success Response

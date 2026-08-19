@@ -14,7 +14,7 @@ import { useRouter } from "next/navigation"
 import { Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
-import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { getExchangeRate, getActiveCurrencies, getBaseCurrency, type Currency } from "@/lib/currency-service"
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { ProductSearchSelect } from "@/components/ProductSearchSelect"
@@ -83,7 +83,7 @@ export default function NewVendorCreditPage() {
   const [exchangeRate, setExchangeRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
   // v3.21.1: baseCurrency is loaded from companies.base_currency (authoritative source),
   // not from localStorage which can be stale across companies / sessions.
-  const [baseCurrency, setBaseCurrency] = useState<string>("EGP")
+  const [baseCurrency, setBaseCurrency] = useState<string>("")
   const currencySymbols: Record<string, string> = { EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ' }
 
   useEffect(() => {
@@ -99,18 +99,13 @@ export default function NewVendorCreditPage() {
 
       // v3.21.1: Load company base currency (authoritative — not localStorage)
       try {
-        const { data: companyBC } = await supabase
-          .from("companies")
-          .select("base_currency")
-          .eq("id", loadedCompanyId)
-          .maybeSingle()
-        if (companyBC?.base_currency) {
-          const base = String(companyBC.base_currency).toUpperCase()
-          setBaseCurrency(base)
-          // Default new credit to use base currency
-          setCredit(c => ({ ...c, currency: base }))
-        }
-      } catch {}
+        const base = await getBaseCurrency(supabase, loadedCompanyId)
+        setBaseCurrency(base)
+        // Default new credit to use base currency
+        setCredit(c => ({ ...c, currency: base }))
+      } catch (err) {
+        console.error(err)
+      }
 
       // 🔐 Enterprise Governance: Filter suppliers by branch for non-admin users
       const { data: memberDataVC } = await supabase

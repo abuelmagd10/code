@@ -11,6 +11,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { detectCoaColumns, buildCoaFormPayload } from "@/lib/accounts"
 import { computeLeafAccountBalancesAsOf } from "@/lib/ledger"
 import { getActiveCompanyId } from "@/lib/company"
+import { getBaseCurrency } from "@/lib/currency-service"
 import { canAction } from "@/lib/authz"
 import { Plus, Edit2, Trash2, Search, Banknote, Wallet, GitBranch, Building2, MapPin } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
@@ -173,7 +174,7 @@ function ChartOfAccountsPage() {
   })
   // v3.24.0: list of active currencies from /settings/exchange-rates
   const [availableCurrencies, setAvailableCurrencies] = useState<Array<{ code: string; name?: string; symbol?: string }>>([])
-  const [baseCurrency, setBaseCurrency] = useState<string>("EGP")
+  const [baseCurrency, setBaseCurrency] = useState<string>("")
   const [formErrors, setFormErrors] = useState<Record<string, string>>({})
   const [permWrite, setPermWrite] = useState(false)
   const [permUpdate, setPermUpdate] = useState(false)
@@ -592,8 +593,11 @@ function ChartOfAccountsPage() {
   // + company base currency.
   const loadCurrencies = async (companyId: string) => {
     try {
-      const [{ data: companyRow }, { data: currencyRows }] = await Promise.all([
-        supabase.from("companies").select("base_currency").eq("id", companyId).maybeSingle(),
+      const [baseCurrencyResult, { data: currencyRows }] = await Promise.all([
+        getBaseCurrency(supabase, companyId).catch((err) => {
+          console.error("Failed to load company base currency:", err)
+          return null
+        }),
         // Active currencies = those that have at least one rate row in /settings/exchange-rates,
         // PLUS the company base currency itself.
         supabase
@@ -602,9 +606,8 @@ function ChartOfAccountsPage() {
           .eq("company_id", companyId)
           .limit(500),
       ])
-      const base = String(companyRow?.base_currency || "EGP").toUpperCase()
-      setBaseCurrency(base)
-      const codes = new Set<string>([base])
+      if (baseCurrencyResult) setBaseCurrency(baseCurrencyResult)
+      const codes = new Set<string>(baseCurrencyResult ? [baseCurrencyResult] : [])
       for (const r of currencyRows || []) {
         if ((r as any).from_currency) codes.add(String((r as any).from_currency).toUpperCase())
         if ((r as any).to_currency) codes.add(String((r as any).to_currency).toUpperCase())
