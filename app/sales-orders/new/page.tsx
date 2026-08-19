@@ -186,7 +186,7 @@ export default function NewSalesOrderPage() {
 
   // Currency support
   const [currencies, setCurrencies] = useState<Currency[]>([])
-  const [soCurrency, setSoCurrency] = useState<string>('EGP')
+  const [soCurrency, setSoCurrency] = useState<string>(() => readAppCurrency())
   const [baseCurrency, setBaseCurrency] = useState<string>('EGP')
   const [exchangeRate, setExchangeRate] = useState<number>(1)
   const [exchangeRateId, setExchangeRateId] = useState<string | undefined>(undefined)
@@ -210,7 +210,6 @@ export default function NewSalesOrderPage() {
       setInvoiceDiscountPosition(discPos === "after_tax" ? "after_tax" : "before_tax")
       const curr = readAppCurrency()
       setSoCurrency(curr)
-      setBaseCurrency(curr)
     } catch { }
   }, [])
 

@@ -190,7 +190,7 @@ export default function BillViewPage() {
   const [nextBillId, setNextBillId] = useState<string | null>(null)
   const [prevBillId, setPrevBillId] = useState<string | null>(null)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
-  const [appCurrency, setAppCurrency] = useState<string>('EGP')
+  const [appCurrency, setAppCurrency] = useState<string>(() => readAppCurrency())
 
   // Purchase Return Dialog State
   const [returnOpen, setReturnOpen] = useState(false)
@@ -203,7 +203,7 @@ export default function BillViewPage() {
   const [returnProcessing, setReturnProcessing] = useState(false)
   // Multi-currency for returns
   const [currencies, setCurrencies] = useState<Currency[]>([])
-  const [returnCurrency, setReturnCurrency] = useState<string>('EGP')
+  const [returnCurrency, setReturnCurrency] = useState<string>(() => readAppCurrency())
   const [returnExRate, setReturnExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
   // Bill financial details for return form
   const [returnBillData, setReturnBillData] = useState<{

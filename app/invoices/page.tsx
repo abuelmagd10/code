@@ -210,15 +210,12 @@ export default function InvoicesPage() {
   ], [appLang])
 
   // Currency support
-  const [appCurrency, setAppCurrency] = useState<string>('EGP')
+  const [appCurrency, setAppCurrency] = useState<string>(() => readAppCurrency())
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('app_currency')
-        if (saved) setAppCurrency(saved)
-      } catch { }
-    }
+    try {
+      setAppCurrency(readAppCurrency())
+    } catch { }
   }, [])
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',

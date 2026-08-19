@@ -13,6 +13,7 @@ import { Building2, Globe, Coins, CheckCircle2, ArrowRight, ArrowLeft, Loader2, 
 import { useToast } from "@/hooks/use-toast"
 import { createDefaultChartOfAccounts } from "@/lib/default-chart-of-accounts"
 import { OPTIONAL_MODULES, MODULE_LABELS, type ModuleKey } from "@/lib/module-manifest"
+import { readAppCurrency } from "@/lib/currency-service"
 
 // Professional currency list
 const CURRENCIES = [
@@ -44,7 +45,7 @@ export default function OnboardingPage() {
 
   // Form data
   const [companyName, setCompanyName] = useState("")
-  const [currency, setCurrency] = useState("EGP")
+  const [currency, setCurrency] = useState(() => readAppCurrency())
   const [language, setLanguage] = useState("ar")
   const [address, setAddress] = useState("")
   const [city, setCity] = useState("")
@@ -63,10 +64,9 @@ export default function OnboardingPage() {
   // Load saved preferences
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const savedCurrency = localStorage.getItem('app_currency')
       const savedLanguage = localStorage.getItem('app_language')
       const savedCompanyName = localStorage.getItem('pending_company_name')
-      if (savedCurrency) setCurrency(savedCurrency)
+      setCurrency(readAppCurrency())
       if (savedLanguage) setLanguage(savedLanguage)
       if (savedCompanyName) setCompanyName(savedCompanyName)
     }

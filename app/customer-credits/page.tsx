@@ -32,7 +32,7 @@ export default function CustomerCreditsPage() {
   const [credits, setCredits] = useState<CustomerCredit[]>([])
   const [loading, setLoading] = useState(true)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
-  const [appCurrency, setAppCurrency] = useState<string>('EGP')
+  const [appCurrency, setAppCurrency] = useState<string>(() => readAppCurrency())
   const [searchQuery, setSearchQuery] = useState("")
   const [pageSize] = useState(15)
   const [isPending, startTransition] = useTransition()

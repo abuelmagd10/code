@@ -37,7 +37,7 @@ export default function ShippingReportPage() {
   const [canRead, setCanRead] = useState(false)
   const [permChecked, setPermChecked] = useState(false)
   const [appLang, setAppLang] = useState<'ar'|'en'>('ar')
-  const [appCurrency, setAppCurrency] = useState('EGP')
+  const [appCurrency, setAppCurrency] = useState(() => readAppCurrency())
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>("all")

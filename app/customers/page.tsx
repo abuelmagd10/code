@@ -164,7 +164,7 @@ export default function CustomersPage() {
 
   // Multi-currency support for refund
   const [currencies, setCurrencies] = useState<Currency[]>([])
-  const [refundCurrency, setRefundCurrency] = useState<string>("EGP")
+  const [refundCurrency, setRefundCurrency] = useState<string>(() => readAppCurrency())
   const [refundExRate, setRefundExRate] = useState<{ rate: number; rateId: string | null; source: string }>({ rate: 1, rateId: null, source: 'same_currency' })
   const [companyId, setCompanyId] = useState<string | null>(null)
 

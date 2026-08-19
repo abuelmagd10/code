@@ -196,7 +196,7 @@ export default function NewInvoicePage() {
 
   // Currency support - using CurrencyService
   const [currencies, setCurrencies] = useState<Currency[]>([])
-  const [invoiceCurrency, setInvoiceCurrency] = useState<string>('EGP')
+  const [invoiceCurrency, setInvoiceCurrency] = useState<string>(() => readAppCurrency())
   const [baseCurrency, setBaseCurrency] = useState<string>('EGP')
   const [exchangeRate, setExchangeRate] = useState<number>(1)
   const [exchangeRateId, setExchangeRateId] = useState<string | undefined>(undefined)
@@ -220,7 +220,6 @@ export default function NewInvoicePage() {
       setInvoiceDiscountPosition(discPos === "after_tax" ? "after_tax" : "before_tax")
       const curr = readAppCurrency()
       setInvoiceCurrency(curr)
-      setBaseCurrency(curr)
     } catch { }
   }, [])
 

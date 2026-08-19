@@ -95,7 +95,7 @@ export default function RunDetailsPage() {
     const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false)
 
     // Currency
-    const [appCurrency, setAppCurrency] = useState<string>('EGP')
+    const [appCurrency, setAppCurrency] = useState<string>(() => readAppCurrency())
     const currencySymbols: Record<string, string> = {
         EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ'
     }

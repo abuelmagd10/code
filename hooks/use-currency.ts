@@ -8,14 +8,14 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSupabase } from '@/lib/supabase/hooks'
 import { getActiveCompanyId } from '@/lib/company'
-import { 
-  getAppCurrency, 
-  getCurrencySymbol, 
-  getExchangeRate, 
+import {
+  getCurrencySymbol,
+  getExchangeRate,
   convertAmount,
   formatCurrency,
-  CURRENCY_SYMBOLS 
+  CURRENCY_SYMBOLS
 } from '@/lib/currency-converter'
+import { readAppCurrency } from '@/lib/currency-service'
 
 export interface UseCurrencyResult {
   appCurrency: string
@@ -29,7 +29,7 @@ export interface UseCurrencyResult {
 
 export function useCurrency(): UseCurrencyResult {
   const supabase = useSupabase()
-  const [appCurrency, setAppCurrency] = useState<string>('EGP')
+  const [appCurrency, setAppCurrency] = useState<string>(() => readAppCurrency())
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [rateCache, setRateCache] = useState<Record<string, number>>({})
@@ -39,7 +39,7 @@ export function useCurrency(): UseCurrencyResult {
     const loadSettings = async () => {
       setIsLoading(true)
       try {
-        const currency = getAppCurrency()
+        const currency = readAppCurrency()
         setAppCurrency(currency)
         
         const cid = await getActiveCompanyId(supabase)
@@ -53,7 +53,7 @@ export function useCurrency(): UseCurrencyResult {
 
     // Listen for currency changes
     const handleCurrencyChange = () => {
-      const newCurrency = getAppCurrency()
+      const newCurrency = readAppCurrency()
       setAppCurrency(newCurrency)
       setRateCache({}) // Clear cache when currency changes
     }
@@ -115,12 +115,12 @@ export function useCurrency(): UseCurrencyResult {
  * Simple hook to just get the current app currency
  */
 export function useAppCurrency(): { currency: string; symbol: string } {
-  const [currency, setCurrency] = useState<string>('EGP')
+  const [currency, setCurrency] = useState<string>(() => readAppCurrency())
 
   useEffect(() => {
-    setCurrency(getAppCurrency())
-    
-    const handleChange = () => setCurrency(getAppCurrency())
+    setCurrency(readAppCurrency())
+
+    const handleChange = () => setCurrency(readAppCurrency())
     window.addEventListener('app_currency_changed', handleChange)
     return () => window.removeEventListener('app_currency_changed', handleChange)
   }, [])

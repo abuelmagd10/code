@@ -94,7 +94,7 @@ export default function VendorCreditsPage() {
   const [isPending, startTransition] = useTransition()
 
   // Currency state to avoid hydration mismatch
-  const [appCurrency, setAppCurrency] = useState<string>('EGP')
+  const [appCurrency, setAppCurrency] = useState<string>(() => readAppCurrency())
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
   }

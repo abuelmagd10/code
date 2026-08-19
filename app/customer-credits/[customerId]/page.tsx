@@ -51,7 +51,7 @@ export default function CustomerCreditDetailPage() {
 
   const [loading, setLoading] = useState(true)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
-  const [appCurrency, setAppCurrency] = useState<string>('EGP')
+  const [appCurrency, setAppCurrency] = useState<string>(() => readAppCurrency())
   const [customer, setCustomer] = useState<any>(null)
   const [balance, setBalance] = useState(0)
   const [ledger, setLedger] = useState<LedgerRow[]>([])

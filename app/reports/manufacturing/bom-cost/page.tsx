@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { ArrowRight, Download, Layers, ChevronDown, ChevronRight } from "lucide-react"
 import Link from "next/link"
+import { readAppCurrency } from "@/lib/currency-service"
 
 interface BomLine {
   id: string
@@ -41,7 +42,7 @@ export default function BomCostReportPage() {
   const [appLang, setAppLang] = useState<"ar" | "en">("ar")
   const [companyId, setCompanyId] = useState("")
   const [search, setSearch] = useState("")
-  const [currency, setCurrency] = useState("EGP")
+  const [currency, setCurrency] = useState(() => readAppCurrency())
 
   useEffect(() => {
     const h = () => { try { setAppLang((localStorage.getItem("app_language")||"ar")==="en"?"en":"ar") } catch {} }
@@ -51,9 +52,8 @@ export default function BomCostReportPage() {
   useEffect(() => {
     try {
       const cid = document.cookie.split(";").find(c => c.trim().startsWith("active_company_id="))?.split("=")[1] || ""
-      const cur = document.cookie.split(";").find(c => c.trim().startsWith("app_currency="))?.split("=")[1] || "EGP"
       setCompanyId(cid)
-      setCurrency(cur)
+      setCurrency(readAppCurrency())
     } catch {}
   }, [])
 

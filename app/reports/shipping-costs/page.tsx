@@ -39,7 +39,7 @@ export default function ShippingCostsPage() {
   const [providers, setProviders] = useState<Array<{ id: string; provider_name: string }>>([])
   const [isLoading, setIsLoading] = useState(true)
   const [appLang, setAppLang] = useState<'ar' | 'en'>('ar')
-  const [appCurrency, setAppCurrency] = useState('EGP')
+  const [appCurrency, setAppCurrency] = useState(() => readAppCurrency())
 
   // Helper function to format date
   const formatLocalDate = (date: Date): string => {
