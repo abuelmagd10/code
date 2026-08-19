@@ -1000,6 +1000,20 @@ export default function SettingsPage() {
     toastActionSuccess(toast, language === 'en' ? 'Reset' : 'إعادة تعيين', language === 'en' ? 'FX Accounts' : 'حسابات فروق العملة')
   }
 
+  // v3.75.69 — «فالعملةُ الأساسيّةُ لا تُكتَبُ إلا من بابِها المُسمّى»: كان
+  // هذا الحفظُ العامُّ (اسمٌ، عنوانٌ، هاتفٌ...) يكتبُ عمودَ base_currency
+  // مساوياً currency معه فى نفسِ الاستعلامِ المباشر — وcurrency هنا قد تكونُ «عملةَ عرضٍ
+  // فقط» اختارها أىُّ عضوٍ (لا حجبَ بالملكيّةِ على هذا الزرِّ فى الشاشة،
+  // وصلاحيةُ القاعدةِ companies_member_access تسمحُ لأىِّ عضوٍ بتحديثِ
+  // صفِّ الشركة). فكان ضغطُ «حفظ» بعدَ اختيارِ «عرضٌ فقط» (changeDisplayOnly
+  // أدناه) يُسرِّبُ عملةَ العرضِ لتصيرَ العملةَ الأساسيّةَ فى القاعدةِ فعلاً
+  // — بلا تحويلِ مبلغٍ واحد، وبلا مرورٍ بالإجراءِ المحكومِ
+  // change_base_currency (الذى وحدَه يتحقّقُ من الملكيّةِ عبرَ
+  // is_owner_or_admin ويُعيدُ حسابَ الدفاترِ داخلَ القاعدة). فحُذِفَ
+  // base_currency من هذا الاستعلامِ نهائياً: عملةُ الشركةِ الأساسيّةُ لا
+  // تُكتَبُ إلا من applyCurrencyWithConversion أدناه — حيث الحارسُ الحقيقىُّ
+  // فى القاعدةِ نفسِها لا فى الشاشة. (الاستثناءُ الوحيدُ: إنشاءُ شركةٍ
+  // جديدةٍ لا عملةَ أساسيّةً محفوظةً لها بعدُ — انظر فرعَ الإنشاءِ أسفله.)
   const handleSave = async () => {
     try {
       setSaving(true)
@@ -1008,7 +1022,7 @@ export default function SettingsPage() {
       if (companyId) {
         const { error } = await supabase
           .from("companies")
-          .update({ name, address, city, country, phone, tax_id: taxId, base_currency: currency, logo_url: logoUrl || null })
+          .update({ name, address, city, country, phone, tax_id: taxId, logo_url: logoUrl || null })
           .eq("id", companyId)
         if (error) {
           const msg = String(error.message || "")
@@ -1017,7 +1031,7 @@ export default function SettingsPage() {
             // Try saving without logo_url
             const { error: retryError } = await supabase
               .from("companies")
-              .update({ name, address, city, country, phone, tax_id: taxId, base_currency: currency })
+              .update({ name, address, city, country, phone, tax_id: taxId })
               .eq("id", companyId)
             if (retryError) {
               console.error('Retry save error:', retryError)
@@ -1057,7 +1071,8 @@ export default function SettingsPage() {
                 target_table: "companies",
                 record_id: companyId,
                 record_identifier: name,
-                new_data: { name, address, city, country, phone, tax_id: taxId, base_currency: currency },
+                // v3.75.69 — base_currency حُذِف: هذا الحفظُ العامُّ لم يعُدْ يكتبُه.
+                new_data: { name, address, city, country, phone, tax_id: taxId },
               },
             }),
           })
@@ -1085,6 +1100,9 @@ export default function SettingsPage() {
             country,
             phone,
             tax_id: taxId,
+            // v3.75.69 — هذا وحدَه استثناءٌ سليم: شركةٌ تُنشَأُ الآن لا عملةَ
+            // أساسيّةً محفوظةً لها بعدُ فى القاعدة، فلا شىءَ يُحوَّل ولا
+            // دفترَ يُخالِف — تثبيتُ العملةِ المختارةِ هنا بذرةٌ لا تسريب.
             base_currency: currency,
             logo_url: logoUrl || null
           })
