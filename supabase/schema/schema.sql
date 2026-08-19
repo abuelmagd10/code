@@ -9,8 +9,8 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-19T11:36:30.601Z
--- Tables: 256 | Policies: 784 | Triggers: 582 | Constraints: 1841
+-- Generated: 2026-08-19T12:36:47.613Z
+-- Tables: 256 | Policies: 784 | Triggers: 608 | Constraints: 1841
 -- =====================================================================
 
 
@@ -193,7 +193,7 @@ CREATE TABLE IF NOT EXISTS public.approval_workflows (
   resource_type character varying(50) NOT NULL,
   resource_id uuid NOT NULL,
   amount numeric(15,2),
-  currency_code character varying(3) DEFAULT 'USD'::character varying,
+  currency_code character varying(3),
   requested_by uuid NOT NULL,
   requested_at timestamp with time zone DEFAULT now(),
   approver_id uuid,
@@ -437,7 +437,7 @@ CREATE TABLE IF NOT EXISTS public.bank_voucher_requests (
   account_id uuid NOT NULL,
   counter_id uuid NOT NULL,
   amount numeric NOT NULL,
-  currency text DEFAULT 'EGP'::text NOT NULL,
+  currency text NOT NULL,
   base_amount numeric NOT NULL,
   exchange_rate numeric DEFAULT 1,
   exchange_rate_source text,
@@ -546,10 +546,10 @@ CREATE TABLE IF NOT EXISTS public.bills (
   deleted_by uuid,
   returned_amount numeric(15,2) DEFAULT 0,
   return_status text,
-  currency_code character varying(3) DEFAULT 'EGP'::character varying,
+  currency_code character varying(3),
   exchange_rate numeric(18,8) DEFAULT 1,
   base_currency_total numeric(18,2),
-  original_currency character varying(3) DEFAULT 'EGP'::character varying,
+  original_currency character varying(3),
   original_total numeric(18,2),
   display_currency character varying(10),
   display_total numeric(18,2),
@@ -655,7 +655,7 @@ CREATE TABLE IF NOT EXISTS public.booking_payments (
   branch_id uuid NOT NULL,
   booking_id uuid NOT NULL,
   amount numeric(18,4) NOT NULL,
-  currency_code text DEFAULT 'EGP'::text NOT NULL,
+  currency_code text NOT NULL,
   payment_method text DEFAULT 'cash'::text NOT NULL,
   payment_date date DEFAULT CURRENT_DATE NOT NULL,
   reference_no text,
@@ -726,7 +726,7 @@ CREATE TABLE IF NOT EXISTS public.bookings (
   discount_amount numeric(18,4) DEFAULT 0 NOT NULL,
   tax_amount numeric(18,4) DEFAULT 0 NOT NULL,
   total_amount numeric(18,4) DEFAULT 0 NOT NULL,
-  currency_code text DEFAULT 'EGP'::text NOT NULL,
+  currency_code text NOT NULL,
   commission_amount numeric(18,4) DEFAULT 0 NOT NULL,
   payment_status text DEFAULT 'unpaid'::text NOT NULL,
   paid_amount numeric(18,4) DEFAULT 0 NOT NULL,
@@ -866,7 +866,7 @@ CREATE TABLE IF NOT EXISTS public.chart_of_accounts (
   level integer DEFAULT 1 NOT NULL,
   normal_balance text NOT NULL,
   sub_type text,
-  original_currency character varying(10) DEFAULT 'EGP'::character varying,
+  original_currency character varying(10),
   original_opening_balance numeric(18,2),
   display_currency character varying(10),
   display_opening_balance numeric(18,2),
@@ -1608,7 +1608,7 @@ CREATE TABLE IF NOT EXISTS public.customer_debit_notes (
   total_amount numeric(15,2) DEFAULT 0 NOT NULL,
   applied_amount numeric(15,2) DEFAULT 0,
   currency_id uuid,
-  original_currency character varying(3) DEFAULT 'EGP'::character varying,
+  original_currency character varying(3),
   original_subtotal numeric(15,2),
   original_tax_amount numeric(15,2),
   original_total_amount numeric(15,2),
@@ -1656,7 +1656,7 @@ CREATE TABLE IF NOT EXISTS public.customer_refund_requests (
   branch_id uuid,
   cost_center_id uuid,
   refund_method text,
-  currency text DEFAULT 'EGP'::text,
+  currency text,
   exchange_rate numeric DEFAULT 1,
   base_amount numeric,
   refund_date date,
@@ -1679,7 +1679,7 @@ CREATE TABLE IF NOT EXISTS public.customers (
   is_active boolean DEFAULT true,
   created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
   updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-  balance_currency character varying(3) DEFAULT 'EGP'::character varying,
+  balance_currency character varying(3),
   detailed_address text,
   governorate text,
   created_by_user_id uuid,
@@ -1951,7 +1951,7 @@ CREATE TABLE IF NOT EXISTS public.estimates (
   cost_center_id uuid,
   created_by_user_id uuid,
   converted_so_id uuid,
-  currency_code text DEFAULT 'EGP'::text,
+  currency_code text,
   exchange_rate numeric(18,8) DEFAULT 1,
   exchange_rate_id uuid
 );
@@ -2014,7 +2014,7 @@ CREATE TABLE IF NOT EXISTS public.expenses (
   description text NOT NULL,
   notes text,
   amount numeric(15,2) NOT NULL,
-  currency_code character varying(3) DEFAULT 'EGP'::character varying,
+  currency_code character varying(3),
   exchange_rate numeric(15,6) DEFAULT 1,
   base_currency_amount numeric(15,2),
   expense_category character varying(100),
@@ -2638,7 +2638,7 @@ CREATE TABLE IF NOT EXISTS public.inventory_write_offs (
   last_status_changed_at timestamp with time zone,
   source_ip text,
   device_info text,
-  currency_code text DEFAULT 'EGP'::text,
+  currency_code text,
   exchange_rate numeric(18,6) DEFAULT 1,
   base_amount numeric(15,2)
 );
@@ -2686,10 +2686,10 @@ CREATE TABLE IF NOT EXISTS public.invoices (
   deleted_by uuid,
   returned_amount numeric(15,2) DEFAULT 0,
   return_status text,
-  currency_code character varying(3) DEFAULT 'EGP'::character varying,
+  currency_code character varying(3),
   exchange_rate numeric(18,8) DEFAULT 1,
   base_currency_total numeric(18,2),
-  original_currency character varying(3) DEFAULT 'EGP'::character varying,
+  original_currency character varying(3),
   original_total numeric(18,2),
   display_currency character varying(10),
   display_total numeric(18,2),
@@ -2768,9 +2768,9 @@ CREATE TABLE IF NOT EXISTS public.journal_entries (
   is_deleted boolean DEFAULT false NOT NULL,
   deleted_at timestamp with time zone,
   deleted_by uuid,
-  currency_code character varying(3) DEFAULT 'EGP'::character varying,
+  currency_code character varying(3),
   exchange_rate numeric(18,8) DEFAULT 1,
-  original_currency character varying(3) DEFAULT 'EGP'::character varying,
+  original_currency character varying(3),
   original_total_debit numeric(18,2),
   original_total_credit numeric(18,2),
   branch_id uuid NOT NULL,
@@ -3438,10 +3438,10 @@ CREATE TABLE IF NOT EXISTS public.payments (
   is_deleted boolean DEFAULT false NOT NULL,
   deleted_at timestamp with time zone,
   deleted_by uuid,
-  currency_code character varying(3) DEFAULT 'EGP'::character varying,
+  currency_code character varying(3),
   exchange_rate numeric(18,8) DEFAULT 1,
   base_currency_amount numeric(18,2),
-  original_currency character varying(3) DEFAULT 'EGP'::character varying,
+  original_currency character varying(3),
   original_amount numeric(18,2),
   display_currency character varying(10),
   display_amount numeric(18,2),
@@ -3774,7 +3774,7 @@ CREATE TABLE IF NOT EXISTS public.products (
   is_active boolean DEFAULT true,
   created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
   updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-  original_currency character varying(10) DEFAULT 'EGP'::character varying,
+  original_currency character varying(10),
   original_unit_price numeric(18,2),
   original_cost_price numeric(18,2),
   display_currency character varying(10),
@@ -3871,7 +3871,7 @@ CREATE TABLE IF NOT EXISTS public.purchase_orders (
   discount_type text DEFAULT 'percentage'::text,
   discount_value numeric DEFAULT 0,
   shipping numeric DEFAULT 0,
-  currency text DEFAULT 'SAR'::text,
+  currency text,
   bill_id uuid,
   total numeric DEFAULT 0,
   discount_position text DEFAULT 'before_tax'::text,
@@ -3933,7 +3933,7 @@ CREATE TABLE IF NOT EXISTS public.purchase_requests (
   approval_status text DEFAULT 'pending'::text,
   requested_by uuid NOT NULL,
   total_estimated_cost numeric(12,2) DEFAULT 0,
-  currency text DEFAULT 'EGP'::text,
+  currency text,
   exchange_rate numeric(12,6) DEFAULT 1,
   branch_id uuid,
   cost_center_id uuid,
@@ -4002,7 +4002,7 @@ CREATE TABLE IF NOT EXISTS public.purchase_returns (
   reason text,
   notes text,
   journal_entry_id uuid,
-  original_currency character varying(3) DEFAULT 'EGP'::character varying,
+  original_currency character varying(3),
   original_subtotal numeric(15,2),
   original_tax_amount numeric(15,2),
   original_total_amount numeric(15,2),
@@ -4137,7 +4137,7 @@ CREATE TABLE IF NOT EXISTS public.sales_orders (
   adjustment numeric(15,2) DEFAULT 0,
   total numeric(15,2) DEFAULT 0,
   total_amount numeric(15,2) DEFAULT 0,
-  currency character varying(10) DEFAULT 'EGP'::character varying,
+  currency character varying(10),
   exchange_rate numeric(15,6) DEFAULT 1,
   total_base numeric(15,2) DEFAULT 0,
   notes text,
@@ -4304,7 +4304,7 @@ CREATE TABLE IF NOT EXISTS public.services (
   unit_price numeric(18,4) DEFAULT 0 NOT NULL,
   cost_price numeric(18,4) DEFAULT 0 NOT NULL,
   tax_rate numeric(9,4) DEFAULT 0 NOT NULL,
-  currency_code text DEFAULT 'EGP'::text NOT NULL,
+  currency_code text NOT NULL,
   commission_rate numeric(9,4) DEFAULT 0 NOT NULL,
   duration_minutes integer DEFAULT 60 NOT NULL,
   capacity integer DEFAULT 1 NOT NULL,
@@ -4348,7 +4348,7 @@ CREATE TABLE IF NOT EXISTS public.shareholder_drawings (
   rejected_at timestamp with time zone,
   rejection_reason text,
   drawings_account_id uuid,
-  currency_code text DEFAULT 'EGP'::text,
+  currency_code text,
   exchange_rate numeric(18,6) DEFAULT 1,
   base_amount numeric(15,2),
   last_status_changed_at timestamp with time zone,
@@ -4559,7 +4559,7 @@ CREATE TABLE IF NOT EXISTS public.suppliers (
   is_active boolean DEFAULT true,
   created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
   updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-  balance_currency character varying(3) DEFAULT 'EGP'::character varying,
+  balance_currency character varying(3),
   created_by_user_id uuid,
   branch_id uuid,
   cost_center_id uuid,
@@ -4679,7 +4679,7 @@ CREATE TABLE IF NOT EXISTS public.user_bonuses (
   invoice_id uuid,
   sales_order_id uuid,
   bonus_amount numeric(15,2) DEFAULT 0 NOT NULL,
-  bonus_currency text DEFAULT 'EGP'::text NOT NULL,
+  bonus_currency text NOT NULL,
   bonus_type text DEFAULT 'percentage'::text NOT NULL,
   calculation_base numeric(15,2) DEFAULT 0,
   calculation_rate numeric(10,4) DEFAULT 0,
@@ -4865,7 +4865,7 @@ CREATE TABLE IF NOT EXISTS public.vendor_refund_requests (
   branch_id uuid,
   cost_center_id uuid,
   amount numeric(18,4) NOT NULL,
-  currency text DEFAULT 'EGP'::text NOT NULL,
+  currency text NOT NULL,
   exchange_rate numeric(18,6) DEFAULT 1 NOT NULL,
   base_amount numeric(18,4) NOT NULL,
   receipt_account_id uuid NOT NULL,
@@ -5467,7 +5467,7 @@ ALTER TABLE public.customer_debit_note_items ADD CONSTRAINT customer_debit_note_
 ALTER TABLE public.customer_debit_note_items ADD CONSTRAINT customer_debit_note_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL;
 ALTER TABLE public.customer_debit_note_items ADD CONSTRAINT customer_debit_note_items_tax_code_id_fkey FOREIGN KEY (tax_code_id) REFERENCES tax_codes(id) ON DELETE SET NULL;
 ALTER TABLE public.customer_debit_notes ADD CONSTRAINT chk_customer_debit_amounts CHECK (((subtotal >= (0)::numeric) AND (tax_amount >= (0)::numeric) AND (total_amount >= (0)::numeric) AND (applied_amount >= (0)::numeric) AND (applied_amount <= total_amount)));
-ALTER TABLE public.customer_debit_notes ADD CONSTRAINT chk_customer_debit_currency CHECK ((((currency_id IS NULL) AND ((original_currency)::text = 'EGP'::text) AND (exchange_rate = (1)::numeric)) OR (currency_id IS NOT NULL)));
+ALTER TABLE public.customer_debit_notes ADD CONSTRAINT chk_customer_debit_currency CHECK (((currency_id IS NOT NULL) OR (exchange_rate = (1)::numeric)));
 ALTER TABLE public.customer_debit_notes ADD CONSTRAINT chk_customer_debit_valid_amounts CHECK (((total_amount = (subtotal + tax_amount)) AND (subtotal >= (0)::numeric) AND (tax_amount >= (0)::numeric) AND (total_amount > (0)::numeric) AND (applied_amount >= (0)::numeric) AND (applied_amount <= total_amount)));
 ALTER TABLE public.customer_debit_notes ADD CONSTRAINT customer_debit_notes_approval_status_check CHECK (((approval_status)::text = ANY ((ARRAY['draft'::character varying, 'pending_approval'::character varying, 'approved'::character varying, 'rejected'::character varying])::text[])));
 ALTER TABLE public.customer_debit_notes ADD CONSTRAINT customer_debit_notes_branch_id_fkey FOREIGN KEY (branch_id) REFERENCES branches(id) ON DELETE SET NULL;
@@ -7607,9 +7607,11 @@ CREATE TRIGGER trg_touch_ai_conversations_updated_at BEFORE UPDATE ON public.ai_
 CREATE TRIGGER ai_knowledge_chunks_touch_updated_at BEFORE UPDATE ON public.ai_knowledge_chunks FOR EACH ROW EXECUTE FUNCTION ai_knowledge_chunks_touch_updated_at();
 CREATE TRIGGER trg_rate_limits_updated_at BEFORE UPDATE ON public.api_rate_limits FOR EACH ROW EXECUTE FUNCTION update_rate_limits_updated_at();
 CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.approval_requests FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.approval_workflows FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency_code');
 CREATE TRIGGER audit_asset_transactions AFTER INSERT OR DELETE OR UPDATE ON public.asset_transactions FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER trg_attendance_record_origin BEFORE INSERT OR UPDATE OF branch_id, source, employee_id ON public.attendance_records FOR EACH ROW EXECUTE FUNCTION attendance_record_says_its_origin();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.bank_voucher_requests FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by|reviewed_by|مُعتَمِدُ السَّنَد لا يَجوزُ أن يكون هو نفسَه مُنشِئَه.', 'reviewed_by|posted_by|مُنَفِّذُ السَّنَد لا يَجوزُ أن يكون هو نفسَه مُعتَمِدَه.');
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.bank_voucher_requests FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency');
 CREATE TRIGGER trg_block_bank_voucher_delete BEFORE DELETE ON public.bank_voucher_requests FOR EACH ROW EXECUTE FUNCTION block_bank_voucher_delete_after_post();
 CREATE TRIGGER trg_block_bank_voucher_immutable_edits BEFORE UPDATE ON public.bank_voucher_requests FOR EACH ROW EXECUTE FUNCTION block_bank_voucher_immutable_edits();
 CREATE TRIGGER trg_enforce_branch_isolation_bank_vouchers BEFORE INSERT OR UPDATE ON public.bank_voucher_requests FOR EACH ROW EXECUTE FUNCTION enforce_branch_isolation();
@@ -7625,6 +7627,7 @@ CREATE TRIGGER trg_validate_bill_matching AFTER INSERT OR UPDATE ON public.bill_
 CREATE TRIGGER trg_generate_invoice_number BEFORE INSERT ON public.billing_invoices FOR EACH ROW EXECUTE FUNCTION generate_invoice_number();
 CREATE TRIGGER aa_bill_receipt_transition_guard BEFORE UPDATE ON public.bills FOR EACH ROW EXECUTE FUNCTION bill_receipt_transition_guard_trg();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.bills FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by|approved_by|مُعتَمِدُ فاتورةِ الشراء لا يَجوزُ أن يكون هو نفسَه مُنشِئَها.');
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.bills FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency_code', 'original_currency');
 CREATE TRIGGER audit_bills AFTER INSERT OR DELETE OR UPDATE ON public.bills FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER audit_bills_status_changes AFTER UPDATE ON public.bills FOR EACH ROW WHEN ((old.status IS DISTINCT FROM new.status)) EXECUTE FUNCTION audit_status_changes();
 CREATE TRIGGER bill_amendment_reset_approval BEFORE UPDATE ON public.bills FOR EACH ROW EXECUTE FUNCTION bill_amendment_reset_approval_trg();
@@ -7653,9 +7656,11 @@ CREATE TRIGGER trg_z_sync_display_totals_bills BEFORE UPDATE OF total_amount, su
 CREATE TRIGGER trigger_auto_generate_bill_number BEFORE INSERT ON public.bills FOR EACH ROW EXECUTE FUNCTION auto_generate_bill_number();
 CREATE TRIGGER trigger_prevent_bill_deletion_with_vendor_credit BEFORE DELETE ON public.bills FOR EACH ROW EXECUTE FUNCTION prevent_bill_deletion_with_vendor_credit();
 CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.bills FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.booking_payments FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency_code');
 CREATE TRIGGER trg_booking_payments_sync AFTER INSERT OR DELETE OR UPDATE ON public.booking_payments FOR EACH ROW EXECUTE FUNCTION bkg_trg_sync_payment_status();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.booking_stock_withdrawals FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('requested_by|decided_by|مَن يَبُتُّ فى سحبِ مخزونِ الحجز لا يَجوزُ أن يكون هو نفسَه طالبَه.');
 CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.booking_stock_withdrawals FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.bookings FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency_code');
 CREATE TRIGGER bkg_request_discount_approval AFTER INSERT OR UPDATE OF discount_amount ON public.bookings FOR EACH ROW EXECUTE FUNCTION bkg_request_discount_approval_trg();
 CREATE TRIGGER bonuses_reverse_on_booking_delete BEFORE DELETE ON public.bookings FOR EACH ROW EXECUTE FUNCTION reverse_bonuses_on_booking_delete();
 CREATE TRIGGER booking_staff_from_service_trg BEFORE INSERT OR UPDATE ON public.bookings FOR EACH ROW EXECUTE FUNCTION validate_booking_staff_from_service();
@@ -7671,6 +7676,7 @@ CREATE TRIGGER branches_outlet_lifecycle AFTER INSERT OR UPDATE ON public.branch
 CREATE TRIGGER trg_create_default_cost_center AFTER INSERT ON public.branches FOR EACH ROW EXECUTE FUNCTION create_default_cost_center_for_branch();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.budgets FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by|approved_by|مُعتَمِدُ الموازنة لا يَجوزُ أن يكون هو نفسَه مُنشِئَها.');
 CREATE TRIGGER trg_sync_shareholder_percentages AFTER INSERT OR DELETE OR UPDATE ON public.capital_contributions FOR EACH ROW EXECUTE FUNCTION sync_shareholder_percentages();
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.chart_of_accounts FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('original_currency');
 CREATE TRIGGER audit_chart_of_accounts AFTER INSERT OR DELETE OR UPDATE ON public.chart_of_accounts FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER trg_coa_cycle_check BEFORE INSERT OR UPDATE OF parent_id ON public.chart_of_accounts FOR EACH ROW EXECUTE FUNCTION check_account_cycle();
 CREATE TRIGGER trg_coa_protection BEFORE DELETE OR UPDATE ON public.chart_of_accounts FOR EACH ROW EXECUTE FUNCTION prevent_critical_account_changes();
@@ -7734,6 +7740,8 @@ CREATE TRIGGER trg_calc_debit_totals_insert AFTER INSERT ON public.customer_debi
 CREATE TRIGGER trg_calc_debit_totals_update AFTER UPDATE ON public.customer_debit_note_items FOR EACH ROW EXECUTE FUNCTION calculate_customer_debit_note_totals();
 CREATE TRIGGER trg_prevent_customer_debit_item_deletion BEFORE DELETE ON public.customer_debit_note_items FOR EACH ROW EXECUTE FUNCTION prevent_customer_debit_item_deletion();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.customer_debit_notes FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by|approved_by|مُعتَمِدُ إشعارِ المدين لا يَجوزُ أن يكون هو نفسَه مُنشِئَه.');
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.customer_debit_notes FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('original_currency');
+CREATE TRIGGER ac_debit_note_no_foreign_without_fx BEFORE INSERT OR UPDATE ON public.customer_debit_notes FOR EACH ROW EXECUTE FUNCTION erp_debit_note_no_foreign_without_fx();
 CREATE TRIGGER audit_customer_debit_notes AFTER INSERT OR DELETE OR UPDATE ON public.customer_debit_notes FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER trg_check_invoice_time_lock BEFORE INSERT ON public.customer_debit_notes FOR EACH ROW EXECUTE FUNCTION check_invoice_time_lock();
 CREATE TRIGGER trg_prevent_customer_debit_deletion BEFORE DELETE ON public.customer_debit_notes FOR EACH ROW EXECUTE FUNCTION prevent_customer_debit_note_deletion();
@@ -7741,8 +7749,10 @@ CREATE TRIGGER trg_prevent_customer_debit_modification BEFORE UPDATE ON public.c
 CREATE TRIGGER trg_update_customer_debit_note_status BEFORE UPDATE OF applied_amount ON public.customer_debit_notes FOR EACH ROW EXECUTE FUNCTION update_customer_debit_note_status();
 CREATE TRIGGER trg_validate_customer_branch BEFORE INSERT OR UPDATE OF customer_id, branch_id ON public.customer_debit_notes FOR EACH ROW EXECUTE FUNCTION validate_customer_branch_isolation();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.customer_refund_requests FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('requested_by|approved_by|مُعتَمِدُ استردادِ العميل لا يَجوزُ أن يكون هو نفسَه طالبَه.');
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.customer_refund_requests FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency');
 CREATE TRIGGER notif_done_customer_refunds AFTER UPDATE ON public.customer_refund_requests FOR EACH ROW WHEN (((old.status IS DISTINCT FROM new.status) AND (new.status = ANY (ARRAY['executed'::text, 'rejected'::text, 'cancelled'::text])))) EXECUTE FUNCTION notif_complete_actions();
 CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.customer_refund_requests FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.customers FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('balance_currency');
 CREATE TRIGGER audit_customers AFTER INSERT OR DELETE OR UPDATE ON public.customers FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER audit_customers_detailed AFTER UPDATE ON public.customers FOR EACH ROW EXECUTE FUNCTION audit_customer_changes();
 CREATE TRIGGER check_duplicate_customer_phone BEFORE INSERT OR UPDATE OF phone ON public.customers FOR EACH ROW EXECUTE FUNCTION prevent_duplicate_customer_phone();
@@ -7765,9 +7775,11 @@ CREATE TRIGGER trg_elimination_rules_updated_at BEFORE UPDATE ON public.eliminat
 CREATE TRIGGER trg_employee_bonus_config_updated_at BEFORE UPDATE ON public.employee_bonus_config FOR EACH ROW EXECUTE FUNCTION set_employee_bonus_config_updated_at();
 CREATE TRIGGER trg_employee_branch_from_member BEFORE INSERT OR UPDATE ON public.employees FOR EACH ROW EXECUTE FUNCTION employee_branch_from_member_trg();
 CREATE TRIGGER trg_entity_relationships_updated_at BEFORE UPDATE ON public.entity_relationships FOR EACH ROW EXECUTE FUNCTION ic_set_updated_at();
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.estimates FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency_code');
 CREATE TRIGGER trg_estimates_auto_set_creator BEFORE INSERT ON public.estimates FOR EACH ROW EXECUTE FUNCTION auto_set_created_by_user_id();
 CREATE TRIGGER trg_validate_customer_branch BEFORE INSERT OR UPDATE OF customer_id, branch_id ON public.estimates FOR EACH ROW EXECUTE FUNCTION validate_customer_branch_isolation();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.expenses FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by|approved_by|مُعتَمِدُ المَصروف لا يَجوزُ أن يكون هو نفسَه مُنشِئَه.', 'approved_by|paid_by|مُنَفِّذُ الصَّرف لا يَجوزُ أن يكون هو نفسَه مُعتَمِدَ المَصروف.');
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.expenses FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency_code');
 CREATE TRIGGER expenses_updated_at_trigger BEFORE UPDATE ON public.expenses FOR EACH ROW EXECUTE FUNCTION update_expenses_updated_at();
 CREATE TRIGGER trg_block_expense_delete BEFORE DELETE ON public.expenses FOR EACH ROW EXECUTE FUNCTION block_expense_delete_after_post();
 CREATE TRIGGER trg_block_expense_immutable_edits BEFORE UPDATE ON public.expenses FOR EACH ROW EXECUTE FUNCTION block_expense_immutable_edits();
@@ -7831,6 +7843,7 @@ CREATE TRIGGER trigger_auto_generate_transfer_number BEFORE INSERT ON public.inv
 CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.inventory_transfers FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER trg_validate_write_off_items BEFORE INSERT OR UPDATE ON public.inventory_write_off_items FOR EACH ROW EXECUTE FUNCTION validate_write_off_items();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.inventory_write_offs FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by|approved_by|مُعتَمِدُ الإهلاك لا يَجوزُ أن يكون هو نفسَه مُنشِئَه.');
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.inventory_write_offs FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency_code');
 CREATE TRIGGER audit_inventory_write_offs AFTER INSERT OR DELETE OR UPDATE ON public.inventory_write_offs FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER trg_validate_write_off_approval BEFORE UPDATE ON public.inventory_write_offs FOR EACH ROW EXECUTE FUNCTION validate_write_off_approval();
 CREATE TRIGGER trg_write_off_updated_at BEFORE UPDATE ON public.inventory_write_offs FOR EACH ROW EXECUTE FUNCTION update_write_off_updated_at();
@@ -7841,6 +7854,7 @@ CREATE TRIGGER invoice_item_amendment_reset_approval AFTER INSERT OR DELETE OR U
 CREATE TRIGGER invoice_item_evaluate_discount AFTER INSERT OR DELETE OR UPDATE ON public.invoice_items FOR EACH ROW EXECUTE FUNCTION invoice_item_evaluate_discount_trg();
 CREATE TRIGGER invoice_items_sync_warehouse_status AFTER INSERT OR DELETE OR UPDATE ON public.invoice_items FOR EACH ROW EXECUTE FUNCTION sync_invoice_warehouse_from_items_trg();
 CREATE TRIGGER trg_prevent_paid_invoice_items_mod BEFORE INSERT OR DELETE OR UPDATE ON public.invoice_items FOR EACH ROW EXECUTE FUNCTION prevent_paid_invoice_items_modification();
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.invoices FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency_code', 'original_currency');
 CREATE TRIGGER audit_invoices AFTER INSERT OR DELETE OR UPDATE ON public.invoices FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER audit_invoices_status_changes AFTER UPDATE ON public.invoices FOR EACH ROW WHEN ((old.status IS DISTINCT FROM new.status)) EXECUTE FUNCTION audit_status_changes();
 CREATE TRIGGER bonuses_reverse_on_invoice_delete BEFORE DELETE ON public.invoices FOR EACH ROW EXECUTE FUNCTION reverse_bonuses_on_invoice_delete();
@@ -7880,6 +7894,7 @@ CREATE TRIGGER trg_z_sync_display_totals_invoices BEFORE UPDATE OF total_amount,
 CREATE TRIGGER trigger_auto_generate_invoice_number BEFORE INSERT ON public.invoices FOR EACH ROW EXECUTE FUNCTION auto_generate_invoice_number();
 CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.invoices FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER trg_jobs_queue_updated_at BEFORE UPDATE ON public.jobs_queue FOR EACH ROW EXECUTE FUNCTION update_jobs_queue_updated_at();
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency_code', 'original_currency');
 CREATE TRIGGER audit_journal_entries AFTER INSERT OR DELETE OR UPDATE ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER trg_check_invoice_entry_before_payment BEFORE INSERT ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION check_invoice_entry_before_payment();
 CREATE TRIGGER trg_cleanup_inventory_on_journal_delete AFTER DELETE ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION cleanup_inventory_on_journal_delete();
@@ -8006,6 +8021,7 @@ CREATE TRIGGER recalc_bill_after_allocation AFTER INSERT OR DELETE OR UPDATE ON 
 CREATE TRIGGER recalc_invoice_after_allocation AFTER INSERT OR DELETE OR UPDATE ON public.payment_allocations FOR EACH ROW EXECUTE FUNCTION recalc_invoice_on_allocation_change();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.payments FOR EACH ROW WHEN ((new.supplier_id IS NOT NULL)) EXECUTE FUNCTION erp_sod_guard('created_by|approved_by|مُعتَمِدُ مدفوعةِ المورّد لا يَجوزُ أن يكون هو نفسَه مُنشِئَها.');
 CREATE TRIGGER aa_payment_names_its_author BEFORE INSERT ON public.payments FOR EACH ROW EXECUTE FUNCTION enforce_payment_names_its_author();
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.payments FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency_code', 'original_currency');
 CREATE TRIGGER audit_payments AFTER INSERT OR DELETE OR UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER audit_payments_trigger AFTER INSERT OR DELETE OR UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION audit_payment_changes();
 CREATE TRIGGER notif_done_payments AFTER UPDATE ON public.payments FOR EACH ROW WHEN (((old.status IS DISTINCT FROM new.status) AND (new.status = ANY (ARRAY['approved'::text, 'rejected'::text, 'cancelled'::text])))) EXECUTE FUNCTION notif_complete_actions();
@@ -8065,6 +8081,7 @@ CREATE TRIGGER trg_production_order_receipt_events_validate_context BEFORE INSER
 CREATE TRIGGER trg_production_order_receipt_lines_immutability BEFORE DELETE OR UPDATE ON public.production_order_receipt_lines FOR EACH ROW EXECUTE FUNCTION mpoe_guard_receipt_line_immutability();
 CREATE TRIGGER trg_production_order_receipt_lines_insert_guard BEFORE INSERT ON public.production_order_receipt_lines FOR EACH ROW EXECUTE FUNCTION mpoe_guard_receipt_line_insert();
 CREATE TRIGGER trg_production_order_receipt_lines_validate_context BEFORE INSERT ON public.production_order_receipt_lines FOR EACH ROW EXECUTE FUNCTION mpoe_trg_validate_receipt_line_context();
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.products FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('original_currency');
 CREATE TRIGGER audit_products AFTER INSERT OR DELETE OR UPDATE ON public.products FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER audit_products_price_changes AFTER UPDATE ON public.products FOR EACH ROW WHEN (((old.unit_price IS DISTINCT FROM new.unit_price) OR (old.cost_price IS DISTINCT FROM new.cost_price))) EXECUTE FUNCTION audit_price_changes();
 CREATE TRIGGER svc_trg_sync_from_product AFTER UPDATE ON public.products FOR EACH ROW EXECUTE FUNCTION svc_sync_from_product();
@@ -8077,6 +8094,7 @@ CREATE TRIGGER po_item_protect_approved BEFORE INSERT OR DELETE OR UPDATE ON pub
 CREATE TRIGGER po_item_request_discount_approval AFTER INSERT OR DELETE OR UPDATE OF quantity, unit_price, discount_percent ON public.purchase_order_items FOR EACH ROW EXECUTE FUNCTION po_item_evaluate_discount_trg();
 CREATE TRIGGER trg_purchase_order_items_price_the_line BEFORE INSERT OR UPDATE ON public.purchase_order_items FOR EACH ROW EXECUTE FUNCTION purchase_item_price_the_line();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by_user_id|approved_by|مُعتَمِدُ أمرِ الشراء لا يَجوزُ أن يكون هو نفسَه مُنشِئَه.');
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency');
 CREATE TRIGGER audit_purchase_orders AFTER INSERT OR DELETE OR UPDATE ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER audit_purchase_orders_status_changes AFTER UPDATE ON public.purchase_orders FOR EACH ROW WHEN ((old.status IS DISTINCT FROM new.status)) EXECUTE FUNCTION audit_status_changes();
 CREATE TRIGGER po_branch_manager_notify AFTER INSERT OR UPDATE OF status ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION po_branch_manager_notify_trg();
@@ -8091,6 +8109,7 @@ CREATE TRIGGER trg_sync_purchase_order_to_bill AFTER UPDATE ON public.purchase_o
 CREATE TRIGGER trigger_auto_generate_po_number BEFORE INSERT ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION auto_generate_po_number();
 CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.purchase_orders FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.purchase_requests FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('requested_by|approved_by|مُعتَمِدُ طلبِ الشراء لا يَجوزُ أن يكون هو نفسَه طالبَه.');
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.purchase_requests FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency');
 CREATE TRIGGER trg_auto_generate_purchase_request_number BEFORE INSERT ON public.purchase_requests FOR EACH ROW WHEN (((new.request_number IS NULL) OR (new.request_number = ''::text))) EXECUTE FUNCTION auto_generate_purchase_request_number();
 CREATE TRIGGER ensure_pr_isolation BEFORE INSERT OR UPDATE ON public.purchase_return_items FOR EACH ROW EXECUTE FUNCTION validate_product_branch_isolation();
 CREATE TRIGGER ensure_pr_item_branch_isolation BEFORE INSERT OR UPDATE ON public.purchase_return_items FOR EACH ROW EXECUTE FUNCTION validate_product_branch_isolation();
@@ -8098,6 +8117,7 @@ CREATE TRIGGER trg_check_purchase_return_item_quantity BEFORE INSERT OR UPDATE O
 CREATE TRIGGER trg_check_purchase_return_warehouse_stock BEFORE INSERT OR UPDATE OF product_id, quantity, warehouse_id, purchase_return_id ON public.purchase_return_items FOR EACH ROW EXECUTE FUNCTION check_purchase_return_item_warehouse_stock();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.purchase_returns FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by|approved_by|مُعتَمِدُ مرتجعِ الشراء لا يَجوزُ أن يكون هو نفسَه مُنشِئَه.');
 CREATE TRIGGER aa_purchase_return_set_created_by BEFORE INSERT ON public.purchase_returns FOR EACH ROW EXECUTE FUNCTION purchase_return_set_created_by_trg();
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.purchase_returns FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('original_currency');
 CREATE TRIGGER audit_purchase_returns AFTER INSERT OR DELETE OR UPDATE ON public.purchase_returns FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER notif_done_purchase_returns AFTER UPDATE ON public.purchase_returns FOR EACH ROW WHEN (((old.workflow_status IS DISTINCT FROM new.workflow_status) AND (new.workflow_status = ANY (ARRAY['approved'::text, 'rejected'::text, 'confirmed'::text, 'completed'::text])))) EXECUTE FUNCTION notif_complete_actions();
 CREATE TRIGGER purchase_return_approval_insert BEFORE INSERT ON public.purchase_returns FOR EACH ROW EXECUTE FUNCTION purchase_return_approval_insert_trg();
@@ -8113,6 +8133,7 @@ CREATE TRIGGER ensure_so_isolation BEFORE INSERT OR UPDATE ON public.sales_order
 CREATE TRIGGER ensure_so_item_branch_isolation BEFORE INSERT OR UPDATE ON public.sales_order_items FOR EACH ROW EXECUTE FUNCTION validate_product_branch_isolation();
 CREATE TRIGGER so_item_request_discount_approval AFTER INSERT OR DELETE OR UPDATE OF quantity, unit_price, discount_percent ON public.sales_order_items FOR EACH ROW EXECUTE FUNCTION so_item_evaluate_discount_trg();
 CREATE TRIGGER trg_so_items_mirror_to_invoice AFTER INSERT OR DELETE OR UPDATE ON public.sales_order_items FOR EACH ROW EXECUTE FUNCTION so_items_mirror_to_invoice_trg();
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency');
 CREATE TRIGGER audit_sales_orders AFTER INSERT OR DELETE OR UPDATE ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER enforce_governance_sales_orders BEFORE INSERT OR UPDATE ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION check_governance_scope();
 CREATE TRIGGER so_branch_manager_notify AFTER INSERT OR UPDATE OF status ON public.sales_orders FOR EACH ROW EXECUTE FUNCTION so_branch_manager_notify_trg();
@@ -8147,11 +8168,13 @@ CREATE TRIGGER trg_validate_customer_branch BEFORE INSERT OR UPDATE OF customer_
 CREATE TRIGGER service_products_updated_at BEFORE UPDATE ON public.service_products FOR EACH ROW EXECUTE FUNCTION service_products_set_updated_at();
 CREATE TRIGGER trg_service_schedules_set_updated_at BEFORE UPDATE ON public.service_schedules FOR EACH ROW EXECUTE FUNCTION svc_set_updated_at();
 CREATE TRIGGER trg_service_schedules_validate BEFORE INSERT OR UPDATE ON public.service_schedules FOR EACH ROW EXECUTE FUNCTION svc_trg_validate_schedule();
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.services FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency_code');
 CREATE TRIGGER svc_trg_inherit_pricing BEFORE INSERT OR UPDATE ON public.services FOR EACH ROW EXECUTE FUNCTION svc_inherit_pricing_from_product();
 CREATE TRIGGER svc_trg_validate_product_catalog BEFORE INSERT OR UPDATE OF product_catalog_id, company_id ON public.services FOR EACH ROW EXECUTE FUNCTION svc_validate_product_catalog_company();
 CREATE TRIGGER trg_services_guard_code BEFORE UPDATE ON public.services FOR EACH ROW WHEN ((new.service_code IS DISTINCT FROM old.service_code)) EXECUTE FUNCTION svc_guard_service_code_immutable();
 CREATE TRIGGER trg_services_set_updated_at BEFORE UPDATE ON public.services FOR EACH ROW EXECUTE FUNCTION svc_set_updated_at();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.shareholder_drawings FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by|approved_by|مُعتَمِدُ مسحوباتِ الشريك لا يَجوزُ أن يكون هو نفسَه مُنشِئَها.');
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.shareholder_drawings FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency_code');
 CREATE TRIGGER audit_shareholders AFTER INSERT OR DELETE OR UPDATE ON public.shareholders FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER trg_cleanup_shareholder_accounts AFTER DELETE ON public.shareholders FOR EACH ROW EXECUTE FUNCTION cleanup_shareholder_accounts();
 CREATE TRIGGER trg_provision_shareholder_accounts AFTER INSERT ON public.shareholders FOR EACH ROW EXECUTE FUNCTION provision_shareholder_accounts();
@@ -8159,11 +8182,13 @@ CREATE TRIGGER shipping_providers_protect_outlets BEFORE DELETE ON public.shippi
 CREATE TRIGGER trg_subscriptions_updated_at BEFORE UPDATE ON public.subscriptions FOR EACH ROW EXECUTE FUNCTION update_subscriptions_updated_at();
 CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.subscriptions FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER supplier_debit_credits_updated_at BEFORE UPDATE ON public.supplier_debit_credits FOR EACH ROW EXECUTE FUNCTION update_supplier_debit_credits_updated_at();
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.suppliers FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('balance_currency');
 CREATE TRIGGER audit_suppliers AFTER INSERT OR DELETE OR UPDATE ON public.suppliers FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
 CREATE TRIGGER trg_suppliers_auto_set_creator BEFORE INSERT ON public.suppliers FOR EACH ROW EXECUTE FUNCTION auto_set_created_by_user_id();
 CREATE TRIGGER trg_system_audit_log_immutable BEFORE DELETE OR UPDATE ON public.system_audit_log FOR EACH ROW EXECUTE FUNCTION prevent_audit_log_modification();
 CREATE TRIGGER trg_route_system_events BEFORE INSERT ON public.system_events FOR EACH ROW EXECUTE FUNCTION route_system_events_to_notifications();
 CREATE TRIGGER audit_tax_codes AFTER INSERT OR DELETE OR UPDATE ON public.tax_codes FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.user_bonuses FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('bonus_currency');
 CREATE TRIGGER trigger_user_branch_access_changed AFTER INSERT OR DELETE OR UPDATE ON public.user_branch_access FOR EACH ROW EXECUTE FUNCTION trigger_user_security_event_allowed_branches_changed();
 CREATE TRIGGER set_updated_at_user_notification_preferences BEFORE UPDATE ON public.user_notification_preferences FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER trg_journal_on_vendor_credit_application AFTER INSERT ON public.vendor_credit_applications FOR EACH ROW EXECUTE FUNCTION update_bill_on_credit_application();
@@ -8182,6 +8207,7 @@ CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.vendor_payment
 CREATE TRIGGER notif_done_vendor_corrections AFTER UPDATE ON public.vendor_payment_correction_requests FOR EACH ROW WHEN (((old.status IS DISTINCT FROM new.status) AND (new.status = ANY (ARRAY['executed'::text, 'rejected'::text, 'cancelled'::text])))) EXECUTE FUNCTION notif_complete_actions();
 CREATE TRIGGER zz_erp_notice_follows_document AFTER DELETE ON public.vendor_payment_correction_requests FOR EACH ROW EXECUTE FUNCTION erp_notice_follows_its_document();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.vendor_refund_requests FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by|approved_by|مُعتَمِدُ طلبِ استردادِ المورّد لا يَجوزُ أن يكون هو نفسَه مُنشِئَه.');
+CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.vendor_refund_requests FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency');
 CREATE TRIGGER trg_warehouses_branch_scope BEFORE INSERT OR UPDATE ON public.warehouses FOR EACH ROW EXECUTE FUNCTION ensure_warehouse_cost_center_from_branch_default();
 
 -- ===================== RLS =====================
@@ -11083,6 +11109,8 @@ REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_62_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_62_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_63_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_63_check() TO service_role;
+REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_64_check() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_64_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_6_check() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.assert_baseline_v3_75_6_check() TO service_role;
 REVOKE ALL ON FUNCTION public.assert_baseline_v3_75_7_check() FROM PUBLIC;
@@ -11968,6 +11996,10 @@ GRANT EXECUTE ON FUNCTION public.erp_company_senior_count(p_company_id uuid) TO 
 GRANT EXECUTE ON FUNCTION public.erp_company_senior_count(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_creator_needs_no_approval(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_creator_needs_no_approval(p_company_id uuid, p_user_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.erp_currency_is_asked_at_birth() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_currency_is_asked_at_birth() TO service_role;
+REVOKE ALL ON FUNCTION public.erp_debit_note_no_foreign_without_fx() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_debit_note_no_foreign_without_fx() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_doors_that_do_not_ask() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_doors_that_do_not_ask() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_doors_that_do_not_ask() TO service_role;

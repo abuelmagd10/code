@@ -57,7 +57,11 @@ const { withLiveDatabase } = require("./lib/live-db")
 // مُثبَّتٌ فى الاتّجاهَين. **والدفعةُ التى كسبَت هى التى تُثبِّت.**
 const PINNED_FUNCS = 0
 const PINNED_SITES = 0
-const PINNED_DEFAULTS = 30
+// v3.75.64 — «والصفُّ يُولَدُ بعملةِ صاحبِه»: القيمُ الافتراضيّاتُ التسعُ
+// والعشرون نُزِعَت كلُّها وقامَ مُشغِّلُ الميلادِ يسألُ البيتَ عن الصامت،
+// وعمودُ تسعيرِ المنصّةِ صارَ مُعلَناً بالاسمِ كإخوتِه لا دَيناً معدوداً —
+// والرقمُ صفرٌ مُثبَّتٌ فى الاتّجاهَين. **والدفعةُ التى كسبَت هى التى تُثبِّت.**
+const PINNED_DEFAULTS = 0
 
 /** البيتُ الواحدُ وعنوانُ السداد. */
 const HOME = "erp_company_base_currency"
@@ -118,6 +122,12 @@ const HEALED = [
   { name: "sales_return_branch_manager_notify_trg",     arg: "NEW.company_id" },
   { name: "sales_return_notify_approval_trg",           arg: "NEW.company_id" },
   { name: "so_branch_manager_notify_trg",               arg: "NEW.company_id" },
+  // v3.75.64 — «والصفُّ يُولَدُ بعملةِ صاحبِه»: مُشغِّلُ الميلادِ الواحدُ
+  // يختمُ الصامتَ بسؤالِ البيت، وحارسُ إشعارِ المَدينِ يرفضُ أجنبيّةً بلا
+  // صفِّ صرفٍ بسؤالِ البيتِ نفسِه — كلاهما وُلدَ فى الدفعةِ التى نزعَت
+  // القيمَ الافتراضيّات.
+  { name: "erp_currency_is_asked_at_birth",             arg: "(v_row->>'company_id')::uuid" },
+  { name: "erp_debit_note_no_foreign_without_fx",       arg: "NEW.company_id" },
 ]
 
 /**
@@ -136,6 +146,10 @@ const DECLARED = {
   "subscription_plans.base_currency": {
     why: "**عملةُ المشروعِ نفسِه** فى تسعيرِ الاشتراكات، لا عملةَ عميل. وهى قرارُ صاحبِ المنصّةِ لا قرارُ الشركةِ المشتركة",
     lift: "يُرفَع حين تُنقَلُ عملةُ التسعيرِ إلى إعداداتِ المنصّةِ فيصيرُ العمودُ بلا افتراض",
+  },
+  "company_seats.display_currency": {
+    why: "**عملةُ عرضِ تسعيرِ المنصّةِ لمقاعدِها** لا عملةَ دفاترِ شركة (كأختِها subscription_plans.base_currency): مساراتُ الفوترةِ تكتبُها صراحةً من محرِّكِ التسعير، والافتراضُ يُطابقُ أساسَ تسعيرِ المنصّةِ المُعلَنَ لا مالَ عميل",
+    lift: "يُرفَع حين يكتبُ مسارُ المقاعدِ increase_seats عملةَ التسعيرِ صراحةً فيصيرُ العمودُ بلا افتراض",
   },
 }
 
@@ -398,13 +412,14 @@ const BLANK = "regexp_replace(regexp_replace(p.prosrc, '/\\*.*?\\*/', ' ', 'gs')
   const vSites = judgePin(nSites, PINNED_SITES)
 
   // ── (٢) الأعمدةُ التى تخترعُ عملةً لشركة ────────────────────────────────
-  const tenant = data.defaults.filter((r) => r.tenant)
+  // v3.75.64 — المُعلَنُ بالاسمِ لا يُعَدُّ ديناً ولو سكنَ جدولَ شركة.
+  const tenant = data.defaults.filter((r) => r.tenant && !DECLARED[r.col])
   const others = data.defaults.filter((r) => !r.tenant)
   const vDefaults = judgePin(tenant.length, PINNED_DEFAULTS)
 
   const undeclared = others.filter((r) => !DECLARED[r.col]).map((r) => r.col + " = " + r.dflt)
   if (undeclared.length) problems.push(["عمودٌ لا يخصُّ شركةً يُسمّى عملةً ولم يُعلَنْ بسببِه وشرطِ رفعِه", undeclared])
-  const dead = judgeDeadDeclarations(others.map((r) => r.col))
+  const dead = judgeDeadDeclarations(data.defaults.map((r) => r.col))
   if (dead.length) problems.push(["إعلانٌ لم يعُدْ له عمودٌ حىّ — **ودَينٌ يُكتَبُ ولا يُسدَّدُ يصيرُ عادة**", dead])
 
   // ── (٣)(٤)(٥) الخواصُّ التى وُلدت فى v3.75.52 ───────────────────────────

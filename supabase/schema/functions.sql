@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-19T11:36:32.445Z
--- Routines: 1410
+-- Generated: 2026-08-19T12:36:49.066Z
+-- Routines: 1413
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -8921,6 +8921,171 @@ BEGIN
   END IF;
 
   RETURN 'v3.75.63 ok — لا دالّةَ فى القاعدةِ تخترعُ عملةً، والسبعُ والعشرون تنادى البيتَ الواحدَ كلٌّ بوسيطِه، والبيتُ قائمٌ يصرخُ ولا يخترع، ولا حارسَ فقدَ صرخته';
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- assert_baseline_v3_75_64_check()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.assert_baseline_v3_75_64_check()
+ RETURNS text
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
+AS $function$
+DECLARE
+  v_ccy     text := '(EGP|USD|SAR|EUR|GBP|AED|KWD|JOD|QAR|BHD|OMR)';
+  v_n       int;
+  v_names   text;
+  v_missing text := '';
+  v_secdef  int; v_home_call int;
+  v_txt     text;
+  v_home_n int; v_home_secdef int; v_home_screams int; v_rls int;
+  r record;
+BEGIN
+  -- (أ) لا قيمةَ افتراضيّةً تُسمّى عملةً خارجَ المُعلَناتِ الأربع
+  SELECT count(*), string_agg(c.relname || '.' || a.attname, ' · ')
+    INTO v_n, v_names
+  FROM pg_attrdef d
+  JOIN pg_class c ON c.oid = d.adrelid
+  JOIN pg_namespace ns ON ns.oid = c.relnamespace
+  JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+  WHERE ns.nspname = 'public'
+    AND pg_get_expr(d.adbin, d.adrelid) ~ ('''' || v_ccy || '''')
+    AND (c.relname || '.' || a.attname) NOT IN
+        ('companies.base_currency', 'pending_companies.currency',
+         'subscription_plans.base_currency', 'company_seats.display_currency');
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'v3.75.64: % عموداً عادَ يخترعُ عملةً بقيمةٍ افتراضيّة: % — والمقيسُ يومَ الشحنِ صفر.', v_n, v_names;
+  END IF;
+
+  -- (أ٢) والمُعلَناتُ الأربعُ حيّةٌ بأسمائِها
+  SELECT count(*) INTO v_n
+  FROM pg_attrdef d
+  JOIN pg_class c ON c.oid = d.adrelid
+  JOIN pg_namespace ns ON ns.oid = c.relnamespace
+  JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+  WHERE ns.nspname = 'public'
+    AND pg_get_expr(d.adbin, d.adrelid) ~ ('''' || v_ccy || '''')
+    AND (c.relname || '.' || a.attname) IN
+        ('companies.base_currency', 'pending_companies.currency',
+         'subscription_plans.base_currency', 'company_seats.display_currency');
+  IF v_n <> 4 THEN
+    RAISE EXCEPTION 'v3.75.64: المُعلَناتُ الأربعُ ليست أربعاً (وُجد %) — إعلانٌ ماتَ أو وُلدَ خلسةً.', v_n;
+  END IF;
+
+  -- (ب) الخمسةُ والعشرون مُشغِّلاً واقفون قبلَ الإدخالِ كلٌّ بأعمدتِه
+  FOR r IN
+    SELECT * FROM (VALUES
+      ('approval_workflows', '''currency_code'''),
+      ('bank_voucher_requests', '''currency'''),
+      ('bills', '''currency_code'', ''original_currency'''),
+      ('booking_payments', '''currency_code'''),
+      ('bookings', '''currency_code'''),
+      ('chart_of_accounts', '''original_currency'''),
+      ('customer_debit_notes', '''original_currency'''),
+      ('customer_refund_requests', '''currency'''),
+      ('customers', '''balance_currency'''),
+      ('estimates', '''currency_code'''),
+      ('expenses', '''currency_code'''),
+      ('inventory_write_offs', '''currency_code'''),
+      ('invoices', '''currency_code'', ''original_currency'''),
+      ('journal_entries', '''currency_code'', ''original_currency'''),
+      ('payments', '''currency_code'', ''original_currency'''),
+      ('products', '''original_currency'''),
+      ('purchase_orders', '''currency'''),
+      ('purchase_requests', '''currency'''),
+      ('purchase_returns', '''original_currency'''),
+      ('sales_orders', '''currency'''),
+      ('services', '''currency_code'''),
+      ('shareholder_drawings', '''currency_code'''),
+      ('suppliers', '''balance_currency'''),
+      ('user_bonuses', '''bonus_currency'''),
+      ('vendor_refund_requests', '''currency''')
+    ) AS v(tbl, args)
+  LOOP
+    IF NOT EXISTS (
+      SELECT 1
+      FROM pg_trigger t
+      JOIN pg_class c ON c.oid = t.tgrelid
+      JOIN pg_namespace ns ON ns.oid = c.relnamespace
+      WHERE ns.nspname = 'public' AND c.relname = r.tbl
+        AND t.tgname = 'ab_currency_asked_at_birth'
+        AND NOT t.tgisinternal AND t.tgenabled = 'O'
+        AND (t.tgtype::int & 7) = 7
+        AND position('erp_currency_is_' || 'asked_at_birth(' || r.args || ')' IN pg_get_triggerdef(t.oid)) > 0
+    ) THEN
+      v_missing := v_missing || r.tbl || ' · ';
+    END IF;
+  END LOOP;
+  IF v_missing <> '' THEN
+    RAISE EXCEPTION 'v3.75.64: مُشغِّلُ الختمِ غائبٌ أو مُطفأٌ أو بغيرِ أعمدتِه على: %', v_missing;
+  END IF;
+
+  -- (ج) بيتُ الختمِ واحدٌ بصلاحيّاتِه الكاملةِ المحفوظةِ يسألُ البيت
+  SELECT count(*),
+         count(*) FILTER (WHERE p.prosecdef),
+         count(*) FILTER (WHERE position('erp_company_base_currency((v_row' IN p.prosrc) > 0)
+    INTO v_n, v_secdef, v_home_call
+  FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace
+    AND p.proname = 'erp_currency_is_' || 'asked_at_birth';
+  IF v_n <> 1 OR v_secdef <> 1 OR v_home_call <> 1 THEN
+    RAISE EXCEPTION 'v3.75.64: بيتُ الختمِ تبدَّل (نسخ % · بصلاحيّاتٍ كاملة % · يسألُ البيت %).', v_n, v_secdef, v_home_call;
+  END IF;
+
+  -- (د) قيدُ إشعارِ المَدينِ لا يُسمّى عملةً، وحارسُه يصرخُ ويسأل
+  SELECT pg_get_constraintdef(con.oid) INTO v_txt
+  FROM pg_constraint con
+  WHERE con.conrelid = 'public.customer_debit_notes'::regclass
+    AND con.conname = 'chk_customer_debit_currency';
+  IF v_txt IS NULL THEN
+    RAISE EXCEPTION 'v3.75.64: قيدُ إشعارِ المَدينِ غاب.';
+  END IF;
+  IF v_txt ~ ('''' || v_ccy || '''') THEN
+    RAISE EXCEPTION 'v3.75.64: قيدُ إشعارِ المَدينِ عادَ يُسمّى عملةً بعينِها.';
+  END IF;
+  IF position('exchange_rate' IN v_txt) = 0 THEN
+    RAISE EXCEPTION 'v3.75.64: قيدُ إشعارِ المَدينِ فقدَ حكمَ السعرِ الواحد.';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_trigger t
+    WHERE t.tgrelid = 'public.customer_debit_notes'::regclass
+      AND t.tgname = 'ac_debit_note_no_foreign_without_fx'
+      AND NOT t.tgisinternal AND t.tgenabled = 'O'
+      AND (t.tgtype::int & 23) = 23
+  ) THEN
+    RAISE EXCEPTION 'v3.75.64: حارسُ إشعارِ المَدينِ غائبٌ أو مُطفأٌ أو بغيرِ وقتِه.';
+  END IF;
+  SELECT count(*),
+         count(*) FILTER (WHERE p.prosecdef),
+         count(*) FILTER (WHERE position('RAISE EXCEPTION' IN p.prosrc) > 0
+                            AND position('erp_company_base_currency(NEW.company_id)' IN p.prosrc) > 0)
+    INTO v_n, v_secdef, v_home_call
+  FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace
+    AND p.proname = 'erp_debit_note_' || 'no_foreign_without_fx';
+  IF v_n <> 1 OR v_secdef <> 1 OR v_home_call <> 1 THEN
+    RAISE EXCEPTION 'v3.75.64: حارسُ إشعارِ المَدينِ تبدَّل (نسخ % · بصلاحيّاتٍ كاملة % · يصرخُ ويسأل %).', v_n, v_secdef, v_home_call;
+  END IF;
+
+  -- (هـ) والبيتُ الواحدُ قائمٌ كما وُلد
+  SELECT count(*),
+         count(*) FILTER (WHERE p.prosecdef),
+         count(*) FILTER (WHERE position('RAISE EXCEPTION' IN p.prosrc) > 0)
+    INTO v_home_n, v_home_secdef, v_home_screams
+  FROM pg_proc p
+  WHERE p.pronamespace = 'public'::regnamespace AND p.proname = 'erp_company_base_currency';
+  IF v_home_n <> 1 OR v_home_secdef <> 0 OR v_home_screams <> 1 THEN
+    RAISE EXCEPTION 'v3.75.64: بيتُ العملةِ الواحدُ تبدَّل (نسخ % · كاملُ الصلاحيّات % · يصرخ %).', v_home_n, v_home_secdef, v_home_screams;
+  END IF;
+  SELECT count(*) INTO v_rls FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+  WHERE ns.nspname = 'public' AND c.relname = 'companies' AND c.relrowsecurity;
+  IF v_rls <> 1 THEN
+    RAISE EXCEPTION 'v3.75.64: حمايةُ صفوفِ جدولِ الشركاتِ رُفعت.';
+  END IF;
+
+  RETURN 'v3.75.64 ok — لا قيمةَ افتراضيّةً تخترعُ عملةً فى جدولِ شركةٍ، والصفُّ الصامتُ يُختَمُ بعملةِ صاحبِه يومَ ميلادِه، وإشعارُ المَدينِ لا يقبلُ أجنبيّةً بلا صفِّ صرفٍ، والبيتُ قائمٌ يصرخُ ولا يخترع';
 END
 $function$
 ;
@@ -25656,6 +25821,72 @@ AS $function$
       AND cm.user_id = p_user_id
       AND cm.role = 'owner'
   );
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- erp_currency_is_asked_at_birth()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_currency_is_asked_at_birth()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_row   jsonb := to_jsonb(NEW);
+  v_patch jsonb := '{}'::jsonb;
+  v_home  text  := NULL;
+  v_col   text;
+  v_val   text;
+BEGIN
+  IF (v_row ->> 'company_id') IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  FOR i IN 0 .. TG_NARGS - 1 LOOP
+    v_col := TG_ARGV[i];
+    v_val := v_row ->> v_col;
+    IF v_val IS NULL OR btrim(v_val) = '' THEN
+      IF v_home IS NULL THEN
+        v_home := public.erp_company_base_currency((v_row->>'company_id')::uuid);
+      END IF;
+      v_patch := v_patch || jsonb_build_object(v_col, v_home);
+    END IF;
+  END LOOP;
+
+  IF v_patch <> '{}'::jsonb THEN
+    NEW := jsonb_populate_record(NEW, v_patch);
+  END IF;
+  RETURN NEW;
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- erp_debit_note_no_foreign_without_fx()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_debit_note_no_foreign_without_fx()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+DECLARE
+  v_home text;
+BEGIN
+  IF NEW.currency_id IS NULL
+     AND NEW.original_currency IS NOT NULL
+     AND btrim(NEW.original_currency) <> '' THEN
+    v_home := public.erp_company_base_currency(NEW.company_id);
+    IF upper(btrim(NEW.original_currency)) <> v_home THEN
+      RAISE EXCEPTION 'إشعارُ مَدينٍ بعملةِ % بلا صفِّ عملةٍ مُعلَن، وعملةُ البيتِ %. لا عملةَ أجنبيّةً بلا سعرِ صرفٍ يُسمّى صفَّه.',
+        NEW.original_currency, v_home
+        USING ERRCODE = '23514';
+    END IF;
+  END IF;
+  RETURN NEW;
+END
 $function$
 ;
 
