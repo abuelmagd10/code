@@ -21,7 +21,7 @@ import { canAction } from "@/lib/authz"
 import { Plus, Edit2, Trash2, Search, Truck, ArrowDownLeft, Clock, CheckCircle2, XCircle } from "lucide-react"
 import { TableSkeleton } from "@/components/ui/skeleton"
 import { SupplierReceiptDialog } from "@/components/suppliers/supplier-receipt-dialog"
-import { getExchangeRate, getActiveCurrencies, type Currency, DEFAULT_CURRENCIES } from "@/lib/currency-service"
+import { getExchangeRate, getActiveCurrencies, readAppCurrency, type Currency, DEFAULT_CURRENCIES } from "@/lib/currency-service"
 import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { useRouter } from "next/navigation"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
@@ -83,10 +83,7 @@ export default function SuppliersPage() {
   }, [])
 
   // Currency support
-  const [appCurrency, setAppCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
+  const [appCurrency, setAppCurrency] = useState<string>(() => readAppCurrency())
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
@@ -96,7 +93,7 @@ export default function SuppliersPage() {
   // Listen for currency changes
   useEffect(() => {
     const handleCurrencyChange = () => {
-      const newCurrency = localStorage.getItem('app_currency') || 'EGP'
+      const newCurrency = readAppCurrency()
       setAppCurrency(newCurrency)
     }
     window.addEventListener('app_currency_changed', handleCurrencyChange)

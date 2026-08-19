@@ -14,6 +14,7 @@ import { ListErrorBoundary } from "@/components/list-error-boundary"
 import { BranchFilter } from "@/components/BranchFilter"
 import { useBranchFilter } from "@/hooks/use-branch-filter"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+import { readAppCurrency } from "@/lib/currency-service"
 
 type CustomerCredit = {
   customerId: string
@@ -45,7 +46,7 @@ export default function CustomerCreditsPage() {
   useEffect(() => {
     const read = () => { try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { } }
     read()
-    try { setAppCurrency(localStorage.getItem('app_currency') || 'EGP') } catch {}
+    setAppCurrency(readAppCurrency())
     window.addEventListener('app_language_changed', read)
     window.addEventListener('storage', read)
     return () => { window.removeEventListener('app_language_changed', read); window.removeEventListener('storage', read) }

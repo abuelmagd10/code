@@ -1,5 +1,6 @@
 "use client"
 import { SENIOR_ROLES } from "@/lib/roles"
+import { readAppCurrency } from "@/lib/currency-service"
 
 import { useEffect, useState, useMemo, useTransition, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
@@ -130,10 +131,7 @@ export default function PurchaseReturnsPage() {
 
   const branchFilter = useBranchFilter()
 
-  const [appCurrency, setAppCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
+  const [appCurrency, setAppCurrency] = useState<string>(() => readAppCurrency())
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ'
   }

@@ -15,7 +15,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Trash2, Plus, ClipboardList, Save, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
-import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { getExchangeRate, getActiveCurrencies, readAppCurrency, type Currency } from "@/lib/currency-service"
 import { canAction } from "@/lib/authz"
 import { getActiveCompanyId } from "@/lib/company"
 import { type ShippingProvider } from "@/lib/shipping"
@@ -106,14 +106,8 @@ export default function NewPurchaseOrderPage() {
 
   // Currency
   const [currencies, setCurrencies] = useState<Currency[]>([])
-  const [poCurrency, setPoCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
-  const [baseCurrency, setBaseCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
+  const [poCurrency, setPoCurrency] = useState<string>(() => readAppCurrency())
+  const [baseCurrency, setBaseCurrency] = useState<string>(() => readAppCurrency())
   const [exchangeRate, setExchangeRate] = useState(1)
   const [exchangeRateId, setExchangeRateId] = useState<string | null>(null)
   const [rateSource, setRateSource] = useState<string>('api')

@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+import { readAppCurrency } from "@/lib/currency-service"
 import {
   Wallet, ChevronRight, ArrowUpCircle, ArrowDownCircle,
   FileText, RotateCcw, CheckCircle, AlertCircle, Loader2
@@ -67,7 +68,7 @@ export default function CustomerCreditDetailPage() {
   useEffect(() => {
     try {
       setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
-      setAppCurrency(localStorage.getItem('app_currency') || 'EGP')
+      setAppCurrency(readAppCurrency())
     } catch {}
   }, [])
 

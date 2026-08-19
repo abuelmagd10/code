@@ -3,6 +3,8 @@
  * Professional currency handling for the application
  */
 
+import { readAppCurrency } from './currency-service'
+
 // Currency definitions with symbols and names
 export const CURRENCIES: Record<string, { symbol: string; nameEn: string; nameAr: string; decimals: number }> = {
   EGP: { symbol: '£', nameEn: 'Egyptian Pound', nameAr: 'الجنيه المصري', decimals: 2 },
@@ -21,14 +23,15 @@ export const CURRENCIES: Record<string, { symbol: string; nameEn: string; nameAr
 
 /**
  * Get the current app currency from localStorage or cookie
+ *
+ * v3.75.66 — **وسؤالُ الاسمِ ليس سؤالَ الباب**: هذه الدالّةُ لم تعُدْ تقرأُ
+ * الجيبَ بنفسِها، بل تنادى **بيتَ الشاشةِ الواحد** `readAppCurrency()` من
+ * `lib/currency-service.ts` — **ولا يُبنى بيتٌ ثانٍ**. وتُبقى على عقدِها
+ * القديمِ مع مستدعيها (الرجوعُ إلى `'EGP'` عندَ الغياب) إلى أن تُحوَّلَ
+ * الشاشاتُ نفسُها لنداءِ البيتِ مباشرةً (v3.75.66 الدفعةُ الثانية).
  */
 export function getAppCurrency(): string {
-  if (typeof window === 'undefined') return 'EGP'
-  try {
-    return localStorage.getItem('app_currency') || 'EGP'
-  } catch {
-    return 'EGP'
-  }
+  return readAppCurrency() || 'EGP'
 }
 
 /**

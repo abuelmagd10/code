@@ -1,5 +1,6 @@
 "use client"
 import { SENIOR_ROLES } from "@/lib/roles"
+import { readAppCurrency } from "@/lib/currency-service"
 
 import { useEffect, useState, useMemo, useTransition, useCallback, useRef } from "react"
 import { Button } from "@/components/ui/button"
@@ -77,7 +78,7 @@ export default function SalesReturnsPage() {
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
   }
-  const appCurrency = typeof window !== 'undefined' ? (localStorage.getItem('app_currency') || 'EGP') : 'EGP'
+  const appCurrency = readAppCurrency()
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
 
   // === إصلاح أمني: صلاحيات المرتجعات ===

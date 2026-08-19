@@ -1,6 +1,7 @@
 "use client"
 
 import { attachProductCosts } from "@/lib/product-costs"
+import { readAppCurrency } from "@/lib/currency-service"
 import { PRODUCT_COLUMNS_NO_COST } from "@/lib/products-columns"
 import type React from "react"
 
@@ -308,10 +309,7 @@ export default function ProductsPage() {
   }, [supabase])
 
   // Currency support
-  const [appCurrency, setAppCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
+  const [appCurrency, setAppCurrency] = useState<string>(() => readAppCurrency())
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
@@ -345,7 +343,7 @@ export default function ProductsPage() {
   useEffect(() => {
     // Listen for currency changes
     const handleCurrencyChange = () => {
-      const newCurrency = localStorage.getItem('app_currency') || 'EGP'
+      const newCurrency = readAppCurrency()
       setAppCurrency(newCurrency)
       // Reload products to get updated display prices
       loadProducts()
@@ -650,8 +648,8 @@ export default function ProductsPage() {
 
       // Get system currency for original values
       const systemCurrency = typeof window !== 'undefined'
-        ? localStorage.getItem('original_system_currency') || 'EGP'
-        : 'EGP'
+        ? (localStorage.getItem('original_system_currency') || readAppCurrency())
+        : readAppCurrency()
 
       // v3.74.496: رفع صور الصنف إلى التخزين (مضغوطة WebP) قبل الحفظ — بحد أقصى 3
       let finalImageUrls: string[] = []

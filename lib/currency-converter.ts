@@ -5,6 +5,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { ExchangeRateError } from './exchange-rates'
+import { readAppCurrency } from './currency-service'
 
 export interface ConversionResult {
   originalAmount: number
@@ -30,14 +31,14 @@ export const CURRENCY_SYMBOLS: Record<string, string> = {
 
 /**
  * Get the current app currency from localStorage
+ *
+ * v3.75.66 — **وسؤالُ الاسمِ ليس سؤالَ الباب**: تنادى الآن **بيتَ الشاشةِ
+ * الواحد** `readAppCurrency()` من `lib/currency-service.ts` بدلاً من قراءةِ
+ * الجيبِ بنفسِها — **ولا يُبنى بيتٌ ثانٍ**. عقدُها مع مستدعيها (`use-currency`)
+ * كما كان: `'EGP'` عندَ الغياب، إلى أن تُحوَّلَ الشاشاتُ نفسُها.
  */
 export function getAppCurrency(): string {
-  if (typeof window === 'undefined') return 'EGP'
-  try {
-    return localStorage.getItem('app_currency') || 'EGP'
-  } catch {
-    return 'EGP'
-  }
+  return readAppCurrency() || 'EGP'
 }
 
 /**

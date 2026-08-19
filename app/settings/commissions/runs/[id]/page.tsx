@@ -13,6 +13,7 @@
  */
 
 import { useState, useEffect, useMemo } from "react"
+import { readAppCurrency } from "@/lib/currency-service"
 import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -106,7 +107,7 @@ export default function RunDetailsPage() {
     useEffect(() => {
         try {
             setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar')
-            setAppCurrency(localStorage.getItem('app_currency') || 'EGP')
+            setAppCurrency(readAppCurrency())
         } catch { }
     }, [])
 

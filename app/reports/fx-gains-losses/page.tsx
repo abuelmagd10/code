@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
-import { getFXAccounts } from "@/lib/currency-service"
+import { getFXAccounts, readAppCurrency } from "@/lib/currency-service"
 import { ArrowLeft, TrendingUp, TrendingDown, Download, RefreshCw } from "lucide-react"
 import Link from "next/link"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
@@ -54,7 +54,7 @@ export default function FXGainsLossesReportPage() {
 
   useEffect(() => {
     try { setAppLang(localStorage.getItem('app_language') === 'en' ? 'en' : 'ar') } catch { }
-    try { setBaseCurrency(localStorage.getItem('app_currency') || 'EGP') } catch { }
+    setBaseCurrency(readAppCurrency())
     loadData()
   }, [])
 

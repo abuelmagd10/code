@@ -13,6 +13,7 @@ import { ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, 
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+import { readAppCurrency } from "@/lib/currency-service"
 
 interface ReportData {
   capital: { total: number }
@@ -46,10 +47,7 @@ export default function SimpleSummaryReport() {
   useEffect(() => { setHydrated(true); setAppLang((localStorage.getItem("app-language") as 'ar' | 'en') || 'ar') }, [])
   const t = (en: string, ar: string) => (hydrated && appLang === 'en') ? en : ar
   // v3.74.520 — عملة الشركة الأساسية بدل تثبيت الجنيه
-  const baseCode = (() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })()
+  const baseCode = readAppCurrency()
   const ccy = baseCode === 'EGP' ? t('EGP', 'ج.م') : baseCode
   const ccyAr = baseCode === 'EGP' ? 'ج.م' : baseCode
 

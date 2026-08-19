@@ -26,6 +26,7 @@ import { ProductSearchSelect, type ProductOption as SearchProductOption } from "
 import { Package, Plus, Trash2, Sparkles } from "lucide-react"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
+import { readAppCurrency } from "@/lib/currency-service"
 
 interface BundleItem {
   id: string
@@ -520,7 +521,7 @@ export function BookingAddons({
                   showPrice
                   showStock
                   branchStockMap={branchStockMap}
-                  currency={typeof window !== "undefined" ? (localStorage.getItem("app_currency") || "EGP") : "EGP"}
+                  currency={readAppCurrency()}
                 />
               </div>
               <div>

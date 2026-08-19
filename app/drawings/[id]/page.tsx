@@ -24,6 +24,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
 import { createNotification } from "@/lib/governance-layer"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
+import { readAppCurrency } from "@/lib/currency-service"
 
 const statusLabels: Record<string, { ar: string; en: string; className: string }> = {
     draft: { ar: 'مسودة', en: 'Draft', className: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
@@ -219,7 +220,7 @@ export default function DrawingDetailPage({ params }: { params: Promise<{ id: st
                                 <div>
                                     <Label className="text-muted-foreground">{appLang === 'en' ? 'Amount' : 'المبلغ'}</Label>
                                     {/* v3.74.520 — عملة الشركة الأساسية بدل تثبيت الجنيه */}
-                                    <p className="font-medium">{Number(drawing.amount).toLocaleString()} {(() => { try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' } })()}</p>
+                                    <p className="font-medium">{Number(drawing.amount).toLocaleString()} {readAppCurrency()}</p>
                                 </div>
                                 {drawing.journal_entry_id && drawing.journal_entry && drawing.journal_entry.entry_number != null && (
                                     <div>

@@ -38,7 +38,7 @@ import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { CreditCard } from "lucide-react"
 import { ERPPageHeader } from "@/components/erp-page-header"
-import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { getExchangeRate, getActiveCurrencies, readAppCurrency, type Currency } from "@/lib/currency-service"
 import { CustomerSearchSelect } from "@/components/CustomerSearchSelect"
 import { getActiveCompanyId } from "@/lib/company"
 import { computeLeafAccountBalancesAsOf } from "@/lib/ledger"
@@ -243,14 +243,8 @@ export default function PaymentsPage() {
 
   // Currency support - using CurrencyService
   const [currencies, setCurrencies] = useState<Currency[]>([])
-  const [paymentCurrency, setPaymentCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
-  const [baseCurrency, setBaseCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
+  const [paymentCurrency, setPaymentCurrency] = useState<string>(() => readAppCurrency())
+  const [baseCurrency, setBaseCurrency] = useState<string>(() => readAppCurrency())
   const [exchangeRate, setExchangeRate] = useState<number>(1)
   const [exchangeRateId, setExchangeRateId] = useState<string | undefined>(undefined)
   const [rateSource, setRateSource] = useState<string>('api')
@@ -264,10 +258,7 @@ export default function PaymentsPage() {
   // v3.74.518 — فصل عملة العرض (الجدول/الأرصدة) عن عملة نموذج الدفع:
   // كان اختيار الدولار فى النموذج يقلب رمز الجدول كله إلى $ بينما
   // الأرقام معادلات بالعملة الأساسية.
-  const [displayCurrency, setDisplayCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
+  const [displayCurrency, setDisplayCurrency] = useState<string>(() => readAppCurrency())
   const currencySymbol = currencySymbols[displayCurrency] || displayCurrency
 
   // Helper: Get display amount (use converted if available)
@@ -475,7 +466,7 @@ export default function PaymentsPage() {
       if (isHandling) return // تجاهل إذا كانت المعالجة جارية
       isHandling = true
       
-      const newCurrency = localStorage.getItem('app_currency') || 'EGP'
+      const newCurrency = readAppCurrency()
       if (newCurrency !== paymentCurrency) {
       setPaymentCurrency(newCurrency)
         // ✅ تحديث العملة فقط بدون إعادة تحميل كامل للصفحة

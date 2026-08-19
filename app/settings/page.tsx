@@ -24,7 +24,7 @@ import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, Chev
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { type AISettings, DEFAULT_AI_SETTINGS, fetchAISettings, saveAISettings } from "@/lib/page-guides"
 import { Progress } from "@/components/ui/progress"
-import { getActiveCurrencies, getFXAccounts, type Currency } from "@/lib/currency-service"
+import { getActiveCurrencies, getFXAccounts, readAppCurrency, type Currency } from "@/lib/currency-service"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { writeAuditLog } from "@/lib/audit-log-write"
 
@@ -714,7 +714,7 @@ export default function SettingsPage() {
             const company = data.success ? data.data?.company : null
             console.log('📦 [Settings] Received company data:', company?.id, company?.name)
             if (company) {
-              const companyCurrency = company.base_currency || (typeof window !== 'undefined' ? (localStorage.getItem('app_currency') || 'EGP') : 'EGP')
+              const companyCurrency = company.base_currency || readAppCurrency()
               setCurrency(companyCurrency)
               // Sync currency to localStorage
               if (typeof window !== 'undefined') {

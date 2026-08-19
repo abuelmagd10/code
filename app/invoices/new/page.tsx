@@ -24,7 +24,7 @@ import {
 } from "@/lib/products/bundle-helpers"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { createNotification } from "@/lib/governance-layer"
-import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { getExchangeRate, getActiveCurrencies, type Currency, readAppCurrency } from "@/lib/currency-service"
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { CustomerSearchSelect, type CustomerOption } from "@/components/CustomerSearchSelect"
 import { ProductSearchSelect, type ProductOption } from "@/components/ProductSearchSelect"
@@ -218,7 +218,7 @@ export default function NewInvoicePage() {
       setInvoiceDiscountType(discType === "percent" ? "percent" : "amount")
       const discPos = localStorage.getItem("invoice_discount_position")
       setInvoiceDiscountPosition(discPos === "after_tax" ? "after_tax" : "before_tax")
-      const curr = localStorage.getItem('app_currency') || 'EGP'
+      const curr = readAppCurrency()
       setInvoiceCurrency(curr)
       setBaseCurrency(curr)
     } catch { }

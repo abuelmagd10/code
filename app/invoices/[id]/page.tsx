@@ -45,7 +45,7 @@ import {
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { CustomerRefundDialog } from "@/components/customers/customer-refund-dialog"
-import { getActiveCurrencies, type Currency, DEFAULT_CURRENCIES } from "@/lib/currency-service"
+import { getActiveCurrencies, type Currency, DEFAULT_CURRENCIES, readAppCurrency } from "@/lib/currency-service"
 import { useAccess } from "@/lib/access-context"
 import {
   SALES_RETURN_ACTIVE_REQUEST_STATUSES,
@@ -479,7 +479,7 @@ export default function InvoiceDetailPage() {
       try { setAppLang(localStorage.getItem('app_language') === 'en' ? 'en' : 'ar') } catch { }
     }
     const currHandler = () => {
-      try { setAppCurrency(localStorage.getItem('app_currency') || 'EGP') } catch { }
+      try { setAppCurrency(readAppCurrency()) } catch { }
     }
     langHandler(); currHandler()
     window.addEventListener('app_language_changed', langHandler)

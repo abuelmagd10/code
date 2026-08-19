@@ -16,7 +16,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { Edit2, Trash2, Search, Users, UserCheck, X } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
-import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { getExchangeRate, getActiveCurrencies, type Currency, readAppCurrency } from "@/lib/currency-service"
 import { AccountFinders } from "@/lib/utils"
 import { getActiveCompanyId } from "@/lib/company"
 import { canAction } from "@/lib/authz"
@@ -128,10 +128,7 @@ export default function CustomersPage() {
   const [customersWithAnyInvoices, setCustomersWithAnyInvoices] = useState<Set<string>>(new Set())
 
   // Currency support
-  const [appCurrency, setAppCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
+  const [appCurrency, setAppCurrency] = useState<string>(() => readAppCurrency())
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
@@ -141,7 +138,7 @@ export default function CustomersPage() {
   // Listen for currency changes
   useEffect(() => {
     const handleCurrencyChange = () => {
-      const newCurrency = localStorage.getItem('app_currency') || 'EGP'
+      const newCurrency = readAppCurrency()
       setAppCurrency(newCurrency)
     }
     window.addEventListener('app_currency_changed', handleCurrencyChange)

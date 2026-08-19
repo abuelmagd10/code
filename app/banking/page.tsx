@@ -27,6 +27,7 @@ import {
   getExchangeRate,
   getActiveCurrencies,
   type Currency,
+  readAppCurrency,
 } from "@/lib/currency-service";
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector";
 import { DataTable, type DataTableColumn } from "@/components/DataTable";
@@ -110,14 +111,7 @@ export default function BankingPage() {
   const [permWrite, setPermWrite] = useState(false);
 
   // Currency support
-  const [appCurrency, setAppCurrency] = useState<string>(() => {
-    if (typeof window === "undefined") return "EGP";
-    try {
-      return localStorage.getItem("app_currency") || "EGP";
-    } catch {
-      return "EGP";
-    }
-  });
+  const [appCurrency, setAppCurrency] = useState<string>(() => readAppCurrency());
   const currencySymbols: Record<string, string> = {
     EGP: "£",
     USD: "$",
@@ -166,7 +160,7 @@ export default function BankingPage() {
   // Listen for currency changes and reload data
   useEffect(() => {
     const handleCurrencyChange = () => {
-      const newCurrency = localStorage.getItem("app_currency") || "EGP";
+      const newCurrency = readAppCurrency();
       setAppCurrency(newCurrency);
       // Reload balances with new currency
       loadData();
@@ -187,7 +181,7 @@ export default function BankingPage() {
         const curr = await getActiveCurrencies(supabase, cid);
         if (curr.length > 0) setCurrencies(curr);
         // Set default currency
-        const baseCur = localStorage.getItem("app_currency") || "EGP";
+        const baseCur = readAppCurrency();
         setTransfer((t) => ({ ...t, currency: baseCur }));
       }
     })();
@@ -242,7 +236,7 @@ export default function BankingPage() {
   // Update exchange rate when currency changes
   useEffect(() => {
     const updateRate = async () => {
-      const baseCurrency = localStorage.getItem("app_currency") || "EGP";
+      const baseCurrency = readAppCurrency();
       if (transfer.currency === baseCurrency) {
         setExchangeRate(1);
         setExchangeRateId(null);
@@ -378,7 +372,7 @@ export default function BankingPage() {
         )
         .is("journal_entries.deleted_at", null);
 
-      const currentCurrency = localStorage.getItem("app_currency") || "EGP";
+      const currentCurrency = readAppCurrency();
 
       // ✅ Initialize balance map with opening balances
       const balanceMap: Record<string, number> = {};
@@ -560,10 +554,7 @@ export default function BankingPage() {
         return;
       }
       // Get base currency
-      const baseCurrency =
-        typeof window !== "undefined"
-          ? localStorage.getItem("app_currency") || "EGP"
-          : "EGP";
+      const baseCurrency = readAppCurrency();
 
       // v3.74.517 — تأكيد صريح عند اختلاف عملة التحويل عن عملة حساب المصدر
       // (المصدر يخرج منه المال بعملته؛ الاختلاف استثناء يجب الوعى به)
@@ -824,9 +815,7 @@ export default function BankingPage() {
                         // a USD account.
                         const newFromId = e.target.value
                         const picked = accounts.find((a) => a.id === newFromId)
-                        const baseCurrency = typeof window !== "undefined"
-                          ? (localStorage.getItem("app_currency") || "EGP")
-                          : "EGP"
+                        const baseCurrency = readAppCurrency()
                         const nativeCurrency =
                           (picked as any)?.original_currency || baseCurrency
                         if (nativeCurrency && nativeCurrency !== transfer.currency) {
@@ -895,7 +884,7 @@ export default function BankingPage() {
                         // v3.74.517 — تغيير العملة يفحص حساب المصدر: إن خالف
                         // العملة الجديدة يُصفَّر ليعيد المستخدم اختياره صحيحاً
                         const v = e.target.value
-                        const baseCur = typeof window !== "undefined" ? (localStorage.getItem("app_currency") || "EGP") : "EGP"
+                        const baseCur = readAppCurrency()
                         const fromAcc: any = accounts.find((a) => a.id === transfer.from_id)
                         const fromCcy = String(fromAcc?.original_currency || '').toUpperCase() || baseCur.toUpperCase()
                         if (fromAcc && fromCcy !== v.toUpperCase()) {

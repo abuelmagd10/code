@@ -12,6 +12,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { readAppCurrency } from "@/lib/currency-service"
 
 interface Shipment {
   id: string
@@ -62,7 +63,7 @@ export default function ShippingReportPage() {
     const handler = () => {
       try {
         setAppLang(localStorage.getItem('app_language') === 'en' ? 'en' : 'ar')
-        setAppCurrency(localStorage.getItem('app_currency') || 'EGP')
+        setAppCurrency(readAppCurrency())
       } catch {}
     }
     handler()

@@ -12,6 +12,7 @@ import { canAction } from "@/lib/authz"
 import { filterCashBankAccounts } from "@/lib/accounts"
 import { Building2, Landmark, MapPin, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownLeft, Calendar, FileText } from "lucide-react"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+import { readAppCurrency } from "@/lib/currency-service"
 
 type Branch = { id: string; name: string; code: string }
 type CostCenter = { id: string; cost_center_name: string; cost_center_code: string; branch_id: string }
@@ -41,10 +42,7 @@ export default function BankTransactionsReport() {
     if (typeof window === 'undefined') return 'ar'
     try { return localStorage.getItem('app_language') === 'en' ? 'en' : 'ar' } catch { return 'ar' }
   })
-  const [appCurrency, setAppCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
+  const [appCurrency, setAppCurrency] = useState<string>(() => readAppCurrency())
   const currencySymbols: Record<string, string> = { EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ' }
   const currencySymbol = currencySymbols[appCurrency] || appCurrency
 

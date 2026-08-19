@@ -87,6 +87,33 @@ export async function getBaseCurrency(supabase: SupabaseClient, companyId?: stri
 }
 
 /**
+ * v3.75.66 — **بيتُ الشاشةِ الواحد**: قراءةُ عملةِ الشاشةِ المخزَّنةِ محلياً
+ * (`localStorage['app_currency']`) صار لها بيتٌ واحد، هنا، بجوارِ بيتِ
+ * العملةِ الأساسيّةِ من القاعدة (`getBaseCurrency` أعلاه) — **ولا يُبنى بيتٌ
+ * ثانٍ**.
+ *
+ * قبل هذه الدفعة كانت ثلاثةُ ملفّاتٍ (`currency-utils.ts`,
+ * `currency-converter.ts`, `exchange-rates.ts`) كلٌّ منها يقرأُ الجيبَ
+ * بنفسِه، ثمّ يخترعُ `'EGP'` عندَ الصمتِ أو تعذّرِ القراءة — والحكمُ هنا
+ * كما هناك: **ولا تُخترَعُ عملة**. فهذا البيتُ يُعيدُ سلسلةً فارغةً `''`
+ * عندَ الغيابِ، لا حرفاً افتراضياً؛ وعلى المستدعى أن يقرِّرَ بنفسِه ماذا
+ * يفعلُ بالغياب، لا أن يُخفيهُ البيتُ عنه.
+ *
+ * هذا بيتُ **الشاشةِ** (المتصفِّح) لا بيتُ **القاعدةِ**: لا يتحقّقُ من صحّةِ
+ * القيمةِ ولا يطابقُها بجدولٍ، لأنّه لا يعرفُ شركةً ولا قاعدةَ بيانات — إنّما
+ * يعكسُ ما خزَّنه المستخدِمُ آخرَ مرّةٍ فى هذا المتصفِّح، بلا أكثر.
+ * خارجَ المتصفِّح (بلا `window`) يُعيدُ `''` أيضاً.
+ */
+export function readAppCurrency(): string {
+  if (typeof window === 'undefined') return ''
+  try {
+    return localStorage.getItem('app_currency') || ''
+  } catch {
+    return ''
+  }
+}
+
+/**
  * v3.27.3: Get the rate fetch mode for a company.
  * Returns 'live' (API first) or 'manual' (DB only, default).
  * Configured per-company via companies.rate_mode column.

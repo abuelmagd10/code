@@ -31,6 +31,7 @@ import { useBranchFilter } from "@/hooks/use-branch-filter"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
 import { BranchFilter } from "@/components/BranchFilter"
 import { ERPPageHeader } from "@/components/erp-page-header"
+import { readAppCurrency } from "@/lib/currency-service"
 
 interface Account {
   id: string
@@ -81,10 +82,7 @@ export default function JournalEntriesPage() {
   }, [])
 
   // Currency support
-  const [appCurrency, setAppCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
+  const [appCurrency, setAppCurrency] = useState<string>(() => readAppCurrency())
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
@@ -94,7 +92,7 @@ export default function JournalEntriesPage() {
   // Listen for currency changes
   useEffect(() => {
     const handleCurrencyChange = () => {
-      const newCurrency = localStorage.getItem('app_currency') || 'EGP'
+      const newCurrency = readAppCurrency()
       setAppCurrency(newCurrency)
     }
     window.addEventListener('app_currency_changed', handleCurrencyChange)

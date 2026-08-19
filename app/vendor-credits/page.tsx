@@ -21,6 +21,7 @@ import { useBranchFilter } from "@/hooks/use-branch-filter"
 import { BranchFilter } from "@/components/BranchFilter"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+import { readAppCurrency } from "@/lib/currency-service"
 
 type VendorCredit = {
   id: string
@@ -73,7 +74,7 @@ export default function VendorCreditsPage() {
   useEffect(() => {
     const read = () => { try { setAppLang((localStorage.getItem('app_language') || 'ar') === 'en' ? 'en' : 'ar') } catch { } }
     read()
-    try { setAppCurrency(localStorage.getItem('app_currency') || 'EGP') } catch { }
+    try { setAppCurrency(readAppCurrency()) } catch { }
     window.addEventListener('app_language_changed', read)
     window.addEventListener('storage', read)
     return () => { window.removeEventListener('app_language_changed', read); window.removeEventListener('storage', read) }

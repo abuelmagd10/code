@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { FileText, ShoppingCart, AlertCircle, CheckCircle, Clock, Download } from "lucide-react"
 import Link from "next/link"
+import { readAppCurrency } from "@/lib/currency-service"
 
 interface PurchaseOrder {
   id: string
@@ -43,13 +44,10 @@ export default function PurchaseOrdersStatusReport() {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ'
   }
   // v3.74.519 — رمز عملة الشركة الأساسية بدل التثبيت على الجنيه
-  const [baseCurrency, setBaseCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
+  const [baseCurrency, setBaseCurrency] = useState<string>(() => readAppCurrency())
   const baseSymbol = currencySymbols[baseCurrency] || baseCurrency
   useEffect(() => {
-    const h = () => { try { setBaseCurrency(localStorage.getItem('app_currency') || 'EGP') } catch {} }
+    const h = () => { setBaseCurrency(readAppCurrency()) }
     window.addEventListener('app_currency_changed', h)
     return () => window.removeEventListener('app_currency_changed', h)
   }, [])

@@ -27,6 +27,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ERPPageHeader } from "@/components/erp-page-header"
 import Link from "next/link"
+import { readAppCurrency } from "@/lib/currency-service"
 
 // Utility function for number formatting
 const formatNumber = (num: number) => {
@@ -154,7 +155,7 @@ export default function FixedAssetsPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setAppLang((localStorage.getItem('app_language') as 'ar' | 'en') || 'ar')
-      setCurrency(localStorage.getItem('company_currency') || 'SAR')
+      setCurrency(readAppCurrency())
     }
   }, [])
 

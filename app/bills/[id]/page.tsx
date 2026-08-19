@@ -34,7 +34,7 @@ import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { getExchangeRate, getActiveCurrencies, type Currency, readAppCurrency } from "@/lib/currency-service"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -352,7 +352,7 @@ export default function BillViewPage() {
       } catch { }
     }
     const currHandler = () => {
-      try { setAppCurrency(localStorage.getItem('app_currency') || 'EGP') } catch { }
+      setAppCurrency(readAppCurrency())
     }
     langHandler(); currHandler()
     window.addEventListener('app_language_changed', langHandler)

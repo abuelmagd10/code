@@ -14,7 +14,7 @@ import { Trash2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionError, toastActionSuccess } from "@/lib/notifications"
 import { filterLeafAccounts } from "@/lib/accounts"
-import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { getExchangeRate, getActiveCurrencies, type Currency, readAppCurrency } from "@/lib/currency-service"
 import { ExchangeRateSelector } from "@/components/ExchangeRateSelector"
 import { BranchCostCenterSelector } from "@/components/branch-cost-center-selector"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
@@ -75,14 +75,8 @@ export default function NewJournalEntryPage() {
 
   // Currency support - using CurrencyService
   const [currencies, setCurrencies] = useState<Currency[]>([])
-  const [entryCurrency, setEntryCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
-  const [baseCurrency, setBaseCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
+  const [entryCurrency, setEntryCurrency] = useState<string>(() => readAppCurrency())
+  const [baseCurrency, setBaseCurrency] = useState<string>(() => readAppCurrency())
   const [exchangeRate, setExchangeRate] = useState<number>(1)
   const [exchangeRateId, setExchangeRateId] = useState<string | undefined>(undefined)
   const [rateSource, setRateSource] = useState<string>('api')

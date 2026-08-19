@@ -14,6 +14,7 @@ import { AlertTriangle, RefreshCw } from 'lucide-react'
 import { useSupabase } from '@/lib/supabase/hooks'
 import { getActiveCompanyId } from '@/lib/company'
 import { syncUserCurrency, isCompanyOwner } from '@/lib/currency-sync'
+import { readAppCurrency } from '@/lib/currency-service'
 
 interface CurrencyMismatchAlertProps {
   lang?: 'ar' | 'en'
@@ -47,9 +48,7 @@ export function CurrencyMismatchAlert({ lang = 'ar' }: CurrencyMismatchAlertProp
       setCompanyCurrency(baseCurrency)
 
       // Get display currency
-      const storedCurrency = typeof window !== 'undefined' 
-        ? localStorage.getItem('app_currency') || 'EGP'
-        : 'EGP'
+      const storedCurrency = readAppCurrency()
       setDisplayCurrency(storedCurrency)
 
       // Check if user is owner

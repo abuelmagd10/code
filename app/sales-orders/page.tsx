@@ -1,5 +1,6 @@
 "use client";
 import { roleLabel, isSeniorRole } from "@/lib/roles"
+import { readAppCurrency } from "@/lib/currency-service"
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { isSupabaseConfigured } from "@/lib/supabase/hooks";
@@ -244,13 +245,10 @@ function SalesOrdersContent() {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
   };
   // v3.74.519 — رمز عملة الشركة الأساسية بدل التثبيت على الجنيه
-  const [statsBaseCurrency, setStatsBaseCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
+  const [statsBaseCurrency, setStatsBaseCurrency] = useState<string>(() => readAppCurrency())
   const statsBaseSymbol = currencySymbols[statsBaseCurrency] || statsBaseCurrency
   useEffect(() => {
-    const h = () => { try { setStatsBaseCurrency(localStorage.getItem('app_currency') || 'EGP') } catch {} }
+    const h = () => { try { setStatsBaseCurrency(readAppCurrency()) } catch {} }
     window.addEventListener('app_currency_changed', h)
     return () => window.removeEventListener('app_currency_changed', h)
   }, [])

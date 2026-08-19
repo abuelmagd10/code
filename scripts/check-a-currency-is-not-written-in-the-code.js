@@ -102,7 +102,25 @@ const PINNED = 35
  *   ───
  *   ٣٠٥  المقيسُ يومَ الشحن
  */
-const PINNED_IMPLIED = 305
+/**
+ * v3.75.66 — **وسؤالُ الاسمِ ليس سؤالَ الباب**: كانت ثلاثةُ بيوتٍ فى الشاشةِ
+ * (`currency-utils.ts`, `currency-converter.ts`, `exchange-rates.ts`) وأربعةٌ
+ * وأربعون ملفَّ شاشةٍ ومكوِّنٍ كلٌّ منها يقرأُ `localStorage['app_currency']`
+ * بنفسِه ثمّ يخترعُ `'EGP'` عندَ الصمتِ — فصارَ لها **بيتٌ واحدٌ**:
+ * `lib/currency-service.ts::readAppCurrency()`، يُعيدُ `''` لا حرفاً.
+ *
+ *   ٣٠٥  المُثبَّتُ قبلَ الدفعة
+ *   −١٠٥ سُدِّدَت: مئةٌ وخمسةُ مواضعَ (ارتدادٌ صامتٌ فى غالبِها) كفَّت عن
+ *        كتابةِ `'EGP'` حرفاً وصارت تنادى البيتَ الواحد
+ *   ───
+ *   ٢٠٠  المقيسُ يومَ الشحن
+ *
+ * **ونصفُ جراحةٍ أسوأُ من لا جراحة**: بعضُ الشاشاتِ ما زالت تُبقى حالةَ
+ * React ابتدائيّةً بحرفٍ (`useState('EGP')`) قبلَ أن يُصحِّحَها أثرٌ يُنادى
+ * البيتَ الواحد — وهذا **مذكورٌ لا مستور**؛ ليس ارتداداً مكتوباً خلفَ عاملٍ
+ * على قراءةٍ من الجيب، فلا يقيسُه هذا الحارس، وتُقاسُ دفعةٌ لاحقةٌ إن قُرِّر.
+ */
+const PINNED_IMPLIED = 200
 // **ونصُّ الفحصِ مواصفةٌ لا صنعة** — ولا يحتاجُ هذا الملفُّ استثناءً بالاسم:
 // فخُّه الذاتىُّ يحملُ أمثلةً مكتوبةً حرفاً **ليُثبتَ أنّه يراها**، لكنّ جردَ
 // البيتِ الواحدِ **لا يشملُ مجلّدَ `scripts` أصلاً** — وهذا مقيسٌ لا مُدَّعى:
@@ -274,6 +292,47 @@ function currencyLiterals(src) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// v3.75.66 — **وسؤالُ الاسمِ ليس سؤالَ الباب**: الماسحُ أعلاه يصرخُ على رمزٍ
+// ثلاثىٍّ مكتوبٍ حرفاً، لا على **بناءِ بيتٍ ثانٍ** — قراءةُ
+// `localStorage.getItem('app_currency')` مباشرةً لا تحملُ بالضرورة رمزَ
+// عملةٍ حرفياً (فقد تُفوَّضُ نتيجتُها بلا ارتداد)، فتُفلِتُ من كلِّ شبكةٍ
+// أعلاه. فهذا فخٌّ باسمِ الملفِّ لا بنمطِ السطر: يُسمّى البيتُ الواحدُ
+// وبيوتُه المُفوَّضةُ بأسمائها، ويُصرَخُ إن غابَ أحدُها عن نداءِ الآخَر أو
+// عادَ يقرأُ الجيبَ بنفسِه — **ولا يُبنى بيتٌ ثانٍ**.
+// ───────────────────────────────────────────────────────────────────────────
+const ONE_HOME_FILE = "lib/currency-service.ts"
+const ONE_HOME_FN = "readAppCurrency"
+const DELEGATE_FILES = ["lib/currency-utils.ts", "lib/currency-converter.ts", "lib/exchange-rates.ts"]
+const DIRECT_READ_RE = /localStorage\.getItem\(\s*(['"`])app_currency\1\s*\)/
+
+/** يتحقّقُ أنّ بيتَ الشاشةِ الواحد قائمٌ وأنّ بيوتَه المُفوَّضةَ تنادِيه فعلاً لا تقرأُ الجيبَ ثانيةً. */
+function checkOneHomeDelegation(files) {
+  const byRel = new Map(files.map((f) => [f.rel, f.src]))
+  const errors = []
+
+  const homeSrc = byRel.get(ONE_HOME_FILE)
+  if (!homeSrc || !new RegExp("function\\s+" + ONE_HOME_FN + "\\s*\\(").test(stripComments(homeSrc))) {
+    errors.push(ONE_HOME_FILE + " — لا يحوى " + ONE_HOME_FN + "(): البيتُ الواحدُ غائب.")
+  }
+
+  for (const rel of DELEGATE_FILES) {
+    const src = byRel.get(rel)
+    if (!src) {
+      errors.push(rel + " — لم يُقرأ من المستودع: أهو غابَ أم رُحِّل؟")
+      continue
+    }
+    const code = stripComments(src)
+    if (!new RegExp(ONE_HOME_FN + "\\s*\\(").test(code)) {
+      errors.push(rel + " — لا ينادى " + ONE_HOME_FN + "(): كفَّ عن التفويضِ للبيتِ الواحد.")
+    }
+    if (DIRECT_READ_RE.test(code)) {
+      errors.push(rel + " — يقرأُ localStorage['app_currency'] مباشرةً: عادَ بيتٌ ثانٍ.")
+    }
+  }
+  return errors
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // **وفخٌّ لا يُشغَّل ليس فخّاً**
 // ───────────────────────────────────────────────────────────────────────────
 function selftest() {
@@ -357,6 +416,39 @@ function selftest() {
   t("ويرفضُ موضعاً جديداً", judgePin(37, 36), "grew")
   t("ويرفضُ نقصاً لم يُثبَّتْ — ومكسبٌ لا يُثبَّتُ يُلتَفُّ عليه", judgePin(35, 36), "shrank")
 
+  // ── v3.75.66 — **وسؤالُ الاسمِ ليس سؤالَ الباب**: البيتُ الواحدُ وبيوتُه المُفوَّضة ──
+  const HOME_OK = { rel: "lib/currency-service.ts", src: "export function readAppCurrency() {\n  if (typeof window === 'undefined') return ''\n  return localStorage.getItem('app_currency') || ''\n}" }
+  const DELEGATE_OK = (rel) => ({ rel, src: "import { readAppCurrency } from './currency-service'\nexport function getAppCurrency() {\n  return readAppCurrency() || 'EGP'\n}" })
+  const delegatesOk = DELEGATE_FILES.map(DELEGATE_OK)
+
+  t("يمرُّ حين يقومُ البيتُ الواحدُ وتُفوِّضُ البيوتُ الثلاثةُ إليه",
+    checkOneHomeDelegation([HOME_OK, ...delegatesOk]), [])
+
+  t("ويصرخُ إن غابَ البيتُ الواحدُ نفسُه",
+    checkOneHomeDelegation([{ rel: ONE_HOME_FILE, src: "export function somethingElse() {}" }, ...delegatesOk]).length > 0, true)
+
+  t("ويصرخُ إن عادَ أحدُ البيوتِ الثلاثةِ يقرأُ الجيبَ مباشرةً بدلاً من التفويض (وهو أيضاً لم يعُدْ ينادى البيتَ الواحد، فيُصرَخُ عليه بالاثنين معاً)",
+    checkOneHomeDelegation([HOME_OK,
+      { rel: "lib/currency-utils.ts", src: "export function getAppCurrency() {\n  return localStorage.getItem('app_currency') || 'EGP'\n}" },
+      DELEGATE_OK("lib/currency-converter.ts"), DELEGATE_OK("lib/exchange-rates.ts")]),
+    ["lib/currency-utils.ts — لا ينادى readAppCurrency(): كفَّ عن التفويضِ للبيتِ الواحد.",
+     "lib/currency-utils.ts — يقرأُ localStorage['app_currency'] مباشرةً: عادَ بيتٌ ثانٍ."])
+
+  t("ويصرخُ بواحدةٍ فقط حين يقرأُ الجيبَ مباشرةً كمصدرٍ احتياطىٍّ بعدَ أن نادى البيتَ الواحد أصلاً",
+    checkOneHomeDelegation([HOME_OK,
+      { rel: "lib/currency-utils.ts", src: "import { readAppCurrency } from './currency-service'\nexport function getAppCurrency() {\n  return readAppCurrency() || localStorage.getItem('app_currency') || 'EGP'\n}" },
+      DELEGATE_OK("lib/currency-converter.ts"), DELEGATE_OK("lib/exchange-rates.ts")]),
+    ["lib/currency-utils.ts — يقرأُ localStorage['app_currency'] مباشرةً: عادَ بيتٌ ثانٍ."])
+
+  t("ويصرخُ إن كفَّ بيتٌ عن نداءِ البيتِ الواحدِ أصلاً (بلا قراءةٍ مباشرةٍ حتّى)",
+    checkOneHomeDelegation([HOME_OK,
+      { rel: "lib/currency-utils.ts", src: "export function getAppCurrency() {\n  return 'EGP'\n}" },
+      DELEGATE_OK("lib/currency-converter.ts"), DELEGATE_OK("lib/exchange-rates.ts")]),
+    ["lib/currency-utils.ts — لا ينادى readAppCurrency(): كفَّ عن التفويضِ للبيتِ الواحد."])
+
+  t("ويصرخُ إن غابَ أحدُ الملفّاتِ الثلاثةِ من الجردِ كلِّيّةً",
+    checkOneHomeDelegation([HOME_OK, DELEGATE_OK("lib/currency-utils.ts"), DELEGATE_OK("lib/currency-converter.ts")]).length > 0, true)
+
   // **ونصُّ الفحصِ مواصفةٌ لا صنعة** — والجردُ لا يبلغُ مجلّدَ الحرّاسِ فلا يعدُّ نفسَه.
   // وهذا يُقاسُ بنداءِ البيتِ نفسِه، لا يُدَّعى.
   t("والجردُ لا يشملُ مجلّدَ الحرّاس — فلا يعدُّ الفحصُ نفسَه", keepPath("scripts/x.js", NOT_SHIPPED), false)
@@ -426,6 +518,14 @@ function verdict(label, rows, pinned, konst) {
 let bad = 0
 bad += verdict("العملةُ المكتوبةُ خياراً أو إسناداً", direct, PINNED, "PINNED")
 bad += verdict("العملةُ المكتوبةُ خلفَ عامل", implied, PINNED_IMPLIED, "PINNED_IMPLIED")
+
+const delegationErrors = checkOneHomeDelegation(census.files)
+if (delegationErrors.length) {
+  console.error("\nX بيتُ الشاشةِ الواحدِ للعملةِ (readAppCurrency) مكسورٌ — **ولا يُبنى بيتٌ ثانٍ**:")
+  for (const e of delegationErrors) console.error("      - " + e)
+  bad += 1
+}
+
 if (bad) process.exit(1)
 
 console.log(

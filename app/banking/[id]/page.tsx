@@ -10,7 +10,7 @@ import { useSupabase } from "@/lib/supabase/hooks"
 import { useToast } from "@/hooks/use-toast"
 import { toastActionSuccess, toastActionError } from "@/lib/notifications"
 import { filterLeafAccounts } from "@/lib/accounts"
-import { getExchangeRate, getActiveCurrencies, type Currency } from "@/lib/currency-service"
+import { getExchangeRate, getActiveCurrencies, type Currency, readAppCurrency } from "@/lib/currency-service"
 import { getActiveCompanyId } from "@/lib/company"
 import { MultiSelect } from "@/components/ui/multi-select"
 import { Filter, X, Search, Calendar, Check, Ban } from "lucide-react"
@@ -77,10 +77,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
   const [saving, setSaving] = useState(false)
 
   // Currency support
-  const [appCurrency, setAppCurrency] = useState<string>(() => {
-    if (typeof window === 'undefined') return 'EGP'
-    try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' }
-  })
+  const [appCurrency, setAppCurrency] = useState<string>(() => readAppCurrency())
   const currencySymbols: Record<string, string> = {
     EGP: '£', USD: '$', EUR: '€', GBP: '£', SAR: '﷼', AED: 'د.إ',
     KWD: 'د.ك', QAR: '﷼', BHD: 'د.ب', OMR: '﷼', JOD: 'د.أ', LBP: 'ل.ل'
@@ -131,7 +128,7 @@ export default function BankAccountDetail({ params }: { params: Promise<{ id: st
   useEffect(() => {
     // Listen for currency changes and reload data
     const handleCurrencyChange = () => {
-      const newCurrency = localStorage.getItem('app_currency') || 'EGP'
+      const newCurrency = readAppCurrency()
       setAppCurrency(newCurrency)
       // Reload data with new currency
       loadData()

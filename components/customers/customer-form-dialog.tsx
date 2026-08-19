@@ -17,6 +17,7 @@ import { canAction } from "@/lib/authz"
 import { countries, governorates, cities, getGovernoratesByCountry, getCitiesByGovernorate } from "@/lib/locations-data"
 import { validateEmail, validatePhone, validateTaxId, validateCreditLimit, validatePaymentTerms, getValidationError, validateField } from "@/lib/validation"
 import { normalizePhone } from "@/lib/phone-utils"
+import { readAppCurrency } from "@/lib/currency-service"
 
 interface Customer {
   id: string
@@ -752,7 +753,7 @@ export function CustomerFormDialog({
                     )}
                     {/* v3.74.520 — عملة الشركة الأساسية بدل تثبيت الجنيه */}
                     {(() => {
-                      const bc = (() => { try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' } })()
+                      const bc = readAppCurrency()
                       const ccyAr = bc === 'EGP' ? 'ج.م' : bc
                       return (
                         <>

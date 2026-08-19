@@ -32,6 +32,7 @@ import { DataTable, type DataTableColumn } from "@/components/DataTable"
 import { StatusBadge } from "@/components/DataTableFormatters"
 import { useRealtimeTable } from "@/hooks/use-realtime-table"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+import { readAppCurrency } from "@/lib/currency-service"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -340,7 +341,7 @@ export default function InvoicesPage() {
   // Listen for currency changes and reload data
   useEffect(() => {
     const handleCurrencyChange = () => {
-      const newCurrency = localStorage.getItem('app_currency') || 'EGP'
+      const newCurrency = readAppCurrency()
       setAppCurrency(newCurrency)
       // Reload invoices to get updated display amounts
       loadData()

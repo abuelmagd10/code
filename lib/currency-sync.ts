@@ -7,7 +7,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js'
 import { getActiveCompanyId } from './company'
-import { getBaseCurrency } from "@/lib/currency-service"
+import { getBaseCurrency, readAppCurrency } from "@/lib/currency-service"
 
 /**
  * Sync user's display currency with company's base currency
@@ -46,7 +46,7 @@ export async function syncUserCurrency(supabase: SupabaseClient): Promise<string
       // Update localStorage and cookie
       if (typeof window !== 'undefined') {
         try {
-          const currentCurrency = localStorage.getItem('app_currency') || 'EGP'
+          const currentCurrency = readAppCurrency()
           
           // ✅ إطلاق event فقط إذا تغيرت العملة فعلياً
           if (currentCurrency !== companyCurrency) {
@@ -66,7 +66,7 @@ export async function syncUserCurrency(supabase: SupabaseClient): Promise<string
 
     // For owners, use their preference or company currency
     if (typeof window !== 'undefined') {
-      const storedCurrency = localStorage.getItem('app_currency')
+      const storedCurrency = readAppCurrency()
       if (storedCurrency) {
         return storedCurrency
       }

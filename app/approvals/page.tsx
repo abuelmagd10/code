@@ -17,6 +17,7 @@ import {
 import { PageGuard } from "@/components/page-guard"
 import Link from "next/link"
 import { HIDDEN_MONEY, isHiddenMoney, money } from "@/lib/purchase-money"
+import { readAppCurrency } from "@/lib/currency-service"
 
 /**
  * v3.74.946 — شاشةُ الاعتمادات تقرأ مالَ الشراء من المنفذ المقنَّع.
@@ -792,7 +793,7 @@ const DiscountApprovalCard = ({ d, ctx }: { d: PendingDiscountApproval; ctx: Car
           rejectId, rejectReason, setRejectReason, setRejectId, setRejectType,
           runningId, handleApprove, handleReject, canDecide } = ctx
   // v3.74.520 — عملة الشركة الأساسية بدل تثبيت الجنيه
-  const baseCcy = (() => { try { return localStorage.getItem('app_currency') || 'EGP' } catch { return 'EGP' } })()
+  const baseCcy = readAppCurrency()
   const ccyLbl = baseCcy === 'EGP' ? t("ج.م", "EGP") : baseCcy
   const discountLabel = d.discount_type === "percent"
     ? `${fmtMoney(d.discount_value)}%`
@@ -2611,7 +2612,7 @@ function ApprovalsContent() {
             const valueLabel = d.discount_type === "percent"
               ? `الخصم: ${d.discount_value}%`
               // v3.74.520 — عملة الشركة الأساسية بدل تثبيت الجنيه
-              : `الخصم: ${d.discount_value} ${(() => { try { const c = localStorage.getItem('app_currency') || 'EGP'; return c === 'EGP' ? 'ج.م' : c } catch { return 'ج.م' } })()}`
+              : `الخصم: ${d.discount_value} ${(() => { const c = readAppCurrency(); return c === 'EGP' ? 'ج.م' : c })()}`
             // v3.74.470 — build amendment context from the prior
             // approval when supersedes_approval_id is set.
             const scope = scopeByDoc.get(`${d.document_type}:${d.document_id}`) ?? { branch_id: null, warehouse_id: null }

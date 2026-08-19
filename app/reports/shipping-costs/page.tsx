@@ -11,6 +11,7 @@ import { Download, ArrowRight, DollarSign, Truck, TrendingUp } from "lucide-reac
 import { useRouter } from "next/navigation"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LineChart, Line } from "recharts"
+import { readAppCurrency } from "@/lib/currency-service"
 
 interface ShippingCost {
   key: string
@@ -64,7 +65,7 @@ export default function ShippingCostsPage() {
       try {
         const v = localStorage.getItem('app_language') || 'ar'
         setAppLang(v === 'en' ? 'en' : 'ar')
-        setAppCurrency(localStorage.getItem('app_currency') || 'EGP')
+        setAppCurrency(readAppCurrency())
       } catch { }
     }
     handler()

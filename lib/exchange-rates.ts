@@ -4,6 +4,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js'
+import { readAppCurrency } from './currency-service'
 
 // Custom error for exchange rate failures
 export class ExchangeRateError extends Error {
@@ -55,21 +56,21 @@ export interface ExchangeRate {
  * or anything that needs to know the "true" base currency.
  *
  * Returns the cached app_currency from localStorage, or 'EGP' as last resort.
+ *
+ * v3.75.66 — **وسؤالُ الاسمِ ليس سؤالَ الباب**: القراءةُ نفسُها انتقلت إلى
+ * **بيتِ الشاشةِ الواحد** `readAppCurrency()` فى `lib/currency-service.ts` —
+ * **ولا يُبنى بيتٌ ثانٍ**. عقدُ هذه الدالّةِ مع مستدعيها لم يتغيّر.
  */
 export function getBaseCurrency(): string {
   if (typeof window === 'undefined') return 'EGP'
-  try {
-    // Log a warning in dev to help find remaining call sites
-    if (process.env.NODE_ENV === 'development') {
-      console.warn(
-        '[exchange-rates] getBaseCurrency() from lib/exchange-rates is deprecated. ' +
-        'Use the async version from lib/currency-service.ts with supabase+companyId.'
-      )
-    }
-    return localStorage.getItem('app_currency') || 'EGP'
-  } catch {
-    return 'EGP'
+  // Log a warning in dev to help find remaining call sites
+  if (process.env.NODE_ENV === 'development') {
+    console.warn(
+      '[exchange-rates] getBaseCurrency() from lib/exchange-rates is deprecated. ' +
+      'Use the async version from lib/currency-service.ts with supabase+companyId.'
+    )
   }
+  return readAppCurrency() || 'EGP'
 }
 
 // Get currency symbol

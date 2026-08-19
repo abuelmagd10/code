@@ -36,6 +36,7 @@ import { AddCapitalDialog } from "@/components/fixed-assets/add-capital-dialog"
 import { DisposeAssetDialog } from "@/components/fixed-assets/dispose-asset-dialog"
 import { AssetHistory } from "@/components/fixed-assets/asset-history"
 import { useAutoRefresh } from "@/hooks/use-auto-refresh"
+import { readAppCurrency } from "@/lib/currency-service"
 
 interface FixedAsset {
   id: string
@@ -177,7 +178,7 @@ export default function FixedAssetDetailsPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setAppLang((localStorage.getItem('app_language') as 'ar' | 'en') || 'ar')
-      setCurrency(localStorage.getItem('company_currency') || 'SAR')
+      setCurrency(readAppCurrency())
     }
     loadData()
   }, [params.id])
