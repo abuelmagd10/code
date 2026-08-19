@@ -24,7 +24,7 @@ import { Settings, Moon, Sun, Users, Mail, Lock, Building2, Globe, Palette, Chev
 import { ERPPageHeader } from "@/components/erp-page-header"
 import { type AISettings, DEFAULT_AI_SETTINGS, fetchAISettings, saveAISettings } from "@/lib/page-guides"
 import { Progress } from "@/components/ui/progress"
-import { getActiveCurrencies, getFXAccounts, readAppCurrency, type Currency } from "@/lib/currency-service"
+import { getActiveCurrencies, getFXAccounts, readAppCurrency, getBaseCurrency, type Currency } from "@/lib/currency-service"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { writeAuditLog } from "@/lib/audit-log-write"
 
@@ -783,7 +783,14 @@ export default function SettingsPage() {
                 const c = js?.data?.company || js?.company
                 if (res.ok && c?.id) {
                   setCompanyId(String(c.id))
-                  setCurrency(c.base_currency || "EGP")
+                  // v3.75.70 — «ولا تُخترَعُ عملة»: كان الارتدادُ هنا حرفاً
+                  // مخترَعاً "EGP" لو غابَ base_currency من استجابةِ
+                  // /api/my-company (التى صارت الآن، بعد إصلاحِ المسارِ نفسِه،
+                  // تُعيدُ عملةَ getBaseCurrency المحكومةَ لا العمودَ الخامَ إلا
+                  // عندَ عطبٍ عابر). فالارتدادُ الآن إلى بيتِ الشاشةِ الواحد
+                  // readAppCurrency لا حرفٍ مخترَع — أُجِّل هذا من v3.75.69
+                  // وأُنجِزَ هنا.
+                  setCurrency(c.base_currency || readAppCurrency())
                   setName(c.name || "")
                   setAddress(c.address || "")
                   setCity(c.city || "")
@@ -827,7 +834,20 @@ export default function SettingsPage() {
                     const c = (Array.isArray(companies) ? companies[0] : null) as any
                     if (c) {
                       setCompanyId(String(c.id))
-                      setCurrency(c.base_currency || "EGP")
+                      // v3.75.70 — هذا استعلامٌ مباشرٌ على القاعدةِ يتجاوزُ كلا
+                      // المسارَين الآخَرَين (company-info وmy-company)، فهو بيتٌ
+                      // ثالثٌ كان يقرأُ العمودَ الخامَ ويرتدُّ إلى حرفٍ مخترَعٍ
+                      // "EGP" — فصار ينادى بيتَ v3.75.65 الواحد getBaseCurrency
+                      // مباشرةً (العميلُ مصادَقٌ بجلسةِ المستخدِم، والدالّةُ
+                      // نفسُها تصرخُ لا تخترعُ)، وإن صرخت يبقى الارتدادُ إلى
+                      // بيتِ الشاشةِ readAppCurrency لا حرفٍ مخترَع.
+                      let resolvedCurrency = c.base_currency || readAppCurrency()
+                      try {
+                        resolvedCurrency = await getBaseCurrency(supabase, String(c.id))
+                      } catch (bcErr: any) {
+                        console.error('[Settings] getBaseCurrency fallback to raw column:', bcErr?.message)
+                      }
+                      setCurrency(resolvedCurrency)
                       setName(c.name || "")
                       setAddress(c.address || "")
                       setCity(c.city || "")

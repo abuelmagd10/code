@@ -8,6 +8,7 @@ import {
   internalServerError,
   API_ERROR_CODES
 } from "@/lib/api-response"
+import { getBaseCurrency } from "@/lib/currency-service"
 
 /**
  * GET /api/my-company
@@ -141,6 +142,19 @@ export async function GET(req: NextRequest) {
     if (!company) {
       console.warn('[API /my-company] Company data not found after access check:', companyId)
       return notFoundError('الشركة', 'Company not found')
+    }
+
+    // v3.75.70 — **بيتٌ واحدٌ للعملةِ الأساسيّة هنا أيضاً**: هذا المسارُ (كسائرِ
+    // مسارِه المؤجَّلِ من v3.75.69) كان يُعيدُ عمودَ companies.base_currency كما
+    // قرأه مباشرةً — بيتٌ ثانٍ يتجاوزُ بيتَ v3.75.65 (getBaseCurrency، الذى ينادى
+    // erp_company_base_currency ويعتمدُ منحةَ المستخدِمِ المسجَّلِ أيضاً). فتُستبدَلُ
+    // القيمةُ بنداءِ البيتِ الواحد؛ وإن صرخ يبقى العمودُ الخامُ كما قُرئ — لأنّ هذا
+    // المسارَ يخدمُ أيضاً الاسمَ والعنوانَ وغيرَهما، ولا يجوزُ أن يُسقِطَهما عطبُ
+    // العملةِ وحدَها (نفسُ نهجِ company-info/route.ts).
+    try {
+      company.base_currency = await getBaseCurrency(supabase, companyId)
+    } catch (bcError: any) {
+      console.error('[API /my-company] getBaseCurrency fallback to raw column:', bcError?.message)
     }
 
     // ✅ 6. جلب بيانات العضوية إذا لم تكن مجلوبة مسبقاً (في حالة الدخول كمالك للشركة ولم تُجلب العضوية)
