@@ -20,14 +20,24 @@ import { getBaseCurrency, readAppCurrency } from "@/lib/currency-service"
  * @returns The currency code that should be used
  */
 export async function syncUserCurrency(supabase: SupabaseClient): Promise<string> {
+  // v3.75.72 — **فالعملةُ الأساسيّةُ لا تُقرَأُ إلا من بيتِها الواحد**:
+  // كانت مساراتُ الفشلِ الخمسةُ هنا (لا مستخدمَ · لا شركةَ نشطة · لا صفَّ
+  // شركةٍ · إلغاءُ الطلب · أىُّ خطإٍ آخر) كلُّها ترتدُّ إلى 'EGP' حرفاً —
+  // وهذه الدالّةُ تعملُ فى **كلِّ تحميلِ صفحةٍ** عبر CurrencySyncProvider
+  // المُثبَّتِ على مستوى التطبيقِ كلِّه. فمستخدمٌ مدعوٌّ فى شركةٍ عملتُها
+  // الأساسيّةُ ليست جنيهاً، لو حدث عطبٌ عابرٌ فى الشبكةِ، كان يُفرَضُ عليه
+  // جنيهٌ مصرىٌّ خطأً بصمت. لا مستدعيًا لهذه الدالّةِ (لا فى هذا الملفّ ولا
+  // فى CurrencySyncProvider ولا فى CurrencyMismatchAlert) يستعملُ قيمةَ
+  // الإرجاعِ عندَ الفشل — فالصراخُ هنا آمنٌ تماماً: مِن دونِ خسارةِ سلوكٍ
+  // كان يُعتمَدُ عليه.
   try {
     // Get current user
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return 'EGP'
+    if (!user) throw new Error('لا مستخدمَ مسجَّلَ الدخولِ لمزامنةِ عملتِه')
 
     // Get active company
     const companyId = await getActiveCompanyId(supabase)
-    if (!companyId) return 'EGP'
+    if (!companyId) throw new Error('لا شركةَ نشطةً للمستخدمِ لمزامنةِ عملتِها')
 
     // Get company details
     const { data: company } = await supabase
@@ -36,7 +46,7 @@ export async function syncUserCurrency(supabase: SupabaseClient): Promise<string
       .eq('id', companyId)
       .maybeSingle()
 
-    if (!company) return 'EGP'
+    if (!company) throw new Error('لم توجَدْ شركةٌ بهذا الرقمِ لمزامنةِ عملتِها')
 
     const companyCurrency = await getBaseCurrency(supabase, companyId)
     const isOwner = company.user_id === user.id
@@ -77,10 +87,10 @@ export async function syncUserCurrency(supabase: SupabaseClient): Promise<string
     // ✅ معالجة AbortError بشكل صحيح
     if (error?.name === 'AbortError' || error?.message?.includes('aborted')) {
       console.warn('⚠️ [CurrencySync] Syncing user currency aborted (component unmounted)')
-      return 'EGP'
+      throw error
     }
     console.error('Error syncing user currency:', error)
-    return 'EGP'
+    throw error
   }
 }
 

@@ -389,12 +389,15 @@ export default function SalesReturnsPage() {
       width: 'w-32',
       format: (value, row) => {
         // v3.74.187 — show the return's own currency. The total_amount
-        // column is in base currency (EGP) for accounting, but if the
-        // underlying invoice was in another currency we surface the
+        // column is in the company's base currency for accounting, but if
+        // the underlying invoice was in another currency we surface the
         // original value next to it so the user is not misled.
+        // v3.75.72 — قورِن بعملةِ الشركةِ الأساسيّةِ الحقيقيّةِ (appCurrency،
+        // أعلى المكوِّن) لا بحرفٍ مخترَعٍ 'EGP' — كان هذا يُخفى أو يُظهرُ
+        // المبلغَ الأصلىَّ خطأً لكلِّ شركةٍ عملتُها الأساسيّةُ ليست الجنيه.
         const origCurrency = String((row as any)?.original_currency || '').toUpperCase()
         const origTotal = (row as any)?.original_total_amount
-        const showOriginal = origCurrency && origCurrency !== 'EGP' && origTotal != null
+        const showOriginal = origCurrency && origCurrency !== appCurrency && origTotal != null
         const origSymbol = currencySymbols[origCurrency] || origCurrency
         return (
           <div className="flex flex-col items-end">

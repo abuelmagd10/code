@@ -4,7 +4,6 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js'
-import { readAppCurrency } from './currency-service'
 
 // Custom error for exchange rate failures
 export class ExchangeRateError extends Error {
@@ -46,32 +45,15 @@ export interface ExchangeRate {
   source: 'manual' | 'api' | 'exchangerate-api'
 }
 
-/**
- * @deprecated v3.27.0 — localStorage-based getBaseCurrency is unsafe for multi-company.
- *   Use `getBaseCurrency(supabase, companyId)` from `lib/currency-service.ts` instead.
- *
- * This sync version is kept as fallback for client-only code paths that don't yet have
- * supabase context. It reads from localStorage which may be stale or out of sync with
- * the actual company.base_currency in the DB. NEVER use this for financial calculations
- * or anything that needs to know the "true" base currency.
- *
- * Returns the cached app_currency from localStorage, or 'EGP' as last resort.
- *
- * v3.75.66 — **وسؤالُ الاسمِ ليس سؤالَ الباب**: القراءةُ نفسُها انتقلت إلى
- * **بيتِ الشاشةِ الواحد** `readAppCurrency()` فى `lib/currency-service.ts` —
- * **ولا يُبنى بيتٌ ثانٍ**. عقدُ هذه الدالّةِ مع مستدعيها لم يتغيّر.
- */
-export function getBaseCurrency(): string {
-  if (typeof window === 'undefined') return 'EGP'
-  // Log a warning in dev to help find remaining call sites
-  if (process.env.NODE_ENV === 'development') {
-    console.warn(
-      '[exchange-rates] getBaseCurrency() from lib/exchange-rates is deprecated. ' +
-      'Use the async version from lib/currency-service.ts with supabase+companyId.'
-    )
-  }
-  return readAppCurrency() || 'EGP'
-}
+// v3.75.72 — **ولا يُبقى لغمٌ صفرىُّ الاستخدام**: الدالّةُ المُهمَلةُ التى
+// كانت هنا (`getBaseCurrency()` المتزامنةُ بلا وسائط) كانت مرتدّةً إلى
+// 'EGP' حرفاً عندَ غيابِ `window` أو غيابِ القيمةِ المخزَّنة — نفسُ عطبِ
+// v3.75.65-71، وإن كانت مُعلَنةً @deprecated منذ v3.27.0. قياسٌ فى كلِّ
+// موضعٍ يستوردُ `getBaseCurrency` فى المشروع (بحثٌ نصّىٌّ كامل) لم يجد
+// مستدعياً واحداً حيّاً لها — الجميعُ يستوردُها من `lib/currency-service.ts`
+// (البيتُ الواحدُ الحقيقى) بدلاً منها. فحُذفت كلِّيّةً بدلَ إصلاحِها: لا
+// عقدَ يُكسَر (لا مستدعيَ يخسرُه)، ولا لغمَ باقياً لموضعٍ مستقبلىٍّ يستوردُها
+// غفلةً عن البيتِ الواحدِ الحقيقى.
 
 // Get currency symbol
 export function getCurrencySymbol(code: string): string {

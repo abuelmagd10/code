@@ -4110,12 +4110,14 @@ export default function PaymentsPage() {
                     {appLang === 'en' ? 'Amount' : 'المَبلَغ'}:{" "}
                     <span className="font-semibold">
                       {Number(correctionPayment.amount).toLocaleString()}{" "}
-                      {correctionPayment.original_currency || correctionPayment.currency_code || 'EGP'}
+                      {correctionPayment.original_currency || correctionPayment.currency_code || baseCurrency}
                     </span>
-                    {/* v3.74.524 — FX base equivalent + rate for non-EGP */}
-                    {(correctionPayment.original_currency || correctionPayment.currency_code) !== 'EGP' && correctionPayment.base_currency_amount != null && (
+                    {/* v3.74.524 — FX base equivalent + rate for non-base-currency
+                        v3.75.72 — قورِن بعملةِ الشركةِ الأساسيّةِ المحوكَمةِ
+                        (baseCurrency، أعلى المكوِّن) لا بحرفٍ مخترَعٍ 'EGP' */}
+                    {(correctionPayment.original_currency || correctionPayment.currency_code || baseCurrency) !== baseCurrency && correctionPayment.base_currency_amount != null && (
                       <span className="ms-2 text-muted-foreground">
-                        ≈ {Number(correctionPayment.base_currency_amount).toLocaleString()} EGP
+                        ≈ {Number(correctionPayment.base_currency_amount).toLocaleString()} {baseCurrency}
                         {correctionPayment.exchange_rate != null && <> · {appLang === 'en' ? 'FX' : 'سعر الصرف'}: {Number(correctionPayment.exchange_rate).toFixed(4)}</>}
                       </span>
                     )}

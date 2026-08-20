@@ -15,6 +15,7 @@ import { useState, useEffect, useMemo, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
 import { useSupabase } from "@/lib/supabase/hooks"
 import { getActiveCompanyId } from "@/lib/company"
+import { readAppCurrency } from "@/lib/currency-service"
 import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
 import {
@@ -167,7 +168,10 @@ export default function VendorPaymentCorrectionRequestsPage() {
         const orig = r.original_payment_id ? origMap.get(r.original_payment_id) : null
         return {
           ...r,
-          __original_currency: orig?.original_currency || orig?.currency_code || "EGP",
+          // v3.75.72 — الارتدادُ صار قراءةَ العملةِ الأساسيّةِ الحقيقيّةِ
+          // (لا حرفَ 'EGP' مخترَعاً)؛ هذا الملفُّ لم يكن يستوردُ بيتَ
+          // العملةِ الواحد أصلاً.
+          __original_currency: orig?.original_currency || orig?.currency_code || readAppCurrency(),
           __base_amount: orig?.base_currency_amount != null ? Number(orig.base_currency_amount) : null,
           __exchange_rate: orig?.exchange_rate != null ? Number(orig.exchange_rate) : null,
         }
@@ -338,7 +342,12 @@ export default function VendorPaymentCorrectionRequestsPage() {
       // v3.74.541 — show currency + base + proposed diff so the
       // executor / approver sees the full picture at a glance.
       format: (_v: any, r: CorrectionRequest) => {
-        const currency = r.__original_currency || "EGP"
+        // v3.75.72 — قورِنت العملةُ بالعملةِ الأساسيّةِ الحقيقيّةِ المقروءةِ
+        // من بيتِها الواحد (readAppCurrency)، لا بحرفٍ مخترَعٍ 'EGP' —
+        // كان هذا يُخفى سطرَ التحويلِ (FX) خطأً لكلِّ شركةٍ عملتُها
+        // الأساسيّةُ ليست الجنيه.
+        const baseCcy = readAppCurrency()
+        const currency = r.__original_currency || baseCcy
         const base = r.__base_amount
         const rate = r.__exchange_rate
         const proposed = (r.metadata?.proposed_changes || {}) as Record<string, any>
@@ -349,9 +358,9 @@ export default function VendorPaymentCorrectionRequestsPage() {
             <span className="font-semibold text-emerald-700 dark:text-emerald-400">
               {Number(r.amount).toLocaleString()} {currency}
             </span>
-            {currency !== "EGP" && base != null && (
+            {currency !== baseCcy && base != null && (
               <span className="text-[10px] text-muted-foreground">
-                ≈ {base.toLocaleString()} EGP
+                ≈ {base.toLocaleString()} {baseCcy}
                 {rate != null && <> · {appLang === 'en' ? 'FX' : 'سعر الصرف'}: {rate.toFixed(4)}</>}
               </span>
             )}

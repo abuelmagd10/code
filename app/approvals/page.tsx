@@ -1671,7 +1671,12 @@ function ApprovalsContent() {
             // to base (EGP) when the bill row didn't stamp a currency.
             bill_currency: primaryBill?.currency_code ? String(primaryBill.currency_code) : null,
             base_amount: p.base_currency_amount != null ? Number(p.base_currency_amount) : null,
-            base_currency: "EGP",
+            // v3.75.72 — العملةُ الأساسيّةُ لا تُقرَأُ إلا من بيتِها الواحد:
+            // كانت هنا حرفاً مخترَعاً 'EGP' يُوسمُ به base_amount المحوَّلُ
+            // دائماً، حتى لو كانت عملةُ الشركةِ الأساسيّةُ الحقيقيّةُ غيرَ
+            // الجنيه — فيُعرَضُ رقمٌ صحيحٌ بتسميةٍ خاطئة. والفراغُ الصادقُ
+            // خيرٌ من عملةٍ مخترَعة، فلا ارتدادَ بعدَ readAppCurrency().
+            base_currency: readAppCurrency(),
             exchange_rate: p.exchange_rate != null ? Number(p.exchange_rate) : null,
             notes: p.notes ?? null,
             reference_number: p.reference_number ?? null,
@@ -2907,6 +2912,13 @@ function ApprovalsContent() {
           const poNo = primaryBill?.purchase_order_id ? histPoMap.get(primaryBill.purchase_order_id) : null
           const acctName = p.account_id ? histAcctMap.get(p.account_id) : null
           const payCcy = p.original_currency || p.currency_code || "EGP"
+          // v3.75.72 — العملةُ الأساسيّةُ لا تُقرَأُ إلا من بيتِها الواحد:
+          // كانت "هل هذه الدفعةُ أجنبيّة؟" تُقاسُ بمقارنةِ عملتِها بحرفٍ
+          // مخترَعٍ 'EGP'، لا بعملةِ الشركةِ الأساسيّةِ الحقيقيّة — فلشركةٍ
+          // أساسُها الدولارُ، دفعةٌ بالدولار (أى بعملتِها الأساسيّةِ
+          // الصحيحة) كانت تُظَنُّ أجنبيّةً ظلماً، وتُوسَمُ القيمةُ المحوَّلةُ
+          // دائماً بحرفِ EGP خطأً.
+          const baseCcy = readAppCurrency()
           const details: string[] = []
           if (primaryBill?.bill_number) {
             let line = `🧾 فاتورة: ${primaryBill.bill_number}`
@@ -2914,8 +2926,8 @@ function ApprovalsContent() {
             if (allocs.length > 1) line += ` · + ${allocs.length - 1} فاتورة أخرى`
             details.push(line)
           }
-          const baseStr = payCcy !== "EGP" && p.base_currency_amount != null
-            ? ` ≈ ${Number(p.base_currency_amount).toFixed(2)} EGP · سعر الصرف: ${Number(p.exchange_rate || 0).toFixed(4)}`
+          const baseStr = payCcy !== baseCcy && p.base_currency_amount != null
+            ? ` ≈ ${Number(p.base_currency_amount).toFixed(2)} ${baseCcy} · سعر الصرف: ${Number(p.exchange_rate || 0).toFixed(4)}`
             : ""
           details.push(`💰 القيمة: ${Number(p.amount).toFixed(2)} ${payCcy}${baseStr}`)
           const methodLabel = p.payment_method === "cash" ? "نقدى"
@@ -2935,8 +2947,10 @@ function ApprovalsContent() {
             doc_href: null,
             party_label: histSupMap.get(p.supplier_id) ?? null,
             // v3.74.534 — value_label now carries the base equivalent inline
-            value_label: payCcy !== "EGP" && p.base_currency_amount != null
-              ? `${Number(p.amount).toFixed(2)} ${payCcy} ≈ ${Number(p.base_currency_amount).toFixed(2)} EGP`
+            // v3.75.72 — قورِنَ payCcy بعملةِ الشركةِ الأساسيّةِ الحقيقيّة
+            // (baseCcy)، لا بحرفٍ مخترَع — انظرِ التعليقَ أعلاه عندَ baseStr.
+            value_label: payCcy !== baseCcy && p.base_currency_amount != null
+              ? `${Number(p.amount).toFixed(2)} ${payCcy} ≈ ${Number(p.base_currency_amount).toFixed(2)} ${baseCcy}`
               : `${Number(p.amount).toFixed(2)} ${payCcy}`,
             status: status as any,
             requested_by_email: null,
@@ -4600,18 +4614,28 @@ function ApprovalsContent() {
                                   🧮 {t("إجمالى الفاتورة", "Bill total")}: <span className="font-medium text-foreground">{fmtMoney(p.bill_total)}</span>
                                   {!isHiddenMoney(p.bill_total) && p.bill_paid != null && <> · {t("مدفوع سابقاً", "Paid so far")}: <span className="font-medium text-foreground">{fmtMoney(p.bill_paid)}</span></>}
                                   {!isHiddenMoney(p.bill_total) && p.bill_returned != null && p.bill_returned > 0 && <> · {t("مرتجعات", "Returns")}: <span className="font-medium text-foreground">{fmtMoney(p.bill_returned)}</span></>}
-                                  {" "}{p.bill_currency || "EGP"}
+                                  {/* v3.75.72 — الارتدادُ صار قراءةَ العملةِ الأساسيّةِ
+                                      الحقيقيّةِ لا حرفَ 'EGP' مخترَعاً. */}
+                                  {" "}{p.bill_currency || readAppCurrency()}
                                 </p>
                               )}
                               {p.bill_outstanding != null && (() => {
-                                const billCcy = p.bill_currency || "EGP"
-                                // Convert both sides to base (EGP) for a fair
+                                // v3.75.72 — **فالعملةُ الأساسيّةُ لا تُقرَأُ إلا من
+                                // بيتِها الواحد**: كانت "هل عملةُ الفاتورةِ/الدفعةِ
+                                // هى الأساسيّة؟" تُقاسُ بمقارنةٍ بحرفٍ مخترَعٍ 'EGP'،
+                                // فتُعطَّلُ مقارنةُ الدفعِ الزائدِ isOverpay صامتةً
+                                // لكلِّ شركةٍ عملتُها الأساسيّةُ ليست الجنيه — نفسُ
+                                // عطبِ v3.75.65-71، لكن هنا يُعطِّلُ تنبيهاً ماليّاً
+                                // حقيقيّاً لا عرضاً فقط.
+                                const baseCcy = readAppCurrency()
+                                const billCcy = p.bill_currency || baseCcy
+                                // Convert both sides to base for a fair
                                 // comparison. Payment: use base_amount if set,
                                 // else amount when currency = base.
                                 const payInBase = p.base_amount != null
                                   ? p.base_amount
-                                  : (p.currency === "EGP" ? p.amount : null)
-                                const outstandingInBase = billCcy === "EGP" ? p.bill_outstanding : null
+                                  : (p.currency === baseCcy ? p.amount : null)
+                                const outstandingInBase = billCcy === baseCcy ? p.bill_outstanding : null
                                 const isOverpay = payInBase != null && outstandingInBase != null && payInBase > outstandingInBase + 0.01
                                 return (
                                   <p className="text-xs mt-0.5">
@@ -4631,8 +4655,9 @@ function ApprovalsContent() {
                                 <span className="font-semibold text-indigo-700 dark:text-indigo-300">
                                   💰 {t("القيمة", "Amount")}: {fmtMoney(p.amount)} {p.currency}
                                 </span>
-                                {/* v3.74.521 — FX rate + base equivalent for non-EGP payments */}
-                                {p.currency !== "EGP" && p.base_amount != null && (
+                                {/* v3.74.521 — FX rate + base equivalent for non-base-currency payments
+                                    v3.75.72 — قورِن بعملةِ الشركةِ الأساسيّةِ الحقيقيّة لا بحرفٍ مخترَع */}
+                                {p.currency !== readAppCurrency() && p.base_amount != null && (
                                   <span className="ms-2 text-muted-foreground">
                                     ≈ {fmtMoney(p.base_amount)} {p.base_currency}
                                     {p.exchange_rate != null && <> · {t("سعر الصرف", "FX")}: {p.exchange_rate.toFixed(4)}</>}
@@ -6052,10 +6077,12 @@ function ApprovalsContent() {
                                   <span className="font-semibold text-cyan-700 dark:text-cyan-300">
                                     💰 {t("قيمة الاسترداد", "Refund amount")}: {fmtMoney(r.amount)} {r.currency}
                                   </span>
-                                  {/* v3.74.528 — FX base equivalent for non-EGP */}
-                                  {r.currency !== "EGP" && r.base_amount != null && (
+                                  {/* v3.74.528 — FX base equivalent for non-base-currency
+                                      v3.75.72 — قورِن بعملةِ الشركةِ الأساسيّةِ الحقيقيّة
+                                      لا بحرفٍ مخترَع، ووُسم المبلغُ المحوَّلُ بها أيضاً */}
+                                  {r.currency !== readAppCurrency() && r.base_amount != null && (
                                     <span className="ms-2 text-muted-foreground">
-                                      ≈ {fmtMoney(r.base_amount)} EGP
+                                      ≈ {fmtMoney(r.base_amount)} {readAppCurrency()}
                                       {r.exchange_rate != null && <> · {t("سعر الصرف", "FX")}: {r.exchange_rate.toFixed(4)}</>}
                                     </span>
                                   )}
@@ -6264,10 +6291,12 @@ function ApprovalsContent() {
                                   <span className="text-muted-foreground">
                                     {t("الحالى", "Current")}: {fmtMoney(r.amount)} {r.currency}
                                   </span>
-                                  {/* v3.74.528 — FX base equivalent for non-EGP */}
-                                  {r.currency !== "EGP" && r.base_amount != null && (
+                                  {/* v3.74.528 — FX base equivalent for non-base-currency
+                                      v3.75.72 — قورِن بعملةِ الشركةِ الأساسيّةِ الحقيقيّة
+                                      لا بحرفٍ مخترَع، ووُسم المبلغُ المحوَّلُ بها أيضاً */}
+                                  {r.currency !== readAppCurrency() && r.base_amount != null && (
                                     <span className="ms-2 text-muted-foreground">
-                                      ≈ {fmtMoney(r.base_amount)} EGP
+                                      ≈ {fmtMoney(r.base_amount)} {readAppCurrency()}
                                       {r.exchange_rate != null && <> · {t("سعر الصرف", "FX")}: {r.exchange_rate.toFixed(4)}</>}
                                     </span>
                                   )}

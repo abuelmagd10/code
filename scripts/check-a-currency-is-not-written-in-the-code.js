@@ -44,10 +44,9 @@
  * **والقارئُ الصحيحُ واحد**:
  *     lib/currency-service.ts::getBaseCurrency(supabase, companyId)
  *
- * **وثَمَّ بيتٌ ثانٍ يحملُ الاسمَ نفسَه ولا يُنادَى**:
- * `lib/exchange-rates.ts::getBaseCurrency()` يقرأُ من `localStorage` ويُعيدُ
- * `'EGP'`، **ويُعلِنُ عن نفسِه أنّه مهجور**. فمن أصلحَ موضعاً فلا يُصلحْه إليه —
- * **وقاعدةٌ لها بيتان تقولُ قولَين**، ولا يُصلَحُ عطبٌ بعطبٍ آخَر.
+ * (v3.75.72 — كان هنا بيتٌ ثانٍ يحملُ الاسمَ نفسَه فى `lib/exchange-rates.ts`
+ * يقرأُ من `localStorage` ويُعيدُ `'EGP'`، مُعلَناً @deprecated منذ v3.27.0
+ * ولم يُنادِه أحدٌ — فحُذف كلِّيّةً بدلَ أن يبقى لغماً صفرىَّ الاستخدام.)
  *
  * ═══ ولا يُبنى بيتٌ ثانٍ ═══
  *
@@ -62,7 +61,26 @@ const { projectCodeFiles, keepPath, NOT_SHIPPED } = require("./lib/repo-code-fil
 // v3.75.65 — **وعنوانُ السؤالِ واحد**: نزلَ موضعٌ واحدٌ من هذا الصنفِ حين
 // كفَّ بيتُ العملةِ فى الشيفرةِ عن الارتدادِ إلى حرف. **والدفعةُ التى كسبَت
 // هى التى تُثبِّت.**
-const PINNED = 35
+/**
+ * v3.75.72 — **وموضعٌ واحدٌ من الخِيارِ المباشر، لا من خلفِ عامل.**
+ *
+ * تحقيقُ الدَّينِ الأوسعِ المؤجَّلِ من v3.75.71 (تفصيلُه الكاملُ عندَ
+ * `PINNED_IMPLIED` أدناه) وجدَ فى `app/approvals/page.tsx:1674` كائناً يُبنى
+ * لعرضِ سطرِ اعتماد: `base_currency: "EGP"` — خيارٌ مباشرٌ لا مقارنةٌ ولا
+ * ارتداد. صار `readAppCurrency()` بلا ارتدادٍ إضافى (فراغٌ صادقٌ خيرٌ من
+ * عملةٍ مخترَعة، كعادةِ هذا البيت).
+ *
+ * والقياسُ موثَّقٌ لا مُدَّعى: قُورِنَت لائحتا المواضعِ الكاملتانِ (١٩١ موضعاً
+ * قبلَ الدفعة، مباشِرها وخلفَ عاملِها معاً) قبلَ التعديلِ وبعدَه سطراً سطراً،
+ * فتأكَّدَ أنّ هذا هو الموضعُ الوحيدُ من صنفِ «قيمةٌ تُكتَبُ أو تُرسَل» الذى
+ * تغيَّر.
+ *
+ *   ٣٥  المُثبَّتُ قبلَ الدفعة
+ *   −١  «قيمةٌ تُكتَبُ أو تُرسَل»: app/approvals/page.tsx:1674
+ *   ───
+ *   ٣٤  المقيسُ يومَ الشحن
+ */
+const PINNED = 34
 /**
  * v3.75.58 — **والارتدادُ اختراعٌ مؤجَّل.**
  *
@@ -254,7 +272,74 @@ const PINNED = 35
  * تُفرِزُه بحسبِ نوعِه — عملةُ مستندٍ، أو بذرةُ حالةٍ، أو ثابتُ منصّةٍ — لا
  * دفعةً واحدةً تكتسحُه.
  */
-const PINNED_IMPLIED = 156
+/**
+ * v3.75.72 — **وأخطرُ ما فى الدَّينِ الأوسعِ: مقارنةٌ تكتبُ فى القاعدة،
+ * ومقارنةٌ تُعطِّلُ إنذارَ دفعٍ زائد — لا عرضٌ فقط.**
+ *
+ * تحقيقُ الدَّينِ المؤجَّلِ من v3.75.71 كشفَ نمطاً لم يكن معروفاً من قبل:
+ * **مقارنةٌ** بعملةِ المستندِ بحرفِ `'EGP'` مباشرةً كبديلٍ صامتٍ عن سؤالِ
+ * عملةِ القاعدةِ الحقيقيّةِ من الشركة — أخطرُ من ارتدادٍ يخترعُ قيمةً، لأنّه
+ * يقرِّرُ **سلوكاً**، لا عرضاً فقط:
+ *
+ *   - `lib/sales-returns.ts:142` — **الأخطرُ فى كلِّ الدَّينِ الأوسع**: هذه
+ *     المقارنةُ تقرِّرُ إن كانت فاتورةُ المرتجَعِ بعملةِ القاعدة، وعلى قرارِها
+ *     يُحسَبُ `originalSubtotal/Tax/Total` **المكتوبُ فعلاً فى القاعدة** —
+ *     رقمٌ محاسبىٌّ مرحَّل، لا عرضاً على شاشة. لشركةٍ قاعدتُها ليست الجنيهَ،
+ *     كانت المقارنةُ تكذبُ دائماً فيُكتَبُ رقمُ مرتجَعٍ خاطئ. صارت تنادى
+ *     `getBaseCurrency` وتقارنُ بالحقيقةِ لا بحرفٍ ثابت.
+ *   - `app/approvals/page.tsx` — **الأخطرُ بعدَه**: داخلَ حسابِ الدفعِ
+ *     الزائد، `billCcy === "EGP"` كانت تقرِّرُ `outstandingInBase` التى
+ *     يُبنى عليها `isOverpay`؛ لشركةٍ قاعدتُها ليست الجنيهَ، كانت هذه
+ *     المقارنةُ تكذبُ دائماً **فيُعطَّلُ إنذارُ الدفعِ الزائدِ كلِّيّةً** —
+ *     عطبٌ ماليٌّ صامتٌ لا عرضىٌّ. صارت تنادى `readAppCurrency()` وتقارنُ
+ *     بالحقيقة، ومعها بقيّةُ مقارناتِ الملفِّ ووسومِه العرضيّةِ المماثلة
+ *     (٢٠ موضعاً قبلَ الدفعةِ صارت ١٠).
+ *   - `lib/currency-sync.ts::syncUserCurrency` — دالّةٌ عالميّةٌ تُنادَى من
+ *     مزوِّدٍ يعملُ فى كلِّ تحميلِ صفحة (`app/currency-sync-provider.tsx`)؛
+ *     كانت ترتدُّ إلى `'EGP'` حرفاً فى خمسةِ مواضعَ (ثلاثةُ حراسٍ وموضعا
+ *     مصيدة) بدلَ أن تصرخ. تحقَّقَ أنّ لا مُنادِياً (هى ولا
+ *     `CurrencyMismatchAlert.tsx`) يستعملُ القيمةَ المُعادةَ أصلاً — كلاهما
+ *     ينادى للأثرِ الجانبىِّ فقط داخلَ محاولتِه — فصارت تصرخُ (`throw`) بدلَ
+ *     أن تخترعَ عملةً يُبنى عليها تحديثُ شاشةٍ كاملة.
+ *   - `lib/exchange-rates.ts::getBaseCurrency` — بيتٌ ثانٍ مهجورٌ (مُعلَنٌ
+ *     @deprecated منذ v3.27.0)، جردٌ شاملٌ للمستودعِ لم يجد له مُنادياً
+ *     حيّاً — فحُذف كلِّيّةً بدلَ أن يُصلَح، **فلا يبقى لغماً صفرىَّ
+ *     الاستخدام**. وحذفُه كسرَ فحصَ التفويضِ الذاتىَّ لهذا الحارس (كان
+ *     الملفُّ مذكوراً بالاسمِ ضمنَ ثلاثةِ بيوتٍ مُلزَمةٍ بمناداةِ
+ *     `readAppCurrency()`) — فأُصلح جذرُ العطبِ لا سطحُه: أُخرِج الملفُّ من
+ *     قائمةِ البيوتِ المُفوَّضةِ (صارت بيتَين لا ثلاثة)، لأنّه بعدَ حذفِ
+ *     الدالّةِ **لا مسؤوليّةَ قراءةِ عملةٍ له إطلاقاً** — لا لأنّ الفحصَ
+ *     أُضعِف؛ وحُدِّثت أمثلةُ الفخِّ الذاتىِّ معه (٥٩/٥٩ ما زالت تمرّ).
+ *   - `app/payments/page.tsx` (٦ مواضعَ صارت ٤) و
+ *     `app/vendor-payment-correction-requests/page.tsx` (٣ صارت صفراً) —
+ *     نفسُ نمطِ المقارنةِ/الارتدادِ فى مواضعَ عرضيّةٍ ومقارناتٍ للمبلغِ
+ *     المدفوعِ بعملةِ القاعدة، صارت تنادى بيتَ الشاشةِ الواحد.
+ *
+ * والقياسُ موثَّقٌ لا مُدَّعى: قُورِنَت لائحتا المواضعِ الكاملتانِ (١٩١ موضعاً
+ * قبلَ الدفعة، مباشِرها وخلفَ عاملِها معاً) قبلَ التعديلِ وبعدَه سطراً سطراً
+ * — لا العدُّ الإجمالىُّ فقط — فتأكَّدَ أنّ النقصانَ كلَّه، ولا زيادةَ ولا
+ * نقصانَ خارجَه، واقعٌ فى السبعةِ ملفّاتٍ المذكورةِ أعلاه؛ وأنّ ما بقىَ
+ * مُثبَتاً فى `lib/sales-returns.ts:137` وفى `app/sales-returns/page.tsx:218`
+ * عملةُ مستندٍ فرديّةٍ (`currency_code` الخاصُّ بفاتورةٍ بعينِها، لا عملةُ
+ * قاعدةٍ مخترَعة) — نمطٌ مختلفٌ تماماً مُقرَّرٌ سلفاً أنّه مشروع، فلم يُمَسّ.
+ *
+ *   ١٥٦  المُثبَّتُ قبلَ الدفعة
+ *   −٦   «ارتدادٌ عن قيمةٍ صامتة»: exchange-rates.ts وvendor-payment-
+ *        correction-requests/page.tsx ونحوِها من الارتداداتِ الصامتة
+ *   −٦   «قيمةٌ تُعادُ من دالّة»: currency-sync.ts (٥ مواضعَ) وexchange-
+ *        rates.ts (موضعٌ واحد) صارت تصرخُ بدلَ أن ترتدَّ إلى حرف
+ *   −١١  «مقارنةٌ يتفرّعُ عليها سلوك»: sales-returns.ts (وفيها بوّابةُ كتابةِ
+ *        فرقِ المرتجَعِ فى القاعدة)، وapprovals/page.tsx (وفيها بوّابةُ
+ *        اكتشافِ الدفعِ الزائد)، وpayments/page.tsx، وsales-returns/page.tsx،
+ *        وvendor-payment-correction-requests/page.tsx
+ *   ───
+ *   ١٣٣  المقيسُ يومَ الشحن
+ *
+ * والباقى من الدَّينِ الأوسعِ (١٣٣ موضعاً) عملاتُ مستنداتٍ فرديّةٍ أو ثوابتُ
+ * منصّةٍ فى غالبِها — مؤجَّلٌ عمداً لدفعاتٍ لاحقةٍ تُفرِزُه، **ومعدودٌ لا
+ * مسكوتٌ عنه**.
+ */
+const PINNED_IMPLIED = 133
 // **ونصُّ الفحصِ مواصفةٌ لا صنعة** — ولا يحتاجُ هذا الملفُّ استثناءً بالاسم:
 // فخُّه الذاتىُّ يحملُ أمثلةً مكتوبةً حرفاً **ليُثبتَ أنّه يراها**، لكنّ جردَ
 // البيتِ الواحدِ **لا يشملُ مجلّدَ `scripts` أصلاً** — وهذا مقيسٌ لا مُدَّعى:
@@ -436,7 +521,16 @@ function currencyLiterals(src) {
 // ───────────────────────────────────────────────────────────────────────────
 const ONE_HOME_FILE = "lib/currency-service.ts"
 const ONE_HOME_FN = "readAppCurrency"
-const DELEGATE_FILES = ["lib/currency-utils.ts", "lib/currency-converter.ts", "lib/exchange-rates.ts"]
+// v3.75.72 — **ولا يُفوَّضُ إلى بيتٍ لم يعُدْ موجوداً**: كانت
+// lib/exchange-rates.ts ثالثةَ هذه القائمةِ، لأنّها حملت دالّةً مُهمَلةً
+// (@deprecated منذ v3.27.0) ترتدُّ إلى 'EGP' حرفاً — فأُلزِمَت بمناداةِ
+// readAppCurrency() كحدٍّ أدنى. هذه الدفعةُ حذفت تلك الدالّةَ كلِّيّةً
+// (قياسٌ نصّىٌّ شاملٌ للمشروعِ أثبت صفرَ مستدعٍ حىٍّ لها؛ الجميعُ يستوردُ
+// getBaseCurrency من lib/currency-service.ts بدلاً منها) — فلم يبقَ فى
+// exchange-rates.ts سببٌ لمناداةِ بيتِ العملةِ أصلاً؛ الملفُّ الآن ثوابتُ
+// رموزٍ وأسعارُ صرفٍ لا قراءةَ عملةٍ محليّةٍ فيه. رُفعت عن القائمةِ، لا
+// أُهمِلت صامتة.
+const DELEGATE_FILES = ["lib/currency-utils.ts", "lib/currency-converter.ts"]
 const DIRECT_READ_RE = /localStorage\.getItem\(\s*(['"`])app_currency\1\s*\)/
 
 /** يتحقّقُ أنّ بيتَ الشاشةِ الواحد قائمٌ وأنّ بيوتَه المُفوَّضةَ تنادِيه فعلاً لا تقرأُ الجيبَ ثانيةً. */
@@ -555,33 +649,33 @@ function selftest() {
   const DELEGATE_OK = (rel) => ({ rel, src: "import { readAppCurrency } from './currency-service'\nexport function getAppCurrency() {\n  return readAppCurrency() || 'EGP'\n}" })
   const delegatesOk = DELEGATE_FILES.map(DELEGATE_OK)
 
-  t("يمرُّ حين يقومُ البيتُ الواحدُ وتُفوِّضُ البيوتُ الثلاثةُ إليه",
+  t("يمرُّ حين يقومُ البيتُ الواحدُ وتُفوِّضُ البيوتُ إليه",
     checkOneHomeDelegation([HOME_OK, ...delegatesOk]), [])
 
   t("ويصرخُ إن غابَ البيتُ الواحدُ نفسُه",
     checkOneHomeDelegation([{ rel: ONE_HOME_FILE, src: "export function somethingElse() {}" }, ...delegatesOk]).length > 0, true)
 
-  t("ويصرخُ إن عادَ أحدُ البيوتِ الثلاثةِ يقرأُ الجيبَ مباشرةً بدلاً من التفويض (وهو أيضاً لم يعُدْ ينادى البيتَ الواحد، فيُصرَخُ عليه بالاثنين معاً)",
+  t("ويصرخُ إن عادَ أحدُ البيوتِ يقرأُ الجيبَ مباشرةً بدلاً من التفويض (وهو أيضاً لم يعُدْ ينادى البيتَ الواحد، فيُصرَخُ عليه بالاثنين معاً)",
     checkOneHomeDelegation([HOME_OK,
       { rel: "lib/currency-utils.ts", src: "export function getAppCurrency() {\n  return localStorage.getItem('app_currency') || 'EGP'\n}" },
-      DELEGATE_OK("lib/currency-converter.ts"), DELEGATE_OK("lib/exchange-rates.ts")]),
+      DELEGATE_OK("lib/currency-converter.ts")]),
     ["lib/currency-utils.ts — لا ينادى readAppCurrency(): كفَّ عن التفويضِ للبيتِ الواحد.",
      "lib/currency-utils.ts — يقرأُ localStorage['app_currency'] مباشرةً: عادَ بيتٌ ثانٍ."])
 
   t("ويصرخُ بواحدةٍ فقط حين يقرأُ الجيبَ مباشرةً كمصدرٍ احتياطىٍّ بعدَ أن نادى البيتَ الواحد أصلاً",
     checkOneHomeDelegation([HOME_OK,
       { rel: "lib/currency-utils.ts", src: "import { readAppCurrency } from './currency-service'\nexport function getAppCurrency() {\n  return readAppCurrency() || localStorage.getItem('app_currency') || 'EGP'\n}" },
-      DELEGATE_OK("lib/currency-converter.ts"), DELEGATE_OK("lib/exchange-rates.ts")]),
+      DELEGATE_OK("lib/currency-converter.ts")]),
     ["lib/currency-utils.ts — يقرأُ localStorage['app_currency'] مباشرةً: عادَ بيتٌ ثانٍ."])
 
   t("ويصرخُ إن كفَّ بيتٌ عن نداءِ البيتِ الواحدِ أصلاً (بلا قراءةٍ مباشرةٍ حتّى)",
     checkOneHomeDelegation([HOME_OK,
       { rel: "lib/currency-utils.ts", src: "export function getAppCurrency() {\n  return 'EGP'\n}" },
-      DELEGATE_OK("lib/currency-converter.ts"), DELEGATE_OK("lib/exchange-rates.ts")]),
+      DELEGATE_OK("lib/currency-converter.ts")]),
     ["lib/currency-utils.ts — لا ينادى readAppCurrency(): كفَّ عن التفويضِ للبيتِ الواحد."])
 
-  t("ويصرخُ إن غابَ أحدُ الملفّاتِ الثلاثةِ من الجردِ كلِّيّةً",
-    checkOneHomeDelegation([HOME_OK, DELEGATE_OK("lib/currency-utils.ts"), DELEGATE_OK("lib/currency-converter.ts")]).length > 0, true)
+  t("ويصرخُ إن غابَ أحدُ الملفَّين من الجردِ كلِّيّةً",
+    checkOneHomeDelegation([HOME_OK, DELEGATE_OK("lib/currency-utils.ts")]).length > 0, true)
 
   // **ونصُّ الفحصِ مواصفةٌ لا صنعة** — والجردُ لا يبلغُ مجلّدَ الحرّاسِ فلا يعدُّ نفسَه.
   // وهذا يُقاسُ بنداءِ البيتِ نفسِه، لا يُدَّعى.
@@ -628,8 +722,8 @@ const CURE =
   "  والاختيارُ محفوظٌ سلفاً فى companies.base_currency، وقارئُه الصحيحُ:\n" +
   "      lib/currency-service.ts::getBaseCurrency(supabase, companyId)\n" +
   "  فنادِه ومرِّرِ العملةَ، أو استقبلْها وسيطاً — ولا تُثبِّتْها هنا.\n" +
-  "  ولا تُصلحْها إلى lib/exchange-rates.ts::getBaseCurrency() — فذلك بيتٌ مهجورٌ\n" +
-  "  يقرأُ من localStorage ويُعيدُ 'EGP'، **ولا يُصلَحُ عطبٌ بعطبٍ آخَر**."
+  "  (v3.75.72 — بيتٌ ثانٍ كان هنا فى lib/exchange-rates.ts يرتدُّ إلى 'EGP'\n" +
+  "  محذوفٌ الآن كلِّيّةً — صفرُ مستدعٍ حىٍّ له وقت حذفِه)."
 
 function verdict(label, rows, pinned, konst) {
   const j = judgePin(rows.length, pinned)
@@ -668,7 +762,7 @@ console.log(
 )
 console.log(
   "  ! ومعدودٌ لا مسكوتٌ عنه — يُسدَّدون على دفعاتٍ مقيسة، وعنوانُ السدادِ واحد:\n" +
-  "      lib/currency-service.ts::getBaseCurrency(supabase, companyId)   (لا البيتُ المهجورُ فى lib/exchange-rates.ts)"
+  "      lib/currency-service.ts::getBaseCurrency(supabase, companyId)"
 )
 for (const x of found) console.log("      - " + x.rel + ":" + x.line + "   [" + x.why + "]   " + x.text)
 process.exit(0)

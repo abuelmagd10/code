@@ -7,6 +7,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { canReturnInvoice, getInvoiceOperationError, requiresJournalEntries } from './validation'
 import { reverseFIFOConsumption } from './fifo-engine'
 import { prepareReverseCOGSTransaction, getCOGSByInvoice } from './cogs-transactions'
+import { getBaseCurrency } from './currency-service'
 
 export interface SalesReturnItem {
   id: string
@@ -139,7 +140,18 @@ export async function prepareSalesReturnData(
       ?? (invoiceCheck as any).exchange_rate_used
       ?? 1
     ) || 1
-    const isBaseCurrency = invoiceCurrency === 'EGP'
+    // v3.75.72 — **فالعملةُ الأساسيّةُ لا تُقرَأُ إلا من بيتِها الواحد**:
+    // كان isBaseCurrency يقارنُ عملةَ الفاتورةِ بحرفٍ مخترَعٍ 'EGP' مباشرةً —
+    // فلو كانت عملةُ الشركةِ الأساسيّةُ الحقيقيّةُ غيرَ الجنيه، وفاتورةُ
+    // المرتجعِ بتلك العملةِ نفسِها (أى بعملتِها الأساسيّةِ الصحيحة)، كان
+    // هذا الشرطُ يُخطئُ فيظنُّها أجنبيّةً، فيقسِمُ originalSubtotal/Tax/Total
+    // على سعرِ الصرفِ رغم أنّها لا تحتاجُ قسمةً أصلاً — قيمةٌ محاسبيّةٌ
+    // خاطئةٌ تُكتَبُ على صفِّ المرتجعِ فى القاعدة، لا عرضاً خاطئاً يزول.
+    // فتُستبدَلُ المقارنةُ بنداءِ البيتِ الواحد؛ وإن صرخ (تعذَّر تحديدُ
+    // عملةِ الشركة) تفشلُ الدالّةُ كلُّها بخطإٍ واضحٍ (يلتقطُه catch أدناه)
+    // بدلَ أن تكتبَ رقماً مخترَعاً بصمت.
+    const companyBaseCurrency = await getBaseCurrency(supabase, companyId)
+    const isBaseCurrency = invoiceCurrency === companyBaseCurrency
     const originalSubtotal = isBaseCurrency
       ? returnedSubtotal
       : Math.round((returnedSubtotal / invoiceRate) * 10000) / 10000
