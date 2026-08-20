@@ -12,6 +12,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
 import { Building2, Globe, Mail, Lock, CheckCircle2, Eye, EyeOff, DollarSign, UserPlus, AlertTriangle } from "lucide-react"
+import { CURRENCIES_NOT_YET_SERVICEABLE } from "@/lib/currency-utils"
 
 // Professional currency list with symbols and flags
 const CURRENCIES = [
@@ -435,16 +436,29 @@ export default function SignUpPage() {
                         <SelectValue placeholder={L.selectCurrency} />
                       </SelectTrigger>
                       <SelectContent className="max-h-[300px]">
-                        {CURRENCIES.map((c) => (
-                          <SelectItem key={c.code} value={c.code}>
-                            <span className="flex items-center gap-2">
-                              <span>{c.flag}</span>
-                              <span className="font-medium">{c.code}</span>
-                              <span className="text-gray-500 dark:text-gray-400">-</span>
-                              <span className="text-gray-600 dark:text-gray-400">{language === "en" ? c.name : c.nameAr}</span>
-                            </span>
-                          </SelectItem>
-                        ))}
+                        {CURRENCIES.map((c) => {
+                          // v3.75.75 — العملةُ التى لا يتّسعُ لها الدفترُ تُعرَضُ ولا تُختار.
+                          // الدفترُ يحفظُ خانتين، وهذه العملاتُ ثلاثُ خاناتٍ أو بلا خانات،
+                          // فاختيارُها اليومَ يعنى فواتيرَ تُرفَضُ بلا سببٍ مفهومٍ وأرقاماً
+                          // تُقَصُّ بصمت. والقائمةُ مشتقّةٌ من بيتِ العملاتِ الواحدِ لا مكتوبةً
+                          // هنا، وتفرغُ من نفسِها فورَ أن يتّسعَ الدفتر.
+                          const notYet = CURRENCIES_NOT_YET_SERVICEABLE.includes(c.code)
+                          return (
+                            <SelectItem key={c.code} value={c.code} disabled={notYet}>
+                              <span className="flex items-center gap-2">
+                                <span>{c.flag}</span>
+                                <span className="font-medium">{c.code}</span>
+                                <span className="text-gray-500 dark:text-gray-400">-</span>
+                                <span className="text-gray-600 dark:text-gray-400">{language === "en" ? c.name : c.nameAr}</span>
+                                {notYet && (
+                                  <span className="ms-1 rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                                    {language === "en" ? "coming soon" : "قريباً"}
+                                  </span>
+                                )}
+                              </span>
+                            </SelectItem>
+                          )
+                        })}
                       </SelectContent>
                     </Select>
                     <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 p-2 rounded-lg">

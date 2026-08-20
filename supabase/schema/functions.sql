@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-20T21:28:17.431Z
--- Routines: 1414
+-- Generated: 2026-08-20T22:27:46.959Z
+-- Routines: 1415
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -25910,6 +25910,43 @@ AS $function$
       AND cm.user_id = p_user_id
       AND cm.role = 'owner'
   );
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- erp_currency_decimals(p_code text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_currency_decimals(p_code text)
+ RETURNS smallint
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
+AS $function$
+DECLARE
+  v_code text := upper(btrim(COALESCE(p_code, '')));
+  v_decimals smallint;
+BEGIN
+  IF v_code = '' THEN
+    RAISE EXCEPTION
+      'CURRENCY_DECIMALS_UNKNOWN: سُئلتُ عن عددِ خاناتِ عملةٍ بلا اسم. '
+      'العملةُ تُقرَأُ من صاحبِها ولا تُترَكُ فارغة.'
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  SELECT decimals INTO v_decimals
+    FROM public.currency_minor_units
+   WHERE code = v_code;
+
+  IF v_decimals IS NULL THEN
+    RAISE EXCEPTION
+      'CURRENCY_DECIMALS_UNKNOWN: لا أعرفُ عددَ خاناتِ [%]. '
+      'تُضافُ العملةُ إلى public.currency_minor_units بعددِ وحدتِها الصغرى '
+      'من ISO 4217 — ولا يُفترَضُ لها رقمٌ هنا.', v_code
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  RETURN v_decimals;
+END;
 $function$
 ;
 

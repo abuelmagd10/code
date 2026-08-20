@@ -6,6 +6,27 @@
 import { readAppCurrency } from './currency-service'
 
 // Currency definitions with symbols and names
+/**
+ * v3.75.75 — «وعددُ الخاناتِ يُقرَأُ ولا يُفترَض».
+ *
+ * هذا الجردُ كان يحملُ اثنتَى عشرةَ عملةً بينما شاشةُ التسجيلِ تعرضُ أربعاً
+ * وعشرين — فكلُّ عملةٍ خارجَه كانت تُنسَّقُ بجردِ الجنيهِ المصرىِّ (رمزُه
+ * وخاناتُه) لأنَّ `formatCurrency` ترتدُّ إلى `CURRENCIES.EGP` عندَ الغياب.
+ * فاكتملَ الجردُ ليُغطّىَ كلَّ عملةٍ يعرضُها المشروعُ على عميل.
+ *
+ * وعددُ الخاناتِ منقولٌ من المعيارِ الدولىِّ ISO 4217 (الوحدةُ الصغرى)، لا
+ * من تقدير. وصُحِّحَ به خطأٌ قائم: الليرةُ اللبنانيّةُ كانت مكتوبةً هنا بلا
+ * خانات (0) والمعيارُ يقولُ خانتان (2) — وهو أوّلُ دليلٍ على أنَّ جردَين
+ * مكتوبَينِ باليدِ يتناقضانِ حتماً؛ ولذلك صارَ للقاعدةِ بيتُها الواحد
+ * (`public.currency_minor_units` و`erp_currency_decimals`) وحارسٌ يُطابقُ
+ * هذا الجردَ بالمعيارِ وبالقاعدةِ فى كلِّ إصدار.
+ *
+ * تنبيه: هذا الجردُ اليومَ **للعرضِ والتنسيقِ فقط**. الدفترُ نفسُه لا يتّسعُ
+ * بعدُ لأكثرَ من خانتين (`journal_entry_lines` بمقياسِ 2)، فالعملاتُ ذاتُ
+ * الثلاثِ خاناتٍ أو بلا خانات **معروضةٌ مقفولةً** على شاشةِ التسجيلِ حتى
+ * يتّسعَ الدفتر — والحارسُ يقرأُ سعةَ الدفترِ من لقطةِ القاعدةِ ويفرضُ
+ * القفلَ ما دامت ضيّقة، ويفرضُ رفعَه فورَ أن تتّسع.
+ */
 export const CURRENCIES: Record<string, { symbol: string; nameEn: string; nameAr: string; decimals: number }> = {
   EGP: { symbol: '£', nameEn: 'Egyptian Pound', nameAr: 'الجنيه المصري', decimals: 2 },
   USD: { symbol: '$', nameEn: 'US Dollar', nameAr: 'الدولار الأمريكي', decimals: 2 },
@@ -18,8 +39,35 @@ export const CURRENCIES: Record<string, { symbol: string; nameEn: string; nameAr
   BHD: { symbol: 'د.ب', nameEn: 'Bahraini Dinar', nameAr: 'الدينار البحريني', decimals: 3 },
   OMR: { symbol: '﷼', nameEn: 'Omani Rial', nameAr: 'الريال العماني', decimals: 3 },
   JOD: { symbol: 'د.أ', nameEn: 'Jordanian Dinar', nameAr: 'الدينار الأردني', decimals: 3 },
-  LBP: { symbol: 'ل.ل', nameEn: 'Lebanese Pound', nameAr: 'الليرة اللبنانية', decimals: 0 },
+  LBP: { symbol: 'ل.ل', nameEn: 'Lebanese Pound', nameAr: 'الليرة اللبنانية', decimals: 2 },
+  MAD: { symbol: 'د.م', nameEn: 'Moroccan Dirham', nameAr: 'الدرهم المغربي', decimals: 2 },
+  TND: { symbol: 'د.ت', nameEn: 'Tunisian Dinar', nameAr: 'الدينار التونسي', decimals: 3 },
+  DZD: { symbol: 'د.ج', nameEn: 'Algerian Dinar', nameAr: 'الدينار الجزائري', decimals: 2 },
+  IQD: { symbol: 'د.ع', nameEn: 'Iraqi Dinar', nameAr: 'الدينار العراقي', decimals: 3 },
+  SYP: { symbol: 'ل.س', nameEn: 'Syrian Pound', nameAr: 'الليرة السورية', decimals: 2 },
+  YER: { symbol: '﷼', nameEn: 'Yemeni Rial', nameAr: 'الريال اليمني', decimals: 2 },
+  SDG: { symbol: 'ج.س', nameEn: 'Sudanese Pound', nameAr: 'الجنيه السوداني', decimals: 2 },
+  LYD: { symbol: 'ل.د', nameEn: 'Libyan Dinar', nameAr: 'الدينار الليبي', decimals: 3 },
+  TRY: { symbol: '₺', nameEn: 'Turkish Lira', nameAr: 'الليرة التركية', decimals: 2 },
+  INR: { symbol: '₹', nameEn: 'Indian Rupee', nameAr: 'الروبية الهندية', decimals: 2 },
+  CNY: { symbol: '¥', nameEn: 'Chinese Yuan', nameAr: 'اليوان الصيني', decimals: 2 },
+  JPY: { symbol: '¥', nameEn: 'Japanese Yen', nameAr: 'الين الياباني', decimals: 0 },
 }
+
+/**
+ * العملاتُ التى لا يتّسعُ لها الدفترُ اليومَ — **محسوبةٌ لا مكتوبةٌ باليد**.
+ *
+ * الدفترُ يحفظُ خانتين، فكلُّ عملةٍ عددُ خاناتِها ليس اثنتين لا يستطيعُ
+ * النظامُ حفظَ مبالغِها بلا قصٍّ أو اختراع. تُشتَقُّ القائمةُ من الجردِ
+ * أعلاه، فإن صُحِّحَ عددُ خاناتِ عملةٍ تبعَتْها القائمةُ من نفسِها، ولا يبقى
+ * جردٌ ثانٍ يُنسى تحديثُه.
+ *
+ * تُرفَعُ هذه القائمةُ كلُّها (فتصيرُ فارغة) فى الدفعةِ التى يتّسعُ فيها
+ * الدفترُ فعلاً — والحارسُ يفرضُ ذلك ولا يتركُه للذاكرة.
+ */
+export const CURRENCIES_NOT_YET_SERVICEABLE: readonly string[] = Object.entries(CURRENCIES)
+  .filter(([, v]) => v.decimals !== 2)
+  .map(([code]) => code)
 
 /**
  * Get the current app currency from localStorage or cookie

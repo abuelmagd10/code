@@ -9,8 +9,8 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-20T21:28:20.480Z
--- Tables: 256 | Policies: 784 | Triggers: 609 | Constraints: 1841
+-- Generated: 2026-08-20T22:27:49.642Z
+-- Tables: 257 | Policies: 785 | Triggers: 609 | Constraints: 1844
 -- =====================================================================
 
 
@@ -1509,6 +1509,13 @@ CREATE TABLE IF NOT EXISTS public.currencies (
   decimals integer DEFAULT 2,
   created_at timestamp without time zone DEFAULT now(),
   name_ar character varying(100)
+);
+
+CREATE TABLE IF NOT EXISTS public.currency_minor_units (
+  code text NOT NULL,
+  decimals smallint NOT NULL,
+  source text DEFAULT 'ISO 4217'::text NOT NULL,
+  updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS public.customer_credit_applications (
@@ -5433,6 +5440,9 @@ ALTER TABLE public.credit_notes ADD CONSTRAINT uniq_credit_note_number UNIQUE (c
 ALTER TABLE public.currencies ADD CONSTRAINT currencies_company_id_code_key UNIQUE (company_id, code);
 ALTER TABLE public.currencies ADD CONSTRAINT currencies_company_id_fkey FOREIGN KEY (company_id) REFERENCES companies(id);
 ALTER TABLE public.currencies ADD CONSTRAINT currencies_pkey PRIMARY KEY (id);
+ALTER TABLE public.currency_minor_units ADD CONSTRAINT currency_minor_units_code_shape CHECK ((code ~ '^[A-Z]{3}$'::text));
+ALTER TABLE public.currency_minor_units ADD CONSTRAINT currency_minor_units_decimals_range CHECK (((decimals >= 0) AND (decimals <= 4)));
+ALTER TABLE public.currency_minor_units ADD CONSTRAINT currency_minor_units_pkey PRIMARY KEY (code);
 ALTER TABLE public.customer_credit_applications ADD CONSTRAINT customer_credit_applications_company_id_fkey FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE;
 ALTER TABLE public.customer_credit_applications ADD CONSTRAINT customer_credit_applications_customer_credit_id_fkey FOREIGN KEY (customer_credit_id) REFERENCES customer_credits(id) ON DELETE CASCADE;
 ALTER TABLE public.customer_credit_applications ADD CONSTRAINT customer_credit_applications_customer_credit_id_invoice_id_key UNIQUE (customer_credit_id, invoice_id);
@@ -8299,6 +8309,7 @@ ALTER TABLE public.cost_centers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.country_vat_rates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.credit_notes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.currencies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.currency_minor_units ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_credit_applications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_credit_ledger ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.customer_credits ENABLE ROW LEVEL SECURITY;
@@ -9084,6 +9095,7 @@ CREATE POLICY "Owners can manage currencies" ON public.currencies AS PERMISSIVE 
 CREATE POLICY "Users can view company currencies" ON public.currencies AS PERMISSIVE FOR SELECT TO public USING ((company_id IN ( SELECT company_members.company_id
    FROM company_members
   WHERE (company_members.user_id = auth.uid()))));
+CREATE POLICY currency_minor_units_read ON public.currency_minor_units AS PERMISSIVE FOR SELECT TO authenticated USING (true);
 CREATE POLICY customer_credit_apps_delete ON public.customer_credit_applications AS PERMISSIVE FOR DELETE TO public USING (((company_id IN ( SELECT companies.id
    FROM companies
   WHERE (companies.user_id = auth.uid()))) OR (company_id IN ( SELECT company_members.company_id
@@ -11999,6 +12011,8 @@ GRANT EXECUTE ON FUNCTION public.erp_company_senior_count(p_company_id uuid) TO 
 GRANT EXECUTE ON FUNCTION public.erp_company_senior_count(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_creator_needs_no_approval(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_creator_needs_no_approval(p_company_id uuid, p_user_id uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.erp_currency_decimals(p_code text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_currency_decimals(p_code text) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_currency_is_asked_at_birth() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_currency_is_asked_at_birth() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_debit_note_no_foreign_without_fx() FROM PUBLIC;
@@ -14814,6 +14828,8 @@ GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.cr
 GRANT SELECT ON public.currencies TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.currencies TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.currencies TO service_role;
+GRANT SELECT ON public.currency_minor_units TO authenticated;
+GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.currency_minor_units TO service_role;
 GRANT SELECT ON public.customer_balance_view TO anon;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.customer_balance_view TO authenticated;
 GRANT DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE ON public.customer_balance_view TO service_role;
