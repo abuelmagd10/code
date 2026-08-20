@@ -4362,7 +4362,11 @@ export default function InvoiceDetailPage() {
                             section below already exposes the live / manual
                             rate picker for the conversion. */}
                 {(() => {
-                  const baseCcy = String(appCurrency || 'EGP').toUpperCase()
+                  // v3.75.73 — appCurrency مصدرُه readAppCurrency() (بيتُ
+                  // الشاشةِ الواحد)، ولا يُعادُ اختراعُ عملةٍ فوقه. كانت
+                  // "EGP" هنا تقرِّرُ effectivePayCcy وأيَّ حساباتٍ تُعرَض —
+                  // سلوكٌ لا عرضٌ فقط.
+                  const baseCcy = String(appCurrency).toUpperCase()
                   const isFCInvoice = !!(invoice.currency_code && invoice.exchange_rate && Number(invoice.exchange_rate) !== 1)
                   const effectivePayCcy = String(
                     isFCInvoice ? invoice.currency_code

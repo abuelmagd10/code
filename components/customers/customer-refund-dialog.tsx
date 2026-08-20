@@ -234,8 +234,12 @@ export function CustomerRefundDialog({
       // the refund currency, nothing changes — accountFxRate stays 1 and
       // accountNativeAmount equals refundAmount.
       const selectedAccount = accounts.find(a => a.id === refundAccountId)
-      const selectedAccCcy = String((selectedAccount as any)?.original_currency || appCurrency || 'EGP').toUpperCase()
-      const refundCcyUpper = (refundCurrency || appCurrency || 'EGP').toUpperCase()
+      // v3.75.73 — appCurrency وسيطٌ مُلزَمٌ يأتى من الشاشةِ الأمِّ محكوماً
+      // بالفعل من readAppCurrency()، ولا تُعادُ صياغةُ "EGP" فوقَه. هذا
+      // السطرُ يقرِّرُ crossCurrency وaccountNativeAmount — المبلغُ الذى
+      // يُرسَلُ لتُرحَّلَ به القيدُ فعلياً، لا رقمَ عرضٍ فقط.
+      const selectedAccCcy = String((selectedAccount as any)?.original_currency || appCurrency).toUpperCase()
+      const refundCcyUpper = (refundCurrency || appCurrency).toUpperCase()
       const crossCurrency = Boolean(selectedAccount) && selectedAccCcy !== refundCcyUpper
       const effectiveAccountRate = crossCurrency ? (accountFxRate > 0 ? accountFxRate : 1) : 1
       const accountNativeAmount = crossCurrency
@@ -417,7 +421,10 @@ export function CustomerRefundDialog({
                       an ExchangeRateSelector for AccountCurrency → BaseCurrency
                       so the cash line gets the right native amount. */}
           {(() => {
-            const baseCcy = (appCurrency || 'EGP').toUpperCase()
+            // v3.75.73 — نفسُ عقيدةِ الإصلاحِ أعلاه: appCurrency محكومٌ
+            // بالفعل، فلا يُعادُ اختراعُ "EGP" فوقَه هنا أيضاً — هذا يقرِّرُ
+            // baseRefundAmount وaccountNativeAmount المُرسَلَين للترحيل.
+            const baseCcy = appCurrency.toUpperCase()
             const refundCcy = (refundCurrency || baseCcy).toUpperCase()
             const cashBank = accounts.filter((acc) => {
               const st = String((acc as any).sub_type || '').toLowerCase()

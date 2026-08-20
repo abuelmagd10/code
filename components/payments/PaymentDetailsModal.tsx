@@ -388,7 +388,11 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
   const fmtAmount = (amt: number | null | undefined) =>
     (amt || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
-  const currency = payment?.currency_code || baseCurrency || 'EGP'
+  // v3.75.73 — baseCurrency هنا مصدرُه getBaseCurrency() (السطر ٢١٩ أعلاه)،
+  // بيتُ القاعدةِ الواحد، ولا يُعادُ اختراعُ "EGP" فوقَه؛ الغيابُ (نافذةُ
+  // التحميلِ العابرةُ أو فشلُ القراءة) يبقى فارغاً صراحةً بدلاً من عملةٍ
+  // مخترَعة.
+  const currency = payment?.currency_code || baseCurrency
   const rate = Number(payment?.exchange_rate_used || payment?.exchange_rate || 1)
   const hasFx = (currency !== baseCurrency) || (rate !== 1)
 
@@ -401,7 +405,7 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
   const headerOrigAmt = Number(payment?.original_amount || 0)
   const headerOrigCur = String(payment?.original_currency || '').toUpperCase()
   const headerBaseAmt = Number(payment?.base_currency_amount ?? payment?.amount ?? 0)
-  const headerBaseCur = String(baseCurrency || 'EGP').toUpperCase()
+  const headerBaseCur = String(baseCurrency).toUpperCase()
   const headerIsFC = !!headerOrigCur && headerOrigCur !== headerBaseCur && Math.abs(headerOrigAmt) > 0
 
   const isVoid = !!payment?.voids_payment_id          // this row IS a correction

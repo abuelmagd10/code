@@ -53,8 +53,12 @@ export async function computeFXRevaluation(
   companyId: string,
   asOfDate: string,  // YYYY-MM-DD
 ): Promise<FXRevaluationResult> {
+  // v3.75.73 — يُعلَنُ خارجَ try لكى يبقى فى مُتناوَل catch: إن فشل شىءٌ
+  // بعدَ نجاحِ getBaseCurrency، القيمةُ الحقيقيّةُ التى حُصِّلَت لا تُستبدَلُ
+  // باختراعٍ لاحق.
+  let baseCurrency = ""
   try {
-    const baseCurrency = await getBaseCurrency(supabase, companyId)
+    baseCurrency = await getBaseCurrency(supabase, companyId)
 
     // 1. Load all FC cash/bank accounts (code 10xx or 11xx) with their native currency
     const { data: accounts, error: accErr } = await supabase
@@ -153,10 +157,13 @@ export async function computeFXRevaluation(
 
     return { success: true, asOfDate, baseCurrency, lines, totalGain, totalLoss }
   } catch (e: any) {
+    // v3.75.73 — لا "EGP" مخترَعة عندَ الفشل: baseCurrency هنا إمّا القيمةُ
+    // الحقيقيّةُ التى نجحت قراءتُها قبلَ الفشلِ اللاحق، أو سلسلةٌ فارغةٌ
+    // صريحةٌ إن فشلت getBaseCurrency نفسُها.
     return {
       success: false,
       asOfDate,
-      baseCurrency: "EGP",
+      baseCurrency,
       lines: [],
       totalGain: 0,
       totalLoss: 0,
@@ -330,8 +337,10 @@ export async function computeARRevaluation(
   companyId: string,
   asOfDate: string,
 ): Promise<FXRevaluationResult> {
+  // v3.75.73 — انظر التعليقَ فى computeFXRevaluation أعلاه: نفسُ العقيدة.
+  let baseCurrency = ""
   try {
-    const baseCurrency = await getBaseCurrency(supabase, companyId)
+    baseCurrency = await getBaseCurrency(supabase, companyId)
 
     const { data: accounts } = await supabase
       .from("chart_of_accounts")
@@ -412,7 +421,8 @@ export async function computeARRevaluation(
 
     return { success: true, asOfDate, baseCurrency, lines, totalGain, totalLoss }
   } catch (e: any) {
-    return { success: false, asOfDate, baseCurrency: "EGP", lines: [], totalGain: 0, totalLoss: 0, error: e?.message || String(e) }
+    // v3.75.73 — لا "EGP" مخترَعة؛ انظر التعليقَ فى computeFXRevaluation.
+    return { success: false, asOfDate, baseCurrency, lines: [], totalGain: 0, totalLoss: 0, error: e?.message || String(e) }
   }
 }
 
@@ -426,8 +436,10 @@ export async function computeAPRevaluation(
   companyId: string,
   asOfDate: string,
 ): Promise<FXRevaluationResult> {
+  // v3.75.73 — انظر التعليقَ فى computeFXRevaluation أعلاه: نفسُ العقيدة.
+  let baseCurrency = ""
   try {
-    const baseCurrency = await getBaseCurrency(supabase, companyId)
+    baseCurrency = await getBaseCurrency(supabase, companyId)
 
     const { data: accounts } = await supabase
       .from("chart_of_accounts")
@@ -510,7 +522,8 @@ export async function computeAPRevaluation(
 
     return { success: true, asOfDate, baseCurrency, lines, totalGain, totalLoss }
   } catch (e: any) {
-    return { success: false, asOfDate, baseCurrency: "EGP", lines: [], totalGain: 0, totalLoss: 0, error: e?.message || String(e) }
+    // v3.75.73 — لا "EGP" مخترَعة؛ انظر التعليقَ فى computeFXRevaluation.
+    return { success: false, asOfDate, baseCurrency, lines: [], totalGain: 0, totalLoss: 0, error: e?.message || String(e) }
   }
 }
 
@@ -529,7 +542,18 @@ export async function computeFullFXRevaluation(
   const lines = [...cashResult.lines, ...arResult.lines, ...apResult.lines]
   const totalGain = cashResult.totalGain + arResult.totalGain + apResult.totalGain
   const totalLoss = cashResult.totalLoss + arResult.totalLoss + apResult.totalLoss
-  const baseCurrency = cashResult.baseCurrency || arResult.baseCurrency || apResult.baseCurrency
+  // v3.75.73 — كان الدمجُ السابقُ (a || b || c) يعتمدُ على "له قيمة"، لا على
+  // "نجح فعلاً" — فحين تفشلُ إحدى الدوالِّ الثلاث وتنجحُ الأخرى، كانت
+  // العملةُ المخترَعةُ ("EGP" سابقاً) من الفرعِ الفاشلِ قد تكسبُ إن جاء
+  // ترتيبُها أوّلاً. الآن: تُفضَّلُ عملةُ أوّلِ فرعٍ **نجح فعلاً**؛ ولا يُرجَعُ
+  // إلى فرعٍ فاشلٍ إلّا إذا فشلت الثلاثةُ معاً (وعندئذٍ قد تكون قيمتُه
+  // الحقيقيّةَ التى حُصِّلَت قبل الفشل، أو فارغةً — لا مخترَعة، بفضلِ إصلاحِ
+  // الدوالِّ الثلاث أعلاه).
+  const baseCurrency =
+    (cashResult.success && cashResult.baseCurrency) ||
+    (arResult.success && arResult.baseCurrency) ||
+    (apResult.success && apResult.baseCurrency) ||
+    cashResult.baseCurrency || arResult.baseCurrency || apResult.baseCurrency || ""
 
   return {
     success: cashResult.success && arResult.success && apResult.success,

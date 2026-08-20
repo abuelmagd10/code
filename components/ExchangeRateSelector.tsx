@@ -102,10 +102,23 @@ export function ExchangeRateSelector(props: ExchangeRateSelectorProps) {
   }, [])
 
   const fc = (fromCurrency || "").toUpperCase()
-  const base = (baseCurrency || "EGP").toUpperCase()
-  const isSameCurrency = !fc || fc === base
+  const base = (baseCurrency || "").toUpperCase()
+  // v3.75.73 — baseCurrency وسيطٌ مُلزَمٌ (required prop) تُغذّيه كلُّ الشاشاتِ
+  // المستدعيةِ من مصدرٍ محكوم (readAppCurrency() أو getBaseCurrency())،
+  // وقد صار الآن يصلُ فارغاً صراحةً حين لا تُحدَّد عملةٌ، لا "EGP" مخترَعة —
+  // فالارتدادُ السابقُ كان يقرِّرُ isSameCurrency وأىَّ صفٍّ من exchange_rates
+  // يُطلَبُ من القاعدة (from_currency/to_currency)، أى **هذا المكوَّنُ
+  // المشتركُ نفسُه كان يطلبُ الصفَّ الخطأ** لأى شركةٍ قاعدتُها ليست EGP.
+  const baseUnknown = !base
+  const isSameCurrency = !baseUnknown && (!fc || fc === base)
 
   useEffect(() => {
+    if (baseUnknown) {
+      setRates([])
+      setSelectedId("")
+      if (onRateMetaChange) onRateMetaChange(null)
+      return
+    }
     if (isSameCurrency) {
       setRates([])
       setSelectedId("")
@@ -167,7 +180,25 @@ export function ExchangeRateSelector(props: ExchangeRateSelectorProps) {
     })()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fc, base])
+  }, [fc, base, baseUnknown])
+
+  if (baseUnknown) {
+    return (
+      <div className={`space-y-1 ${className || ""}`}>
+        {!hideLabel && (
+          <Label className="text-sm">
+            {labelEn && labelAr ? t(labelEn, labelAr) : t("Exchange Rate", "سعر الصرف")}
+          </Label>
+        )}
+        <div className="text-xs text-red-600 dark:text-red-400">
+          ⚠️ {t(
+            "App currency is not set yet — set it in Settings before entering a foreign-currency amount.",
+            "لم يتم تحديد عملة الشاشة بعد — من فضلك حدِّدها من الإعدادات قبل إدخال مبلغ بعملة أجنبية."
+          )}
+        </div>
+      </div>
+    )
+  }
 
   if (isSameCurrency) return null
 

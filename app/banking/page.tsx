@@ -958,7 +958,13 @@ export default function BankingPage() {
                     const toAcc = accounts.find(a => a.id === transfer.to_id)
                     const fromCcy = String((fromAcc as any)?.original_currency || appCurrency).toUpperCase()
                     const toCcy = String((toAcc as any)?.original_currency || appCurrency).toUpperCase()
-                    const base = String(appCurrency || "EGP").toUpperCase()
+                    // v3.75.73 — appCurrency already يأتى من بيتِ الشاشةِ الواحد
+                    // (readAppCurrency())، وهو مصمَّمٌ ليُعيدَ سلسلةً فارغةً لا
+                    // حرفاً مخترَعاً عندَ الغياب. الارتدادُ إلى "EGP" هنا كان
+                    // يُعيدُ اختراعَ ما تعمَّد ذلك البيتُ تركَه صريحاً، ويقرِّرُ
+                    // مباشرةً أىَّ حسابٍ يُعَدُّ "غيرَ أساسى" (nonBaseAcc) —
+                    // سلوكٌ لا عرضٌ فقط.
+                    const base = String(appCurrency).toUpperCase()
                     const transferCcy = String(transfer.currency || base).toUpperCase()
                     // Find an account whose currency is foreign AND differs from
                     // the transfer currency — that's the conversion the service

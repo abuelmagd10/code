@@ -454,7 +454,22 @@ export default function ExchangeRatesPage() {
                     {appLang === 'en' ? 'Computing' : 'جارى الحساب'}
                   </div>
                 )}
-                {!revalLoading && revalPreview && revalPreview.lines.length === 0 && (
+                {/* v3.75.73 — قبل هذا الإصلاح لم تكن هذه الشاشةُ تتحقّقُ من
+                    revalPreview.success إطلاقاً؛ فحين يفشلُ الحسابُ فشلاً
+                    كاملاً أو جزئياً (بعضُ الفروعِ الثلاثة: نقد/عملاء/موردون)،
+                    كانت تظهرُ نفسُ رسالةِ "لا حاجة لإعادة التقييم" المُطمئِنة
+                    خطأً — أو تعرضُ الأسطرَ الناجحةَ بصمتٍ دونَ التنبيهِ لأنّ
+                    فرعاً آخرَ فشِل. الآن: خطأٌ صريحٌ يظهرُ دائماً عندَ الفشل
+                    (كاملاً أو جزئياً)، والأسطرُ الناجحةُ — إن وُجدت — تُعرَضُ
+                    بجانبِه لا بدلاً منه. */}
+                {!revalLoading && revalPreview && !revalPreview.success && (
+                  <p className="text-sm text-red-600 dark:text-red-400 mb-2">
+                    ⚠️ {appLang === 'en'
+                      ? `Revaluation failed (partially or fully): ${revalPreview.error || 'unknown error'}`
+                      : `تعذّرت إعادة التقييم (كلياً أو جزئياً): ${revalPreview.error || 'خطأ غير معروف'}`}
+                  </p>
+                )}
+                {!revalLoading && revalPreview && revalPreview.success && revalPreview.lines.length === 0 && (
                   <p className="text-sm text-gray-600">
                     {appLang === 'en' ? 'No revaluation needed.' : 'لا حاجة لإعادة التقييم.'}
                   </p>

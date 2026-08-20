@@ -200,7 +200,10 @@ export default function PaymentsPage() {
   // v3.74.516 — مطابقة عملة الدفع مع عملة الحساب (owner spec):
   // القائمة تُفلتر تلقائياً لحسابات نفس العملة؛ "إظهار الكل" استثناء بتأكيد صريح
   const [showAllPayAccounts, setShowAllPayAccounts] = useState(false)
-  const accountCurrencyOf = (a: any) => (String(a?.original_currency || '').toUpperCase() || (baseCurrency || 'EGP').toUpperCase())
+  // v3.75.73 — baseCurrency مصدرُه readAppCurrency() (بيتُ الشاشةِ الواحد)،
+  // ولا يُعادُ اختراعُ "EGP" فوقه؛ فالغيابُ هنا كان يُحدِّدُ عملةَ الحسابِ
+  // نفسِها فى مقارنةٍ لاحقةٍ (accCcy === baseCurrency)، لا عرضاً فقط.
+  const accountCurrencyOf = (a: any) => (String(a?.original_currency || '').toUpperCase() || String(baseCurrency || '').toUpperCase())
   const [accounts, setAccounts] = useState<Account[]>([])
   const [customerPayments, setCustomerPayments] = useState<Payment[]>([])
   const [supplierPayments, setSupplierPayments] = useState<Payment[]>([])
@@ -4150,11 +4153,15 @@ export default function PaymentsPage() {
                     // Currency is now the source of truth (from the dropdown).
                     // Order: explicit currency selection → original payment
                     // currency. The account no longer silently drives it.
-                    const originalCurrency = String(correctionPayment.original_currency || correctionPayment.currency_code || baseCurrency || 'EGP').toUpperCase()
+                    // v3.75.73 — بعدَ العملةِ الخاصّةِ بهذه الدَّفعةِ نفسِها
+                    // (original_currency / currency_code، وهما مفهومٌ مختلفٌ
+                    // شرعىٌّ)، الملاذُ الأخيرُ هو baseCurrency المحكوم من
+                    // readAppCurrency() — ولا تُخترَعُ "EGP" فوقَه.
+                    const originalCurrency = String(correctionPayment.original_currency || correctionPayment.currency_code || baseCurrency || '').toUpperCase()
                     const selectedAcc = correctionFields.account_id
                       ? (accounts.find(a => a.id === correctionFields.account_id) as any)
                       : null
-                    const baseCcy = (baseCurrency || 'EGP').toUpperCase()
+                    const baseCcy = String(baseCurrency || '').toUpperCase()
                     const effectiveCurrency = (
                       correctionFields.original_currency
                       || originalCurrency

@@ -102,7 +102,17 @@ export async function POST(req: NextRequest) {
       .select("name, base_currency, country")
       .eq("id", companyId)
       .single()
-    const displayCurrency = (company?.base_currency as string) || "USD"
+    // v3.75.73 — العملةُ هنا تُقرأُ أوّلاً من بيتها الواحد (getBaseCurrency)
+    // لا من العمودِ الخام مباشرةً، بنفسِ عقيدةِ app/api/billing/preview/route.ts
+    // (v3.75.71). والارتدادُ الأخيرُ إلى "USD" هنا يبقى عندَ فشلِ القراءةِ
+    // فقط — وهو عملةُ عرضٍ لتسعيرِ اشتراكٍ، لا رقمٌ محاسبىٌّ مخترَع.
+    let displayCurrency: string
+    try {
+      const { getBaseCurrency } = await import("@/lib/currency-service")
+      displayCurrency = await getBaseCurrency(admin, companyId)
+    } catch {
+      displayCurrency = (company?.base_currency as string) || "USD"
+    }
     const countryCode = (company?.country as string) || "EG"
     const companyName = company?.name || "شركة"
 
