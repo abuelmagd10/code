@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-19T12:36:49.066Z
--- Routines: 1413
+-- Generated: 2026-08-20T21:28:17.431Z
+-- Routines: 1414
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -10371,6 +10371,11 @@ DECLARE
   v_invoice_number TEXT;
   v_invoice_date DATE;
   v_product_item_type TEXT;
+  -- v3.75.74
+  v_txn_key TEXT;
+  v_mine_id TEXT;
+  v_existing_id UUID;
+  v_prev_direct_post TEXT;
 BEGIN
   IF NEW.transaction_type != 'sale' THEN RETURN NEW; END IF;
 
@@ -10424,10 +10429,56 @@ BEGIN
   SELECT invoice_number, invoice_date INTO v_invoice_number, v_invoice_date
   FROM invoices WHERE id = NEW.reference_id;
 
+  -- ══ v3.75.74 — بيتٌ واحدٌ لقيدِ تكلفةِ الفاتورة ═══════════════════════════
+  -- مفتاحٌ محلىٌّ للمعاملةِ يحملُ معرِّفَ الفاتورة: إن كان مضبوطاً فالقيدُ من
+  -- صنعِ هذه المعاملةِ نفسِها، ولم يصرْ تاريخاً بعد، فتُضافُ إليه السطور.
+  v_txn_key := 'erp_cogs.je_' || replace(NEW.reference_id::text, '-', '');
+  v_mine_id := NULLIF(current_setting(v_txn_key, true), '');
+
+  IF v_mine_id IS NOT NULL THEN
+    v_journal_entry_id := v_mine_id::uuid;
+
+    -- رفعٌ محصورٌ لحارسِ سطورِ القيدِ المُرحَّل، ثمّ إعادتُه إلى ما كان.
+    v_prev_direct_post := COALESCE(current_setting('app.allow_direct_post', true), 'false');
+    PERFORM set_config('app.allow_direct_post', 'true', true);
+
+    INSERT INTO journal_entry_lines (journal_entry_id, account_id, debit_amount, credit_amount, description, branch_id, cost_center_id) VALUES
+    (v_journal_entry_id, v_cogs_account_id, v_cogs_amount, 0, 'COGS', NEW.branch_id, NEW.cost_center_id),
+    (v_journal_entry_id, v_inventory_account_id, 0, v_cogs_amount, 'Inventory', NEW.branch_id, NEW.cost_center_id);
+
+    PERFORM set_config('app.allow_direct_post', v_prev_direct_post, true);
+
+    NEW.journal_entry_id := v_journal_entry_id;
+    RETURN NEW;
+  END IF;
+
+  -- لا قيدَ من هذه المعاملة. فهل لهذه الفاتورةِ قيدُ تكلفةٍ من معاملةٍ سابقة؟
+  -- إن كان، فتعديلُه تعديلٌ لتاريخٍ مُرحَّل — ولا يُصحَّحُ المُرحَّلُ إلّا بعكسِه.
+  SELECT id INTO v_existing_id
+    FROM journal_entries
+   WHERE company_id = v_company_id
+     AND reference_type = 'invoice_cogs'
+     AND reference_id = NEW.reference_id
+     AND (is_deleted IS NULL OR is_deleted = FALSE)
+     AND deleted_at IS NULL
+   LIMIT 1;
+
+  IF v_existing_id IS NOT NULL THEN
+    RAISE EXCEPTION
+      'INVOICE_ALREADY_COSTED: للفاتورةِ [%] قيدُ تكلفةٍ مُرحَّلٌ من قبلُ [%]. '
+      'إخراجُ بضاعةٍ جديدٍ لفاتورةٍ كُلِّفتْ لا يُضافُ إلى قيدٍ مضى — '
+      'يُعكَسُ القيدُ القديمُ ثمّ يُعادُ الترحيل.',
+      COALESCE(v_invoice_number, NEW.reference_id::text), v_existing_id
+      USING ERRCODE = 'P0001';
+  END IF;
+
   INSERT INTO journal_entries (company_id, reference_type, reference_id, entry_date, description, branch_id, cost_center_id)
   VALUES (v_company_id, 'invoice_cogs', NEW.reference_id, COALESCE(v_invoice_date, CURRENT_DATE),
   'COGS - ' || COALESCE(v_invoice_number, 'Invoice'), NEW.branch_id, NEW.cost_center_id)
   RETURNING id INTO v_journal_entry_id;
+
+  -- هذه المعاملةُ هى صاحبةُ القيد؛ يُسجَّلُ ذلك محلّيّاً فيموتُ بموتِها.
+  PERFORM set_config(v_txn_key, v_journal_entry_id::text, true);
 
   -- v3.74.815 branch tagging: COGS lines carried no branch/cost-center while the
   -- revenue side did — branch and cost-center P&L showed the sale but not
@@ -24709,6 +24760,44 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- enforce_closing_entry_flag_is_earned()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.enforce_closing_entry_flag_is_earned()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
+AS $function$
+BEGIN
+  -- الخانةُ مطفأة؟ لا شأنَ لهذا الحارسِ بالصف.
+  IF COALESCE(NEW.is_closing_entry, FALSE) = FALSE THEN
+    RETURN NEW;
+  END IF;
+
+  -- على التحديث: يُحاسَبُ مَن يرفعُها الآن، لا مَن ورثَها مرفوعة.
+  IF TG_OP = 'UPDATE' AND COALESCE(OLD.is_closing_entry, FALSE) = TRUE THEN
+    RETURN NEW;
+  END IF;
+
+  -- الدورُ هو الدليل. authenticated و anon ليستا عضواً فى أىٍّ من هذه،
+  -- و current_user يصيرُ postgres داخلَ أىِّ دالَّةِ SECURITY DEFINER.
+  IF current_user IN ('postgres', 'supabase_admin', 'service_role') THEN
+    RETURN NEW;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = current_user AND rolsuper) THEN
+    RETURN NEW;
+  END IF;
+
+  RAISE EXCEPTION
+    'CLOSING_FLAG_NOT_EARNED: خانةُ «قيدِ الإقفال» لا تُرفَعُ من التطبيق — '
+    'وهى الخانةُ التى ينصرفُ عندها قفلُ الفترة. الإقفالُ يمرُّ من بابِه '
+    '(إقفالُ الفترةِ أو الإقفالُ السنوى). role=[%]', current_user
+    USING ERRCODE = 'P0001';
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- enforce_commission_run_transition()
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.enforce_commission_run_transition()
@@ -32819,8 +32908,18 @@ DECLARE
   v_re  DECIMAL := 0;
   v_inc DECIMAL := 0;
   v_exp DECIMAL := 0;
+  v_closed_through DATE;
 BEGIN
   PERFORM public.assert_company_access(p_company_id);
+
+  -- v3.75.74 — إلى أىِّ يومٍ رُحِّلَ الربحُ إلى الأرباحِ المحتجزةِ فعلاً؟
+  -- ما قبلَه صارَ داخلَ رصيدِ الحساب، فلا يُجمَعُ ثانيةً من حساباتِ النشاط.
+  SELECT MAX(period_end)
+    INTO v_closed_through
+    FROM public.accounting_periods
+   WHERE company_id = p_company_id
+     AND (is_locked = TRUE OR status IN ('closed', 'locked'));
+
   SELECT COALESCE(SUM(jel.credit_amount) - SUM(jel.debit_amount), 0)
     INTO v_re
     FROM journal_entry_lines jel
@@ -32831,6 +32930,7 @@ BEGIN
       AND (coa.sub_type = 'retained_earnings' OR coa.account_code = '3200')
       AND je.company_id = p_company_id
       AND COALESCE(je.status, 'posted') NOT IN ('cancelled', 'draft');
+
   SELECT COALESCE(SUM(jel.credit_amount) - SUM(jel.debit_amount), 0)
     INTO v_inc
     FROM journal_entry_lines jel
@@ -32839,7 +32939,10 @@ BEGIN
     WHERE coa.company_id = p_company_id
       AND coa.account_type IN ('income', 'revenue')
       AND je.company_id = p_company_id
-      AND je.status = 'posted';
+      AND je.status = 'posted'
+      AND COALESCE(je.is_closing_entry, FALSE) = FALSE
+      AND (v_closed_through IS NULL OR je.entry_date > v_closed_through);
+
   SELECT COALESCE(SUM(jel.debit_amount) - SUM(jel.credit_amount), 0)
     INTO v_exp
     FROM journal_entry_lines jel
@@ -32848,7 +32951,10 @@ BEGIN
     WHERE coa.company_id = p_company_id
       AND coa.account_type = 'expense'
       AND je.company_id = p_company_id
-      AND je.status = 'posted';
+      AND je.status = 'posted'
+      AND COALESCE(je.is_closing_entry, FALSE) = FALSE
+      AND (v_closed_through IS NULL OR je.entry_date > v_closed_through);
+
   RETURN v_re + (v_inc - v_exp);
 END;
 $function$

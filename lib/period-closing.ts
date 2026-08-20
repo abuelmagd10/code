@@ -259,123 +259,131 @@ export async function createPeriodClosingEntry(
       }
     }
 
-    if (!incomeSummaryAccountId) {
-      return {
-        success: false,
-        error: "حساب Income Summary غير موجود. يجب إنشاؤه في دليل الحسابات (رمز: 3300)",
+    // ✅ 4. صافى الربح صفر: لا قيدَ يُنشَأ — والفترةُ تُقفَلُ رغم ذلك.
+    //
+    // v3.75.74 — كان هنا `return { success: true }` قبل الخطوةِ السابعةِ
+    // كلِّها، فيُقال للمستخدمِ «تم الإقفالُ بنجاح» و **الفترةُ لم تُقفَلْ ولم
+    // تُقفَلْ**: لا صفَّ فى accounting_periods يُحدَّث، ولا قفلَ يُفعَّل، فتبقى
+    // الشهورُ مفتوحةً للكتابةِ وصاحبُها يظنُّها مُغلقة. وشهرٌ لا ربحَ فيه ولا
+    // خسارةَ شهرٌ يُقفَلُ كغيرِه — الإقفالُ حكمٌ على الفترةِ لا على الرقم.
+    const needsClosingEntry = Math.abs(netIncome) >= 0.01
+
+    let journalEntryId: string | null = null
+
+    if (needsClosingEntry) {
+      if (!incomeSummaryAccountId) {
+        return {
+          success: false,
+          error: "حساب Income Summary غير موجود. يجب إنشاؤه في دليل الحسابات (رمز: 3300)",
+        }
       }
-    }
 
-    // ✅ 4. إذا كان صافي الربح صفر، لا حاجة لإنشاء قيد
-    if (Math.abs(netIncome) < 0.01) {
-      return {
-        success: true,
-        netIncome: 0,
-        error: "صافي الربح صفر - لا حاجة لإنشاء قيد إقفال",
+      // ✅ 5. إنشاء Journal Entry
+      const description = periodName
+        ? `إقفال الفترة المحاسبية: ${periodName}`
+        : `إقفال الفترة المحاسبية: ${periodStart} إلى ${periodEnd}`
+
+      const { data: journalEntry, error: entryError } = await supabase
+        .from("journal_entries")
+        .insert({
+          company_id: companyId,
+          reference_type: "period_closing",
+          entry_date: periodEnd, // تاريخ إقفال الفترة
+          description: description,
+          // v3.74.883 — كان `posted` مباشرةً، وحارس `enforce_je_integrity`
+          // (٨٧١) يرفض أى قيدٍ يُولد posted (`DIRECT_POST_BLOCKED`) ⇒
+          // **إقفال الفترة لم يكن يعمل أصلاً**. يُدرَج مسودَّةً ويُرحَّل بعد سطوره.
+          status: "draft",
+        })
+        .select()
+        .single()
+
+      if (entryError) {
+        return {
+          success: false,
+          error: `خطأ في إنشاء القيد: ${entryError.message}`,
+        }
       }
+
+      journalEntryId = journalEntry.id
     }
 
-    // ✅ 5. إنشاء Journal Entry
-    const description = periodName 
-      ? `إقفال الفترة المحاسبية: ${periodName}`
-      : `إقفال الفترة المحاسبية: ${periodStart} إلى ${periodEnd}`
+    // `incomeSummaryAccountId` غيابُه رُدَّ عليه بخطأٍ فى الكتلةِ السابقة، فذكرُه
+    // هنا تضييقُ نوعٍ لا شرطٌ جديد — لا مسارَ يبلغُ هنا وهو فارغ.
+    if (needsClosingEntry && journalEntryId && incomeSummaryAccountId) {
+      // ✅ 6. إنشاء سطور القيد
+      const lines: Array<{
+        journal_entry_id: string
+        account_id: string
+        debit_amount: number
+        credit_amount: number
+        description: string
+      }> = []
 
-    const { data: journalEntry, error: entryError } = await supabase
-      .from("journal_entries")
-      .insert({
-        company_id: companyId,
-        reference_type: "period_closing",
-        entry_date: periodEnd, // تاريخ إقفال الفترة
-        description: description,
-        // v3.74.883 — كان `posted` مباشرةً، وحارس `enforce_je_integrity`
-        // (٨٧١) يرفض أى قيدٍ يُولد posted (`DIRECT_POST_BLOCKED`) ⇒
-        // **إقفال الفترة لم يكن يعمل أصلاً**. يُدرَج مسودَّةً ويُرحَّل بعد سطوره.
-        status: "draft",
-      })
-      .select()
-      .single()
-
-    if (entryError) {
-      return {
-        success: false,
-        error: `خطأ في إنشاء القيد: ${entryError.message}`,
+      if (netIncome > 0) {
+        // ربح: Dr. Income Summary, Cr. Retained Earnings
+        lines.push({
+          journal_entry_id: journalEntryId,
+          account_id: incomeSummaryAccountId,
+          debit_amount: netIncome,
+          credit_amount: 0,
+          description: "ترحيل صافي الربح إلى الأرباح المحتجزة",
+        })
+        lines.push({
+          journal_entry_id: journalEntryId,
+          account_id: retainedEarningsAccountId,
+          debit_amount: 0,
+          credit_amount: netIncome,
+          description: "إضافة صافي الربح إلى الأرباح المحتجزة",
+        })
+      } else {
+        // خسارة: Dr. Retained Earnings, Cr. Income Summary
+        const lossAmount = Math.abs(netIncome)
+        lines.push({
+          journal_entry_id: journalEntryId,
+          account_id: retainedEarningsAccountId,
+          debit_amount: lossAmount,
+          credit_amount: 0,
+          description: "خصم صافي الخسارة من الأرباح المحتجزة",
+        })
+        lines.push({
+          journal_entry_id: journalEntryId,
+          account_id: incomeSummaryAccountId,
+          debit_amount: 0,
+          credit_amount: lossAmount,
+          description: "ترحيل صافي الخسارة من الأرباح المحتجزة",
+        })
       }
-    }
 
-    const journalEntryId = journalEntry.id
+      const { error: linesError } = await supabase
+        .from("journal_entry_lines")
+        .insert(lines)
 
-    // ✅ 6. إنشاء سطور القيد
-    const lines: Array<{
-      journal_entry_id: string
-      account_id: string
-      debit_amount: number
-      credit_amount: number
-      description: string
-    }> = []
+      if (linesError) {
+        // حذف القيد الرئيسي في حالة فشل إنشاء السطور
+        // v3.74.757 — the delete used to be unchecked, so a failure here left a
+        // stranded closing entry with no lines and said nothing about it.
+        await rollbackJournalEntry(supabase as any, journalEntryId, "period closing")
 
-    if (netIncome > 0) {
-      // ربح: Dr. Income Summary, Cr. Retained Earnings
-      lines.push({
-        journal_entry_id: journalEntryId,
-        account_id: incomeSummaryAccountId,
-        debit_amount: netIncome,
-        credit_amount: 0,
-        description: "ترحيل صافي الربح إلى الأرباح المحتجزة",
-      })
-      lines.push({
-        journal_entry_id: journalEntryId,
-        account_id: retainedEarningsAccountId,
-        debit_amount: 0,
-        credit_amount: netIncome,
-        description: "إضافة صافي الربح إلى الأرباح المحتجزة",
-      })
-    } else {
-      // خسارة: Dr. Retained Earnings, Cr. Income Summary
-      const lossAmount = Math.abs(netIncome)
-      lines.push({
-        journal_entry_id: journalEntryId,
-        account_id: retainedEarningsAccountId,
-        debit_amount: lossAmount,
-        credit_amount: 0,
-        description: "خصم صافي الخسارة من الأرباح المحتجزة",
-      })
-      lines.push({
-        journal_entry_id: journalEntryId,
-        account_id: incomeSummaryAccountId,
-        debit_amount: 0,
-        credit_amount: lossAmount,
-        description: "ترحيل صافي الخسارة من الأرباح المحتجزة",
-      })
-    }
-
-    const { error: linesError } = await supabase
-      .from("journal_entry_lines")
-      .insert(lines)
-
-    if (linesError) {
-      // حذف القيد الرئيسي في حالة فشل إنشاء السطور
-      // v3.74.757 — the delete used to be unchecked, so a failure here left a
-      // stranded closing entry with no lines and said nothing about it.
-      await rollbackJournalEntry(supabase as any, journalEntryId, "period closing")
-
-      return {
-        success: false,
-        error: `خطأ في إنشاء سطور القيد: ${linesError.message}`,
+        return {
+          success: false,
+          error: `خطأ في إنشاء سطور القيد: ${linesError.message}`,
+        }
       }
-    }
 
-    // v3.74.883 — الترحيل بعد السطور (المسار الذى يسمح به الحارس). وفشله
-    // لا يُبتلع: قيد إقفالٍ بقى مسودَّةً لا يُقفل شيئاً.
-    const { error: closingPostError } = await supabase
-      .from("journal_entries")
-      .update({ status: "posted" })
-      .eq("id", journalEntryId)
-      .eq("status", "draft")
-    if (closingPostError) {
-      await rollbackJournalEntry(supabase as any, journalEntryId, "period closing post")
-      return {
-        success: false,
-        error: `خطأ في ترحيل قيد الإقفال: ${closingPostError.message}`,
+      // v3.74.883 — الترحيل بعد السطور (المسار الذى يسمح به الحارس). وفشله
+      // لا يُبتلع: قيد إقفالٍ بقى مسودَّةً لا يُقفل شيئاً.
+      const { error: closingPostError } = await supabase
+        .from("journal_entries")
+        .update({ status: "posted" })
+        .eq("id", journalEntryId)
+        .eq("status", "draft")
+      if (closingPostError) {
+        await rollbackJournalEntry(supabase as any, journalEntryId, "period closing post")
+        return {
+          success: false,
+          error: `خطأ في ترحيل قيد الإقفال: ${closingPostError.message}`,
+        }
       }
     }
 
@@ -461,7 +469,8 @@ export async function createPeriodClosingEntry(
 
     return {
       success: true,
-      journalEntryId,
+      // شهرٌ لا ربحَ فيه ولا خسارةَ يُقفَلُ بلا قيد، فلا معرِّفَ قيدٍ يُعادُ عنه.
+      journalEntryId: journalEntryId ?? undefined,
       periodId,
       netIncome,
       retainedEarningsBalance,

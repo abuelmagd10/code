@@ -182,15 +182,50 @@ export class SalesInvoicePostingCommandService {
       })
 
       if (!postingResult.success) {
-        // DUPLICATE_JOURNAL_VIOLATION means journal already exists (race condition / retry)
-        // Treat as idempotent success — the accounting entries are already recorded
+        // v3.75.74 — «لا يُقالُ تمَّ إلّا بعدَ النظرِ فى الدفتر».
+        //
+        // كان هنا: أىُّ رسالةٍ تحملُ DUPLICATE_JOURNAL_VIOLATION تُعتبَرُ نجاحاً
+        // ساكناً، **دون أن يُسألَ الدفترُ هل القيدُ موجودٌ فعلاً**. والرسالةُ
+        // تأتى من حالتين متضادّتين تماماً:
+        //   (أ) القيدُ موجودٌ من محاولةٍ سابقةٍ نجحت ⇒ النجاحُ الساكنُ صحيح.
+        //   (ب) الحارسُ اصطدمَ **داخلَ المعاملةِ الجارية** فأُلغيت المعاملةُ
+        //       كلُّها ⇒ لا قيدَ إيرادٍ ولا تكلفةٍ ولا خصمَ مخزون، والحقيقةُ
+        //       أنَّ الفاتورةَ لم تُرحَّلْ إطلاقاً — ومع ذلك كانت الشاشةُ تقول
+        //       «تم الترحيل بنجاح» وقد كُتبَ posted_by_user_id قبلَها بسطور.
+        // الفرقُ بين (أ) و(ب) لا يُعرَفُ من نصِّ الرسالة، ويُعرَفُ من الدفتر.
         if (postingResult.error?.includes("DUPLICATE_JOURNAL_VIOLATION")) {
-          console.log("✅ [INVOICE_POST] Journal already exists (DUPLICATE_JOURNAL_VIOLATION) — treating as idempotent success")
-          return {
-            success: true,
-            idempotent: true,
-            message: "القيد المحاسبي موجود مسبقاً — تم الترحيل بنجاح",
+          const { data: landedRevenueJournal, error: lookupError } = await this.supabase
+            .from("journal_entries")
+            .select("id")
+            .eq("company_id", actor.companyId)
+            .eq("reference_id", command.invoiceId)
+            .eq("reference_type", "invoice")
+            .or("is_deleted.is.null,is_deleted.eq.false")
+            .is("deleted_at", null)
+            .limit(1)
+            .maybeSingle()
+
+          if (lookupError) {
+            throw new SalesInvoicePostingCommandError(
+              `تعذّر التأكّد من وجود قيد الفاتورة بعد رسالة التكرار: ${lookupError.message}`,
+              500
+            )
           }
+
+          if (landedRevenueJournal?.id) {
+            console.log("✅ [INVOICE_POST] Journal verified present after DUPLICATE_JOURNAL_VIOLATION — idempotent success")
+            return {
+              success: true,
+              idempotent: true,
+              message: "القيد المحاسبي موجود مسبقاً — تم الترحيل بنجاح",
+            }
+          }
+
+          throw new SalesInvoicePostingCommandError(
+            "لم يتم ترحيل الفاتورة: اصطدم إنشاء القيود داخل نفس العملية فأُلغيت بالكامل، " +
+              "ولا يوجد قيد إيراد لهذه الفاتورة فى الدفتر. راجع أصناف الفاتورة ثم أعد المحاولة.",
+            409
+          )
         }
         throw new SalesInvoicePostingCommandError(postingResult.error || "فشل ترحيل الفاتورة", 400)
       }

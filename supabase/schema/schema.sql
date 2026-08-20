@@ -9,8 +9,8 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-19T12:36:47.613Z
--- Tables: 256 | Policies: 784 | Triggers: 608 | Constraints: 1841
+-- Generated: 2026-08-20T21:28:20.480Z
+-- Tables: 256 | Policies: 784 | Triggers: 609 | Constraints: 1841
 -- =====================================================================
 
 
@@ -7900,6 +7900,7 @@ CREATE TRIGGER trg_check_invoice_entry_before_payment BEFORE INSERT ON public.jo
 CREATE TRIGGER trg_cleanup_inventory_on_journal_delete AFTER DELETE ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION cleanup_inventory_on_journal_delete();
 CREATE TRIGGER trg_cleanup_inventory_on_journal_soft_delete AFTER UPDATE OF is_deleted ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION cleanup_inventory_on_journal_soft_delete();
 CREATE TRIGGER trg_cleanup_payment_on_journal_delete AFTER DELETE ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION cleanup_payment_on_journal_delete();
+CREATE TRIGGER trg_closing_entry_flag_is_earned BEFORE INSERT OR UPDATE ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION enforce_closing_entry_flag_is_earned();
 CREATE TRIGGER trg_enforce_je_has_lines BEFORE UPDATE ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION enforce_je_has_lines_on_post();
 CREATE TRIGGER trg_enforce_je_integrity BEFORE INSERT OR UPDATE OF status ON public.journal_entries FOR EACH ROW EXECUTE FUNCTION enforce_je_integrity();
 CREATE TRIGGER trg_ensure_balance_on_post BEFORE UPDATE ON public.journal_entries FOR EACH ROW WHEN ((new.status = 'posted'::text)) EXECUTE FUNCTION ensure_journal_entry_balanced();
@@ -11939,6 +11940,8 @@ REVOKE ALL ON FUNCTION public.employee_branch_from_member_trg() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.employee_branch_from_member_trg() TO service_role;
 REVOKE ALL ON FUNCTION public.enforce_branch_isolation() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.enforce_branch_isolation() TO service_role;
+REVOKE ALL ON FUNCTION public.enforce_closing_entry_flag_is_earned() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.enforce_closing_entry_flag_is_earned() TO service_role;
 REVOKE ALL ON FUNCTION public.enforce_commission_run_transition() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.enforce_commission_run_transition() TO service_role;
 REVOKE ALL ON FUNCTION public.enforce_governance_on_insert() FROM PUBLIC;
