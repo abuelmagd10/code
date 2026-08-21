@@ -40,14 +40,8 @@ require("dotenv").config({ path: [".env.local", ".env", ".env.development.local"
 
 const { spawnSync } = require("child_process")
 
-const testUrl = process.env.TEST_SUPABASE_DB_URL
-if (!testUrl) {
-  console.error(
-    "X TEST_SUPABASE_DB_URL is not set - cannot prove the guard refuses anything.\n" +
-      "  Refusing to ship a guard that has never been seen failing."
-  )
-  process.exit(1)
-}
+const { requireDbOrSkip } = require("./lib/selftest-db")
+const testUrl = requireDbOrSkip("TEST_SUPABASE_DB_URL", "أنَّ حارسَ ترابطِ الدفاترِ يرفضُ قيداً مزروعاً غيرَ متوازن")
 
 let Client
 try { ({ Client } = require("pg")) } catch {

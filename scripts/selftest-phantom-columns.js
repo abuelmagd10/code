@@ -25,12 +25,8 @@ const fs = require("fs")
 const path = require("path")
 const { spawnSync } = require("child_process")
 
-if (!process.env.PRODUCTION_SUPABASE_DB_URL) {
-  console.error(
-    "X PRODUCTION_SUPABASE_DB_URL is not set - cannot prove the guard refuses anything."
-  )
-  process.exit(1)
-}
+const { requireDbOrSkip } = require("./lib/selftest-db")
+requireDbOrSkip("PRODUCTION_SUPABASE_DB_URL", "أنَّ حارسَ الأعمدةِ الوهميّةِ يرفضُ كتابةً لعمودٍ لا وجودَ له")
 
 const root = path.resolve(__dirname, "..")
 const probeDir = path.join(root, "lib", "zz-probe-863")

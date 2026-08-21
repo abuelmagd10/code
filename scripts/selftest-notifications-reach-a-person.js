@@ -29,11 +29,8 @@ require("dotenv").config({ path: [".env.local", ".env", ".env.development.local"
 
 const { spawnSync } = require("child_process")
 
-const url = process.env.TEST_SUPABASE_DB_URL
-if (!url) {
-  console.log("! TEST_SUPABASE_DB_URL is not set - skipping (this selftest never runs against production).")
-  process.exit(0)
-}
+const { requireDbOrSkip } = require("./lib/selftest-db")
+const url = requireDbOrSkip("TEST_SUPABASE_DB_URL", "أنَّ حارسَ الإشعاراتِ يرفضُ إشعاراً لا يبلغُ شخصاً")
 
 let Client
 try { ({ Client } = require("pg")) } catch {

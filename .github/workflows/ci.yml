@@ -202,6 +202,18 @@ jobs:
       - name: Prove the ledger-landmine guard refuses
         run: npm run check:ledger-landmines:selftest
 
+      # v3.75.80 — 🔴 **وفخٌّ بلا قاعدةٍ لا يقولُ «نجحتُ» ولا «سقطتُ» بل «لم أَقِسْ».**
+      # كانت هذه الوظيفةُ **حمراءَ فى كلِّ قيدٍ منذ شهور** بسبب سطرٍ واحدٍ فى فخٍّ
+      # ذاتىٍّ واحد: `X PRODUCTION_SUPABASE_DB_URL is not set`. ولأن وظيفة النشر
+      # مشروطةٌ بها (needs:) صارت مُتخطّاةً دائماً — فنصفُ آلةِ الحراسةِ كان مُطفأً
+      # ولم يقلْ ذلك أحد. والعطبُ كان انقسامَ الحكم: تسعةُ فخاخٍ تتخطّى بصفر
+      # وتسعةٌ تسقط بواحد **على الحالةِ الواحدة**. فصار الحكمُ فى بيتٍ واحد.
+      - name: Every self-test trap takes its verdict from one home
+        run: npm run check:selftest-homes
+
+      - name: Prove the one-home guard refuses
+        run: npm run check:selftest-homes:selftest
+
       # v3.74.867 — اللقطة تطابق القاعدة الحيّة. الحارس القائم
       # (check-schema-snapshot-fresh) يعترف بأنه لا يرى ما أُضيف للقاعدة
       # وغاب عن الملف — وهو الاتجاه الذى فقدنا فيه أربعة جداول كاملة.
@@ -372,48 +384,34 @@ jobs:
           name: ai-governance-reports
           path: knowledge/governance/
 
-  deploy:
-    name: Deploy to Vercel (production)
-    needs: [test, security-check, ai-governance-audit]
-    runs-on: ubuntu-latest
-    # ✅ نشر فقط عند push مباشرة على main (ليس على PR)
-    # ملاحظة: التحقق من وجود التوكن يتم داخل سكربت الـ shell لتقليل مشاكل الـ lint
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    env:
-      # ✅ هذه الـ secrets اختيارية - إذا لم تكن موجودة، سيتم تمرير قيم فارغة
-      # ⚠️ Linter warnings هنا طبيعية ومتوقعة - الـ linter لا يعرف أن الـ secrets موجودة أم لا
-      # هذه تحذيرات فقط (warnings) وليست أخطاء (errors)، ويمكن تجاهلها بأمان
-      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
-      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Deploy to Vercel (if token configured)
-        run: |
-          if [ -z "${VERCEL_TOKEN}" ]; then
-            echo "⚠️ Skipping Vercel deploy - VERCEL_TOKEN is not configured in GitHub Secrets"
-            exit 0
-          fi
-
-          # 🔐 سحب إعدادات Vercel للبيئة الإنتاجية
-          npx vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
-
-          # 🏗️ بناء مسبق باستخدام Vercel
-          npx vercel build --prod --token="$VERCEL_TOKEN"
-
-          # 🚀 نشر النسخة المبنية إلى الإنتاج
-          npx vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
-
+# ═══════════════════════════════════════════════════════════════════════════
+# v3.75.80 — **ولا زينةَ على بابٍ لا يُفتَح**: أين يُنشَرُ هذا المشروعُ فعلاً؟
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# كان هنا وظيفةٌ اسمُها `Deploy to Vercel (production)` — **ولم تنشرْ قطّ**.
+# كانت مشروطةً بـ`needs: [test, security-check, ai-governance-audit]`،
+# والأخيرةُ حمراءُ فى كلِّ قيدٍ منذ شهور، فكانت الوظيفةُ **مُتخطّاةً دائماً**.
+# ومع ذلك كان المشروعُ يُنشَرُ فى كلِّ إصدارٍ خلال ثوانٍ — أى أنّ الناشرَ
+# **لم يكنْ هى قطّ**. فكانت اسماً على بابٍ لا يُفتَح، **وأوهمَ قارئَه أنّ
+# النشرَ محروسٌ ههنا وهو ليس كذلك**.
+#
+# **والناشرُ الحقيقىّ**: تكاملُ Vercel المباشرُ مع المستودع
+# (`Connected Git Repository` → `abuelmagd10/code`)، وعلامتُه على كلِّ قيدٍ
+# فحصٌ اسمُه `Vercel – code`. يبدأُ بعدَ الدفعِ بثوانٍ — أى **قبلَ أن تنتهىَ
+# هذه الوظيفةُ أصلاً**، فلا يمكنُ لهذه أن تكونَ بوّابةً له.
+#
+# **وأينَ البوّابةُ إذن؟** فى `push_v*.ps1` على جهازِ صاحبِ المشروع: مئةٌ
+# وثمانيةُ حرّاسٍ وفخاخُهم الذاتيّةُ وبناءٌ كامل، **ولا يُدفَعُ شىءٌ إن رفضَ
+# حارسٌ واحد**. فما يبلغُ `main` مُجازٌ سلفاً، وVercel لا ينشرُ إلّا `main`.
+# وتلك بوّابةٌ أقوى من هذه الوظيفة، لأنّها **تصلُ القاعدةَ الحيّة** وهذه لا تصل.
+#
+# **ولماذا حُذفت لا أُصلِحت؟** لأنّ إصلاحَ `ai-governance-audit` (وهو ما جرى
+# فى هذه الدفعة) كان **سيُشغِّلُها لأوّلِ مرّة**. فلو كان `VERCEL_TOKEN`
+# مضبوطاً لَنشرت نشراً ثانياً لكلِّ قيدٍ يسابقُ نشرَ التكاملِ المباشر —
+# **فيصيرُ للنشرِ بيتان**. وحذفُها هو ما يمنعُ ذلك.
+#
+# **وما الذى يحرسُ أنّ النشرَ وقعَ فعلاً؟** حادثةُ v3.75.78: ضاعَ حدثُ الدفعِ
+# مرّةً واحدة، فبقىَ الإنتاجُ على إصدارٍ سابقٍ **ساعةً كاملةً بلا أن يقولَ
+# أحدٌ شيئاً**. فصارَ فى `push_v*.ps1` **رقيبُ نشرٍ** يسألُ Vercel بعدَ الدفعِ:
+# هل وُلِدَ نشرٌ لهذا القيدِ بعينِه؟ فإن لم يُولَدْ صرخَ وأعطى خطواتِ الإصلاح.
+# ═══════════════════════════════════════════════════════════════════════════

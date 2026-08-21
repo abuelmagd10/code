@@ -28,13 +28,8 @@ require("dotenv").config({ path: [".env.local", ".env", ".env.development.local"
 
 const { spawnSync } = require("child_process")
 
-if (!process.env.PRODUCTION_SUPABASE_DB_URL) {
-  console.error(
-    "X PRODUCTION_SUPABASE_DB_URL is not set - cannot prove the guard refuses anything.\n" +
-      "  Refusing to ship a guard that has never been seen failing."
-  )
-  process.exit(1)
-}
+const { requireDbOrSkip } = require("./lib/selftest-db")
+requireDbOrSkip("PRODUCTION_SUPABASE_DB_URL", "أنَّ حارسَ تكلفةِ الحركةِ يرفضُ فرقاً مزروعاً بين الحركةِ والدفتر")
 
 function runGuard(enforcedFrom) {
   const r = spawnSync(

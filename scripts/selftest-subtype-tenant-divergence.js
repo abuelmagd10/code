@@ -108,10 +108,8 @@ async function discover() {
 }
 
 ;(async () => {
-  if (!process.env.PRODUCTION_SUPABASE_DB_URL) {
-    console.error("X PRODUCTION_SUPABASE_DB_URL is not set - the wired half of this self-test proves nothing")
-    process.exit(1)
-  }
+  const { requireDbOrSkip } = require("./lib/selftest-db")
+  requireDbOrSkip("PRODUCTION_SUPABASE_DB_URL", "أنَّ حارسَ انحرافِ الأنواعِ الفرعيّةِ يرفضُ انحرافاً مزروعاً")
 
   const { partial, everywhere } = await discover()
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "subtype-selftest-"))

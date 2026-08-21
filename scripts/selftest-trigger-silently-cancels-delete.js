@@ -60,10 +60,8 @@ const DROP_ALL = `
 `
 
 ;(async () => {
-  if (!process.env.PRODUCTION_SUPABASE_DB_URL) {
-    console.error("X PRODUCTION_SUPABASE_DB_URL is not set - the wired half proves nothing")
-    process.exit(1)
-  }
+  const { requireDbOrSkip } = require("./lib/selftest-db")
+  requireDbOrSkip("PRODUCTION_SUPABASE_DB_URL", "أنَّ حارسَ المُشغِّلِ الذى يُلغى الحذفَ صامتاً يرفضُ مُشغِّلاً مزروعاً")
 
   let Client
   try { ({ Client } = require("pg")) } catch {
