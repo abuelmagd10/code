@@ -32,6 +32,8 @@ require("dotenv").config({ path: [".env.local", ".env", ".env.development.local"
 const { spawnSync } = require("child_process")
 
 const { requireDbOrSkip } = require("./lib/selftest-db")
+// v3.75.81 — والزرعُ يُثبَتُ قبلَ الحُكم: لا يمرُّ موضعٌ لم يُوجَدْ فى صمت.
+const { plantedText, strippedText } = require("./lib/selftest-plant")
 const url = requireDbOrSkip("TEST_SUPABASE_DB_URL", "أنَّ حارسَ تسعيرِ مرتجعِ الشراءِ بالفاتورةِ يرفضُ تسعيراً مزروعاً")
 
 let Client
@@ -91,11 +93,11 @@ const SNAPSHOT_OF = [
     // (أ) الشكلُ الأصلى: السعرُ يعود من الطلب.
     await stage(
       "the writer takes unit_price from the request again",
-      () => client.query(
-        snap["process_purchase_return_atomic(uuid,uuid,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,jsonb,jsonb,text,uuid)"]
-          .replace(
-            "v_priced.unit_price, v_priced.tax_rate, v_priced.discount_percent, v_priced.line_total\n    );",
-            "COALESCE((v_item->>'unit_price')::NUMERIC, 0), v_priced.tax_rate, v_priced.discount_percent,\n      COALESCE((v_item->>'line_total')::NUMERIC, 0)\n    );")),
+      () => client.query(plantedText(
+        snap["process_purchase_return_atomic(uuid,uuid,uuid,jsonb,jsonb,jsonb,jsonb,jsonb,jsonb,jsonb,text,uuid)"],
+        "v_priced.unit_price, v_priced.tax_rate, v_priced.discount_percent, v_priced.line_total\n    );",
+        "COALESCE((v_item->>'unit_price')::NUMERIC, 0), v_priced.tax_rate, v_priced.discount_percent,\n      COALESCE((v_item->>'line_total')::NUMERIC, 0)\n    );",
+        "إعادةُ الكاتبِ إلى أخذِ السعرِ من الطلب")),
       "takes unit_price")
 
     // (ب) الأخبث: كلُّ الأسماء فى مكانها، ودالةُ الرفض لا ترفض.
@@ -117,19 +119,32 @@ const SNAPSHOT_OF = [
       "executable by anon")
 
     // (د) دالةٌ بصلاحيات كاملة بلا مسارِ بحثٍ مثبَّت.
+    //
+    // ⚠️ v3.75.81 — هنا كان العطب. كان النزعُ يطابقُ نصّاً محفوظاً بيدى:
+    // `SET search_path TO 'public', 'pg_catalog'`. ثم جاءت v3.75.59 وأضافت
+    // `, pg_temp` إلى مسارِ البحثِ فى **كلِّ** دالّةٍ فى القاعدة، فصارَ النزعُ
+    // يقطعُ نصفَ السطرِ ويتركُ نصفَه: `SECURITY DEFINER, 'pg_temp'` — وهو نصٌّ
+    // مكسورٌ يردُّه الخادمُ بـ«syntax error at or near ","». فسقطَ الفخُّ
+    // شهرين بلا أن يعلمَ أحد، لأنَّ **لا مُنادىَ له**.
+    //
+    // والعلاجُ الجذرىُّ: يُنزَعُ السطرُ **كما هو مكتوبٌ حيّاً** مهما كان ذيلُه،
+    // ويُثبَتُ أنَّ النزعَ وقع. فلا تُعيدُ دفعةٌ قادمةٌ تعطيلَه بصمت.
     await stage(
       "resubmit loses its search_path",
-      () => client.query(
-        snap["resubmit_purchase_return(uuid,uuid,jsonb,jsonb)"]
-          .replace(/\n\s*SET search_path TO 'public', 'pg_catalog'/, "")),
+      () => client.query(strippedText(
+        snap["resubmit_purchase_return(uuid,uuid,jsonb,jsonb)"],
+        /\n[ \t]*SET search_path TO [^\n]*/i,
+        "نزعُ سطرِ مسارِ البحثِ من resubmit_purchase_return")),
       "without SET search_path")
 
     // (هـ) وحارسٌ يرفض البرىء عطبٌ لا حماية: يُغيَّر التسعيرُ فيخالف الشاشة.
     await stage(
       "the pricing home drifts away from what the screen sends",
-      () => client.query(
-        snap["purchase_return_priced_line(uuid,uuid,numeric)"]
-          .replace("line_total := ROUND(v_net * v_ratio, 2);", "line_total := ROUND(v_net * v_ratio, 2) + 5;")),
+      () => client.query(plantedText(
+        snap["purchase_return_priced_line(uuid,uuid,numeric)"],
+        "line_total := ROUND(v_net * v_ratio, 2);",
+        "line_total := ROUND(v_net * v_ratio, 2) + 5;",
+        "انحرافُ بيتِ التسعيرِ عمّا ترسلُه الشاشة")),
       "REFUSED|NEW divergence")
 
     if (ok) {

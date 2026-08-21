@@ -25,6 +25,10 @@ const fs = require("fs")
 const os = require("os")
 const path = require("path")
 
+// v3.75.81 — والزرعُ يُثبَتُ قبلَ الحُكم: قاعدةٌ فى `.gitattributes` قد تُعادُ
+// صياغتُها يوماً، فلا يجوزُ أن يُضعِفَها الفخُّ فى الظاهرِ ولا يُضعِفُ شيئاً.
+const { plantedText } = require("./lib/selftest-plant")
+
 const GUARD = path.join(process.cwd(), "scripts", "check-line-endings-are-one-way.js")
 const ATTRS = path.join(process.cwd(), ".gitattributes")
 
@@ -110,7 +114,9 @@ function commitRaw(root, rel, buf) {
   // (ب)
   stage("the one rule deleted from .gitattributes",
     (root) => {
-      const a = fs.readFileSync(path.join(root, ".gitattributes"), "utf8").replace("* text=auto eol=lf", "# removed")
+      const a = plantedText(
+        fs.readFileSync(path.join(root, ".gitattributes"), "utf8"),
+        "* text=auto eol=lf", "# removed", "إضعافُ القاعدةِ الواحدةِ فى .gitattributes")
       fs.writeFileSync(path.join(root, ".gitattributes"), a)
       git(root, ["add", "-A"]); git(root, ["commit", "-qm", "weaken"])
     },

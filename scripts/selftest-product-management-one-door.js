@@ -28,6 +28,8 @@ require("dotenv").config({ path: [".env.local", ".env", ".env.development.local"
 const { spawnSync } = require("child_process")
 
 const { requireDbOrSkip } = require("./lib/selftest-db")
+// v3.75.81 — والزرعُ يُثبَتُ قبلَ الحُكم، من بيتٍ واحدٍ لا من سطرٍ فى كلِّ فخّ.
+const { plantedText } = require("./lib/selftest-plant")
 const url = requireDbOrSkip("TEST_SUPABASE_DB_URL", "أنَّ حارسَ بابِ إدارةِ المنتجاتِ الواحدِ يرفضُ باباً ثانياً مزروعاً")
 
 let Client
@@ -102,11 +104,11 @@ function runGuard() {
     await stage(
       "the SECURITY DEFINER creator no longer asks about the role",
       async () => {
+        // v3.75.81 — الحكمُ الذى كان مكتوباً هنا بيدٍ صارَ له بيتٌ واحد.
         for (const s of snap) {
-          const stripped = s.def.replace(
-            /\n\s*--\s*v3\.74\.935[\s\S]*?END IF;\n/, "\n")
-          if (stripped === s.def) throw new Error(`could not strip the guard from ${s.sig}`)
-          await client.query(stripped)
+          await client.query(plantedText(
+            s.def, /\n\s*--\s*v3\.74\.935[\s\S]*?END IF;\n/, "\n",
+            `نزعُ سؤالِ الدورِ من ${s.sig}`))
         }
       },
       "does not ask can_manage_products",

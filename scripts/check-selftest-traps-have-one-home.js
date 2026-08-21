@@ -42,6 +42,23 @@
  *       ويُعلِنُ تخطّىَ حالةٍ واحدةٍ منها **بصوتٍ مسموعٍ بلا خروج** ليس مخالفاً.
  *       **وحارسٌ يصرخُ على البرىءِ يُطفَأ.**
  *
+ * ═══ وما أضافته v3.75.81 — لأنَّ العدَّ وحدَه لم يكفِ ═══
+ *
+ * عدَّت v3.75.80 الفخاخَ وأصلحَتْ حكمَها، **ولم تسألْ من يُشغِّلُها**. فقِيسَ
+ * بعدَها بيومٍ فإذا **سبعةَ عشرَ فخّاً من الستّةِ والعشرينَ لا يُناديها شىء**.
+ * وثلاثةٌ منها ساقطةٌ فعلاً: واحدٌ مكسورٌ منذ v3.75.59، وواحدٌ **لم يكنْ أخضرَ
+ * قطُّ** منذ v3.75.4، وواحدٌ يرفضُ بحقٍّ لردمٍ لم يُطبَّق.
+ *
+ *   **(٥) ولكلِّ فخٍّ مُنادٍ** — بابٌ واحدٌ اسمُه `check-*` (فتُشغِّلُه بوّابةُ
+ *       الدفعِ بحكمِ إحصائِها) **يُحصِى المجلَّدَ ولا يحفظُ اسماً**. ولو حفظَ
+ *       الأسماءَ لعادَ الفخُّ الجديدُ يتيماً من يومِه. **وفخٌّ يعطبُ فى صمتٍ
+ *       أسوأُ من فخٍّ لا يوجد**: الأوّلُ يُوهمُ صاحبَه أنَّ حارسَه مُبرهَن.
+ *
+ *   **(٦) والزرعُ يُثبَتُ قبلَ الحُكم** — فخٌّ يزرعُ بمطابقةِ نصٍّ محفوظٍ عندَه
+ *       لنصٍّ حىٍّ يتغيَّر، فإن لم يُوجَدِ الموضعُ **لم يُزرعْ شىءٌ أصلاً**،
+ *       فيقولُ «الحارسُ لم يرفض» — وهى جملةٌ تحتملُ نقيضَين، أى **بيتَين**.
+ *       فالزرعُ من `lib/selftest-plant.js` يصيحُ فى موضعِه، والرَّوسَةُ مُثبَّتة.
+ *
  * Usage: node scripts/check-selftest-traps-have-one-home.js [--selftest] [--list]
  * ---------------------------------------------------------------------------
  */
@@ -101,6 +118,50 @@ const DECLARED_PARTIAL = {
     why:
       "أربعٌ من حالاتِه الخمسِ تجرى بلا قاعدة (نجمةٌ صريحةٌ ومتخفّيةٌ ومعكوسان)، " +
       "والخامسةُ وحدَها تلزمُها القاعدةُ فتُعلَنُ متخطّاةً بلا خروج.",
+  },
+}
+
+// ── v3.75.81 — المُنادى ─────────────────────────────────────────────────────
+// اسمُه `check-*` عن قصد: بوّابةُ الدفعِ تُشغِّلُ كلَّ `check-*.js`، فصارَ له
+// مُنادٍ قائمٌ بلا سطرٍ جديدٍ فى سكربتٍ لا يعيشُ فى المستودع.
+const CALLER_REL = "check-every-selftest-trap-is-run.js"
+
+// ── v3.75.81 — رَوسَةُ الزرعِ بالنصّ ────────────────────────────────────────
+// **معدودٌ لا مسكوتٌ عنه**: كلُّ فخٍّ يزرعُ بمطابقةِ نصٍّ مذكورٌ هنا بعددِ
+// زراعاتِه. فإن زادَ زرعٌ ولم يُثبَّتْ، رُفض.
+const PINNED_PLANTERS = {
+  "selftest-purchase-return-priced-by-the-bill": 3,
+  "selftest-product-management-one-door": 1,
+  "selftest-line-endings-are-one-way": 1,
+}
+
+// وما فيه `.replace(` وليسَ زرعاً يُعلَنُ بسببِه، فلا يُحاكَمُ ولا يُسكَتُ عنه.
+const DECLARED_NOT_A_PLANT = {
+  "selftest-products-select-star": {
+    why:
+      "يُثبتُ زرعَه بنفسِه ولا يخرجُ بخطأٍ بل يُسمّى العطبَ ويُكمِلُ التنظيف، " +
+      "وبديلُه يستعملُ مجموعةَ التقاطٍ ($1) لا نصّاً ثابتاً — فنقلُه إلى البيتِ " +
+      "يُغيّرُ سلوكَه عندَ الفشلِ بلا مكسب.",
+  },
+  "selftest-schema-snapshot-matches-db": {
+    why:
+      "موضعُ الزرعِ عندَه **مقتطَعٌ من النصِّ نفسِه** قبلَ الاستبدال، فلا يمكنُ " +
+      "أن يغيبَ الموضعُ أصلاً — والعلّةُ التى وُلدَ لها البيتُ غيرُ قائمةٍ هنا.",
+  },
+  "selftest-trigger-silently-cancels-delete": {
+    why:
+      "استبدالُه الوحيدُ حجبُ رابطِ القاعدةِ من نصِّ خطأٍ قبلَ طباعتِه — " +
+      "تنظيفُ ناتجٍ لا زرعُ عطب، ولا حكمَ يُبنى عليه.",
+  },
+  "selftest-subtype-tenant-divergence": {
+    why:
+      "استبدالُه الوحيدُ حجبُ رابطِ القاعدةِ من نصِّ خطأٍ قبلَ طباعتِه — " +
+      "تنظيفُ ناتجٍ لا زرعُ عطب، ولا حكمَ يُبنى عليه.",
+  },
+  "selftest-ledger-integrity": {
+    why:
+      "استبدالُه تشذيبُ سطرٍ عندَ قراءةِ قائمةٍ مكتوبةٍ (نزعُ شَرطةٍ بادئة)، " +
+      "لا زرعَ فيه ولا يُبنى عليه حكمُ رفضٍ أو تبرئة.",
   },
 }
 
@@ -249,6 +310,90 @@ function judgeHome(src) {
   return out
 }
 
+// ── v3.75.81 — (٥) ولكلِّ فخٍّ مُنادٍ ────────────────────────────────────────
+
+/**
+ * **المُنادى يُحصِى ولا يحفظ.** يُحكَمُ على نصِّه هو، لا على نيّتِه.
+ * @param {string} src نصُّ المُنادى
+ * @param {string[]} trapNames أسماءُ الفخاخِ الحقيقيّةِ بلا امتداد
+ */
+function judgeCaller(src, trapNames) {
+  const out = []
+  const masked = maskComments(src)
+  if (!/readdirSync/.test(masked)) {
+    out.push("المُنادى لا يُحصِى المجلَّد — فقائمةٌ مكتوبةٌ تجعلُ الفخَّ الجديدَ يتيماً من يومِه.")
+  }
+  if (!/["']selftest-["']|startsWith\(\s*["']selftest-/.test(masked) && !/\^selftest-/.test(masked)) {
+    out.push("المُنادى لا يُرشِّحُ الفخاخَ بسابقتِها — فما يُحصِيه ليس الفخاخ.")
+  }
+  if (!/spawnSync|execFileSync|spawn\(/.test(masked)) {
+    out.push("المُنادى لا يُشغِّلُ شيئاً — **ولا زينةَ على بابٍ لا يُفتَح**.")
+  }
+  // **والوسمُ يُقرَأُ من بيتِه لا يُكتَبُ ثانيةً**: لو كتبَه المُنادى بيدِه لصارَ
+  // للوسمِ بيتان، فيُغيَّرُ فى أحدِهما ويبقى الآخرُ يقيسُ وسماً لا يُطبَعُ أبداً.
+  if (new RegExp(`["'\`]${SKIP_TAG}`).test(masked)) {
+    out.push(`المُنادى يكتبُ وسمَ «لم أَقِسْ» (${SKIP_TAG}) بيدِه — والوسمُ بيتُه lib/selftest-db.`)
+  } else if (!/\bSKIP_TAG\b/.test(masked) || !/require\(\s*["'][^"']*lib\/selftest-db["']\s*\)/.test(masked)) {
+    out.push("المُنادى لا يقرأُ وسمَ «لم أَقِسْ» من بيتِه — فسيَعُدُّ الصامتَ ناجحاً.")
+  }
+  // **ولا يُكتَبُ اسمُ فخٍّ حقيقىٍّ فيه**: بيتُ الأسماءِ هو المجلَّد.
+  for (const n of trapNames) {
+    if (masked.includes(n)) {
+      out.push(`المُنادى يكتبُ اسمَ فخٍّ بعينِه (${n}) — فصارَ للأسماءِ بيتان، والمجلَّدُ هو البيت.`)
+    }
+  }
+  return out
+}
+
+// ── v3.75.81 — (٦) والزرعُ يُثبَتُ قبلَ الحُكم ──────────────────────────────
+
+/** نداءُ بيتِ الزرع، مع تعميةِ التعليقات. */
+function usesThePlantHome(src) {
+  return /require\(\s*["'][^"']*lib\/selftest-plant["']\s*\)/.test(maskComments(src))
+}
+
+/** عددُ الزراعاتِ المُثبَتةِ فى الفخّ. */
+function countPlants(src) {
+  const m = maskComments(src).match(/\b(?:plantedText|strippedText)\s*\(/g)
+  return m ? m.length : 0
+}
+
+/** أفيه استبدالُ نصٍّ أصلاً؟ (فمن لا استبدالَ فيه لا يُسأَلُ عن زرع) */
+function hasTextReplace(src) {
+  return /\.replace\s*\(/.test(maskComments(src))
+}
+
+/**
+ * حكمُ الزرعِ على فخٍّ واحد.
+ * @param {{name:string, src:string, pinnedPlants:number|null, declaredNotAPlant:boolean}} t
+ */
+function judgePlanting(t) {
+  const out = []
+  const has = hasTextReplace(t.src)
+  if (t.pinnedPlants !== null && t.declaredNotAPlant) {
+    out.push(`${t.name}: مُثبَّتٌ زارعاً ومُعلَنٌ غيرَ زارعٍ معاً — **وحكمانِ على حالةٍ واحدةٍ بيتان**.`)
+    return out
+  }
+  if (t.pinnedPlants !== null) {
+    if (!usesThePlantHome(t.src)) {
+      out.push(`${t.name}: مُثبَّتٌ زارعاً ولا ينادى lib/selftest-plant — فزرعُه قد لا يقعُ ولا يعلمُ أحد.`)
+    }
+    const got = countPlants(t.src)
+    if (got !== t.pinnedPlants) {
+      out.push(
+        `${t.name}: زراعاتُه ${got} والمُثبَّتُ ${t.pinnedPlants} — ` +
+        (got > t.pinnedPlants ? "زرعٌ زادَ ولم يُثبَّتْ." : "**ومكسبٌ لا يُثبَّتُ يُلتَفُّ عليه**."))
+    }
+    return out
+  }
+  if (has && !t.declaredNotAPlant) {
+    out.push(
+      `${t.name}: فيه استبدالُ نصٍّ ولم يُثبَّتْ زارعاً ولم يُعلَنْ غيرَ زارع — ` +
+      "إمّا أن يُنادىَ بيتُ الزرعِ ويُثبَّتَ عددُه، وإمّا أن يُكتَبَ سببُ استثنائِه.")
+  }
+  return out
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // الفخُّ الذاتىّ — **وفخٌّ لا يُشغَّل ليس فخّاً**
 // ═══════════════════════════════════════════════════════════════════════════
@@ -339,6 +484,64 @@ if (process.argv.includes("--selftest")) {
   t("ولا إعلانَ جزئىٍّ بلا سببٍ مكتوب",
     Object.values(DECLARED_PARTIAL).every((d) => d.why && d.why.length > 40), true)
 
+  // ── (٧) v3.75.81 — ولكلِّ فخٍّ مُنادٍ ────────────────────────────────────
+  const CALLER_SRC = fs.readFileSync(path.join(SCRIPTS_DIR, CALLER_REL), "utf8")
+  const REAL_NAMES = fs.readdirSync(SCRIPTS_DIR)
+    .filter((f) => /^selftest-.*\.js$/.test(f)).map((f) => f.replace(/\.js$/, ""))
+  t("المُنادى الحقيقىُّ سليم", judgeCaller(CALLER_SRC, REAL_NAMES).length, 0)
+  t("ويرفضُ مُنادياً لا يُحصِى المجلَّد",
+    judgeCaller(CALLER_SRC.replace(/readdirSync/g, "xxx"), REAL_NAMES).length > 0, true)
+  t("ويرفضُ مُنادياً لا يُشغِّلُ شيئاً — ولا زينةَ على بابٍ لا يُفتَح",
+    judgeCaller(CALLER_SRC.replace(/spawnSync/g, "noop").replace(/execFileSync/g, "noop"), REAL_NAMES).length > 0, true)
+  t("ويرفضُ مُنادياً يَعُدُّ «لم أَقِسْ» نجاحاً",
+    judgeCaller(CALLER_SRC.replace(/\bSKIP_TAG\b/g, "XX"), REAL_NAMES).length > 0, true)
+  t("ويرفضُ مُنادياً يكتبُ الوسمَ بيدِه — فيصيرُ للوسمِ بيتان",
+    judgeCaller(`${CALLER_SRC}\nconst tag = "${SKIP_TAG}"\n`, REAL_NAMES).length > 0, true)
+  t("ويرفضُ مُنادياً يكتبُ اسمَ فخٍّ حقيقىٍّ بيدِه — فالمجلَّدُ هو بيتُ الأسماء",
+    judgeCaller(`${CALLER_SRC}\nconst list = ["${REAL_NAMES[0]}"]\n`, REAL_NAMES).length > 0, true)
+  t("ويُسمّى الفخَّ المكتوبَ بعينِه",
+    judgeCaller(`${CALLER_SRC}\nconst list = ["${REAL_NAMES[0]}"]\n`, REAL_NAMES)
+      .some((p) => p.includes(REAL_NAMES[0])), true)
+  t("ولا يخدعُه اسمُ فخٍّ فى تعليق — والتعليقُ ليس تعليمة",
+    judgeCaller(`${CALLER_SRC}\n// ${REAL_NAMES[0]}\n`, REAL_NAMES).length, 0)
+
+  // ── (٨) v3.75.81 — والزرعُ يُثبَتُ قبلَ الحُكم ───────────────────────────
+  const PLANT_CALL = 'const { plantedText } = require("./lib/selftest-plant")\n'
+  t("يرى نداءَ بيتِ الزرع", usesThePlantHome(PLANT_CALL), true)
+  t("ولا يراه فى تعليق", usesThePlantHome('// require("./lib/selftest-plant")\n'), false)
+  t("ويَعُدُّ الزراعاتِ عدّاً", countPlants(`${PLANT_CALL}plantedText(a,b,c,d)\nstrippedText(a,b,c)\n`), 2)
+  t("ولا يَعُدُّ زرعاً فى تعليق", countPlants(`${PLANT_CALL}// plantedText(a,b,c,d)\n`), 0)
+  t("ويرى استبدالَ النصِّ حيثُ كان", hasTextReplace("x.replace(/a/, 'b')"), true)
+  t("ولا يراه فى تعليق", hasTextReplace("// x.replace(/a/, 'b')"), false)
+
+  const PLANTER_OK = `${PLANT_CALL}q(plantedText(def, "a", "b", "س"))\n`
+  t("يُبرِّئُ زارعاً ينادى البيتَ بعددٍ مطابق",
+    judgePlanting({ name: "a", src: PLANTER_OK, pinnedPlants: 1, declaredNotAPlant: false }).length, 0)
+  t("ويرفضُ زارعاً مُثبَّتاً لا ينادى البيت",
+    judgePlanting({ name: "a", src: 'q(def.replace("a", "b"))\n', pinnedPlants: 1, declaredNotAPlant: false }).length, 2)
+  t("ويرفضُ زرعاً زادَ ولم يُثبَّتْ",
+    judgePlanting({ name: "a", src: `${PLANTER_OK}q(plantedText(x, "c", "d", "س"))\n`, pinnedPlants: 1, declaredNotAPlant: false }).length, 1)
+  t("ويرفضُ نقصاً لم يُثبَّتْ — ومكسبٌ لا يُثبَّتُ يُلتَفُّ عليه",
+    judgePlanting({ name: "a", src: PLANT_CALL, pinnedPlants: 1, declaredNotAPlant: false }).length, 1)
+  t("ويرفضُ استبدالاً لم يُثبَّتْ ولم يُعلَنْ",
+    judgePlanting({ name: "a", src: 'q(def.replace("a", "b"))\n', pinnedPlants: null, declaredNotAPlant: false }).length, 1)
+  t("ولا يُحاكِمُ المُعلَنَ بسببٍ مكتوب",
+    judgePlanting({ name: "a", src: 'q(def.replace("a", "b"))\n', pinnedPlants: null, declaredNotAPlant: true }).length, 0)
+  t("ويُبرِّئُ فخّاً لا استبدالَ فيه أصلاً",
+    judgePlanting({ name: "a", src: "const x = 1\n", pinnedPlants: null, declaredNotAPlant: false }).length, 0)
+  t("ويرفضُ من ثُبِّتَ زارعاً وأُعلِنَ غيرَ زارعٍ معاً — وحكمانِ على حالةٍ واحدةٍ بيتان",
+    judgePlanting({ name: "a", src: PLANTER_OK, pinnedPlants: 1, declaredNotAPlant: true }).length, 1)
+  t("ولا إعلانَ «ليس زرعاً» بلا سببٍ مكتوب",
+    Object.values(DECLARED_NOT_A_PLANT).every((d) => d.why && d.why.length > 40), true)
+
+  // ── (٩) وبيتُ الزرعِ نفسُه يصيحُ حين لا يقعُ الزرع ────────────────────────
+  const { plantedText: PT } = require("./lib/selftest-plant")
+  t("بيتُ الزرعِ يزرعُ حين يجدُ الموضع", PT("a X b", "X", "Y", "س"), "a Y b")
+  t("ولا يُفسِّرُ الدولارَ فى البديل — قانونُ أدواتِ الترقيع", PT("a X b", "X", "$&", "س"), "a $& b")
+  let shouted = false
+  try { PT("nothing here", "X", "Y", "س") } catch { shouted = true }
+  t("ويصيحُ حين لا يقعُ الزرع — فلا يلتبسُ «لم يرفض» بـ«لم يُزرَعْ شىء»", shouted, true)
+
   let fail = 0
   for (const [name, got, exp] of cases) {
     const ok = got === exp
@@ -391,6 +594,13 @@ for (const f of files) {
   const declaredPartial = Boolean(DECLARED_PARTIAL[name])
   if (pinnedVar) needDb++
   problems.push(...judgeTrap({ name, src, pinnedVar, declaredPartial }))
+  // v3.75.81 — (٦) والزرعُ يُثبَتُ قبلَ الحُكم
+  problems.push(...judgePlanting({
+    name,
+    src,
+    pinnedPlants: Object.prototype.hasOwnProperty.call(PINNED_PLANTERS, name) ? PINNED_PLANTERS[name] : null,
+    declaredNotAPlant: Boolean(DECLARED_NOT_A_PLANT[name]),
+  }))
   rows.push({ name, pinnedVar, home: usesTheOneHome(src), declaredPartial })
 }
 
@@ -421,6 +631,29 @@ if (!fs.existsSync(homePath)) {
   problems.push(`البيتُ الواحدُ غائب: scripts/${HOME_REL} — **وبيتٌ لا يُسكَنُ ليس بيتاً**.`)
 } else {
   problems.push(...judgeHome(fs.readFileSync(homePath, "utf8")))
+}
+
+// (و) v3.75.81 — ولكلِّ فخٍّ مُنادٍ
+const trapNames = files.map((f) => f.replace(/\.js$/, ""))
+const callerPath = path.join(SCRIPTS_DIR, CALLER_REL)
+if (!fs.existsSync(callerPath)) {
+  problems.push(
+    `المُنادى غائب: scripts/${CALLER_REL} — **وفخٌّ لا يُنادى ليس فخّاً**، ` +
+    "ولا يعلمُ صاحبُه أنَّ حارسَه صارَ بلا برهان.")
+} else {
+  problems.push(...judgeCaller(fs.readFileSync(callerPath, "utf8"), trapNames))
+}
+
+// (ز) v3.75.81 — ولا إعلانَ ولا تثبيتَ لفخٍّ لا وجودَ له
+for (const n of Object.keys(PINNED_PLANTERS)) {
+  if (!files.includes(`${n}.js`)) {
+    problems.push(`تثبيتُ زرعٍ لفخٍّ لا وجودَ له: ${n} — احذفْه فى دفعةِ من حذفَه.`)
+  }
+}
+for (const n of Object.keys(DECLARED_NOT_A_PLANT)) {
+  if (!files.includes(`${n}.js`)) {
+    problems.push(`إعلانُ «ليس زرعاً» لفخٍّ لا وجودَ له: ${n} — **ولا زينةَ على بابٍ لا يُفتَح**.`)
+  }
 }
 
 const test = Object.values(PINNED_VAR_OF).filter((v) => v === "TEST_SUPABASE_DB_URL").length
