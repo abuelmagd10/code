@@ -51,9 +51,30 @@
  *     لعملةٍ ثلاثيّة — فنصفُ العلاجِ أذى. ومنه وُلِدَ القانونُ (٦): **18 وعاءً
  *     مُعلَناً بخانتين فى 8 دوالّ**، مُثبَّتةً اليومَ لتُحوَّلَ على دفعةٍ مقيسة.
  *
+ *   • v3.75.79 (2026-08-21): القاعدةُ **63 موضعاً فى 43 دالّة** (كانت 68 فى 46)،
+ *     و**5 أوعيةٍ بخانتَين فى 3 دوالّ** (كانت 18 فى 8) — اتّسعَ 13 وعاءً
+ *     وحُوِّلَتْ 5 مواضعَ فى خمسِ دوالّ، أثقلُها post_payroll_atomic الذى
+ *     امتنعَتْ عنه v3.75.78: أوعيتُه السبعةُ اتّسعت **كلُّها فى النَّفَسِ
+ *     الواحد** (المَدينُ والدائنُ معاً) فلا ينشأُ قيدٌ غيرُ متوازن.
+ *     ووُلِدَ القانونُ (٧): وعاءٌ اتّسعَ لا يعودُ يضيق.
+ *     والقانونُ (٨): **73 عتبةً مكتوبةً فى 52 دالّة** — فئةٌ ثالثةٌ تُثبَّتُ
+ *     اليومَ ولها دفعتُها.
+ *     **واستُثنِىَ ثلاثةُ أوعيةٍ بقياسٍ لا بسهو**: وعاءُ
+ *     validate_three_way_matching عتبةٌ لا مالٌ محسوب؛ ووعاءا
+ *     approve_shareholder_drawing و convert_purchase_request_to_po لم
+ *     تُلمَسا لأنَّ نصَّهما فى القاعدةِ بنهاياتِ أسطرِ CRLF (انظرِ العمياءَ
+ *     الثانيةَ أدناه).
+ *
  * نقطةٌ عمياءُ معلومة: هذا الفحصُ يقرأُ الملفّاتِ ولقطةَ الدوالّ، فيقيسُ
  * **الشكلَ المكتوب** لا الأثرَ الحىّ. وأنَّ البيتَ يُعطى الرقمَ الصحيحَ
  * فعلاً يُثبتُه برهانُ الهجرةِ داخلَ معاملتِها — ولا يُقاسُ هنا.
+ *
+ * ونقطةٌ عمياءُ ثانيةٌ اكتُشِفَتْ فى v3.75.79 وتُسمَّى ولا تُخبَّأ: **لقطةُ
+ * الدوالِّ مُسوّاةُ نهاياتِ الأسطرِ إلى LF، والقاعدةُ تحفظُ دالّتَين على
+ * الأقلِّ بـCRLF** (approve_shareholder_drawing و convert_purchase_request_to_po).
+ * فحارسُ مطابقةِ المرآةِ يُسوّى الطرفَينِ قبلَ المقارنةِ فلا يراه، وهذا الفحصُ
+ * يقرأُ المرآةَ فلا يراه أيضاً. ولا يظهرُ إلّا حينَ تُرسى هجرةٌ على نصٍّ حرفىّ
+ * — وقد أرستْ ورفضتْ، فكانَ الرفضُ هو الكشف.
  *
  * Usage: node scripts/check-money-is-rounded-by-its-currency.js
  * ---------------------------------------------------------------------------
@@ -66,18 +87,40 @@ const { projectCodeFiles } = require("./lib/repo-code-files")
 
 const ROOT = path.resolve(__dirname, "..")
 
-const PINNED_DB_SITES = 68
-const PINNED_DB_FUNCTIONS = 46
+const PINNED_DB_SITES = 63
+const PINNED_DB_FUNCTIONS = 43
 const PINNED_TOFIXED2 = 718
 const PINNED_MATHROUND100 = 42
+
+/**
+ * (v3.75.79) فئةُ العيبِ الثالثة: **عتبةٌ مكتوبةٌ تفترضُ خانتَين**.
+ * `ABS(diff) > 0.01` يفترضُ أنَّ أصغرَ وحدةٍ قرشٌ. وهى فى الدينارِ الكويتىِّ
+ * فَلْسٌ (0.001)، وفى الينِّ وحدةٌ كاملة. توسيعُ وعاءِ عتبةٍ زينةٌ لا علاج —
+ * فالعيبُ فى الرقمِ لا فى الوعاء. معدودةٌ ومُثبَّتةٌ ولا تنمو.
+ */
+const PINNED_THRESHOLDS = 73
+const PINNED_THRESHOLD_FUNCTIONS = 52
 
 /**
  * (v3.75.78) فئةُ العيبِ المكتشَفةُ حديثاً: **وعاءٌ أضيقُ من العملة**.
  * متغيّرٌ محلّىٌّ أو تحويلٌ مُعلَنٌ NUMERIC(‎…,2) يقصُّ المالَ إلى خانتين
  * **بعدَ** أن يُقرِّبَه البيتُ صحيحاً — فيصيرُ التحويلُ زينةً. معدودٌ ومُثبَّت.
  */
-const PINNED_NARROW_CONTAINERS = 18
-const PINNED_NARROW_FUNCTIONS = 8
+const PINNED_NARROW_CONTAINERS = 5
+const PINNED_NARROW_FUNCTIONS = 3
+
+/**
+ * (v3.75.79) الدوالُّ التى **اتّسعت أوعيتُها**، ولا يجوزُ أن تضيقَ ثانيةً.
+ * وهذا قانونٌ مستقلٌّ عن نداءِ البيت: منها ما لا ينادِيه أصلاً لأنَّ مجموعَ
+ * عمودٍ مخزَّنٍ دقيقٌ بذاتِه — والوعاءُ وحدَه كان الجانى.
+ */
+const WIDENED = [
+  { name: "post_payroll_atomic", vessels: 7, since: "v3.75.79" },
+  { name: "plw_create_labour_payment", vessels: 3, since: "v3.75.79" },
+  { name: "plw_approve_labour_payment", vessels: 1, since: "v3.75.79" },
+  { name: "plw_submit_labour_payment", vessels: 1, since: "v3.75.79" },
+  { name: "commission_attach_to_payroll_atomic", vessels: 1, since: "v3.75.79" },
+]
 
 /**
  * المساراتُ التى حُوِّلَتْ فعلاً — ويجبُ أن تبقى محوَّلة:
@@ -91,6 +134,10 @@ const CONVERTED = [
   { name: "run_fx_revaluation", calls: 1, since: "v3.75.78" },
   { name: "process_purchase_return_atomic", calls: 1, since: "v3.75.78" },
   { name: "process_purchase_return_multi_warehouse", calls: 2, since: "v3.75.78" },
+  { name: "post_payroll_atomic", calls: 2, since: "v3.75.79" },
+  { name: "plw_approve_labour_payment", calls: 2, since: "v3.75.79" },
+  { name: "plw_create_labour_payment", calls: 1, since: "v3.75.79" },
+  { name: "commission_attach_to_payroll_atomic", calls: 1, since: "v3.75.79" },
 ]
 const CONVERTED_CALLS_TOTAL = CONVERTED.reduce((a, c) => a + c.calls, 0)
 
@@ -101,6 +148,8 @@ const TOFIXED2 = /toFixed\(2\)/g
 const MATHROUND100 = /Math\.round\([^)]*\*\s*100\s*\)\s*\/\s*100/g
 /** وعاءٌ مُعلَنٌ بخانتين — يقصُّ ما قرَّبَه البيتُ صحيحاً (v3.75.78). */
 const NARROW_NUMERIC2 = /numeric\s*\(\s*\d+\s*,\s*2\s*\)/gi
+/** عتبةٌ مكتوبةٌ تفترضُ عددَ خانات — مقارنةٌ أو إسنادٌ بكسرٍ صغير (v3.75.79). */
+const WRITTEN_THRESHOLD = /(?:<=|>=|<|>|=|:=)\s*0\.0(?:0(?:0[1-9]|[1-9])|[1-9])\d*/g
 
 /** عددُ مواضعِ ROUND(‎…, 2) فى نصٍّ ما. */
 function countRound2(sql) {
@@ -144,6 +193,19 @@ function handRoundingIn(functionsSql, functionName) {
   return -1
 }
 
+/** العتباتُ المكتوبةُ، ومواضعُها فى كلِّ دالّة. */
+function scanWrittenThresholds(functionsSql) {
+  const blocks = functionsSql.split(/(?=CREATE OR REPLACE FUNCTION )/)
+  const out = []
+  for (const b of blocks) {
+    const m = /^CREATE OR REPLACE FUNCTION ([\w.]+)\(/.exec(b)
+    if (!m) continue
+    const n = (b.match(WRITTEN_THRESHOLD) || []).length
+    if (n > 0) out.push({ name: m[1], sites: n })
+  }
+  return out
+}
+
 /** الأوعيةُ المُعلَنةُ بخانتين، ومواضعُها فى كلِّ دالّة. */
 function scanNarrowContainers(functionsSql) {
   const blocks = functionsSql.split(/(?=CREATE OR REPLACE FUNCTION )/)
@@ -155,6 +217,37 @@ function scanNarrowContainers(functionsSql) {
     if (n > 0) out.push({ name: m[1], sites: n })
   }
   return out
+}
+
+/** كم وعاءً ضيّقاً بقىَ داخلَ دالّةٍ بعينِها؟ (‎-1 إن لم تُوجَد) */
+function narrowVesselsIn(functionsSql, functionName) {
+  const blocks = functionsSql.split(/(?=CREATE OR REPLACE FUNCTION )/)
+  for (const b of blocks) {
+    const m = /^CREATE OR REPLACE FUNCTION ([\w.]+)\(/.exec(b)
+    if (!m) continue
+    if (m[1] !== "public." + functionName && m[1] !== functionName) continue
+    return (b.match(NARROW_NUMERIC2) || []).length
+  }
+  return -1
+}
+
+/** (٧) ووعاءٌ اتّسعَ لا يعودُ يضيق. */
+function judgeWidenedStayWide(functionsSql, widened = WIDENED) {
+  const problems = []
+  for (const w of widened) {
+    const left = narrowVesselsIn(functionsSql, w.name)
+    if (left === -1) {
+      problems.push(`الدالّةُ الموسَّعةُ ${w.name} (${w.since}) غيرُ موجودةٍ فى لقطةِ الدوالّ`)
+      continue
+    }
+    if (left > 0) {
+      problems.push(
+        `${w.name} عادَ فيها ${left} وعاءً بخانتَين بعدَ أن اتّسعَ ${w.vessels} فى ${w.since} — ` +
+          "**والوعاءُ الضيّقُ يقصُّ ما قرَّبَه البيتُ صحيحاً، ويُخِلُّ توازنَ القيدِ إن ضاقَ طرفٌ دونَ طرف**"
+      )
+    }
+  }
+  return problems
 }
 
 /** (١) البيوتُ قائمةٌ وتصرخُ ولا تخترع. */
@@ -315,6 +408,24 @@ function selfTest() {
       "CREATE OR REPLACE FUNCTION public.a(x int)\nAS $$ DECLARE v NUMERIC(18,4); $$;\n"
     ).length === 0)
 
+  const ONE_W = [{ name: "f_w", vessels: 2, since: "vTEST" }]
+
+  t("يُبرَّأُ وعاءٌ اتّسعَ وبقىَ واسعاً", () =>
+    judgeWidenedStayWide(
+      "CREATE OR REPLACE FUNCTION public.f_w(a uuid)\nAS $$ DECLARE v NUMERIC(18,4); w NUMERIC(18,4); $$;\n",
+      ONE_W
+    ).length === 0)
+
+  t("**ووعاءٌ اتّسعَ ثمَّ ضاقَ ثانيةً → يُرفَض**", () =>
+    judgeWidenedStayWide(
+      "CREATE OR REPLACE FUNCTION public.f_w(a uuid)\nAS $$ DECLARE v NUMERIC(15,2); w NUMERIC(18,4); $$;\n",
+      ONE_W
+    ).some((p) => p.includes("يُخِلُّ توازنَ القيد")))
+
+  t("ودالّةٌ موسَّعةٌ اختفت → يُرفَض", () =>
+    judgeWidenedStayWide("CREATE OR REPLACE FUNCTION public.other(a uuid)\nAS $$ x $$;\n", ONE_W)
+      .some((p) => p.includes("غيرُ موجودةٍ")))
+
   t("والعددُ المُثبَّتُ يمرُّ حين يُطابق", () => judgePinned("x", 5, 5).length === 0)
   t("**ويرفضُ الزيادة**", () => judgePinned("x", 6, 5).some((p) => p.includes("زادَ")))
   t("ويرفضُ نقصاناً لم يُثبَّتْ", () => judgePinned("x", 4, 5).some((p) => p.includes("نقص")))
@@ -331,6 +442,23 @@ function selfTest() {
 
   t("ولا قراءةٌ من جدولِ العملاتِ لغيرِ الخانات", () =>
     judgeNoThirdHome([{ rel: "x.ts", src: "supabase.from('currencies').select('code')" }]).length === 0)
+
+  t("**ويرى عتبةً مكتوبةً تفترضُ خانتَين**", () => {
+    const r = scanWrittenThresholds(
+      "CREATE OR REPLACE FUNCTION public.a(x int)\nAS $$ IF ABS(d) > 0.01 THEN NULL; END IF; $$;\n"
+    )
+    return r.length === 1 && r[0].sites === 1
+  })
+
+  t("ويراها بثلاثِ خانات", () =>
+    scanWrittenThresholds(
+      "CREATE OR REPLACE FUNCTION public.a(x int)\nAS $$ IF d >= 0.001 THEN NULL; END IF; $$;\n"
+    ).length === 1)
+
+  t("ولا يعدُّ رقماً ليس عتبةً صغيرة", () =>
+    scanWrittenThresholds(
+      "CREATE OR REPLACE FUNCTION public.a(x int)\nAS $$ IF d > 1.5 THEN NULL; END IF; $$;\n"
+    ).length === 0)
 
   let failed = 0
   for (const [name, fn] of traps) {
@@ -379,6 +507,9 @@ const dbSites = dbFns.reduce((a, f) => a + f.sites, 0)
 const narrowFns = scanNarrowContainers(functionsSql)
 const narrowSites = narrowFns.reduce((a, f) => a + f.sites, 0)
 
+const thresholdFns = scanWrittenThresholds(functionsSql)
+const thresholdSites = thresholdFns.reduce((a, f) => a + f.sites, 0)
+
 let toFixed2 = 0
 let mathRound100 = 0
 for (const { src } of files) {
@@ -399,6 +530,11 @@ const findings = [
   ["(٦) والوعاءُ الأضيقُ من العملةِ معدودٌ لا ينمو", [
     ...judgePinned("أوعيةٌ مُعلَنةٌ NUMERIC(‎…,2) فى دوالِّ القاعدة", narrowSites, PINNED_NARROW_CONTAINERS),
     ...judgePinned("الدوالُّ التى تحملُها", narrowFns.length, PINNED_NARROW_FUNCTIONS),
+  ]],
+  ["(٧) ووعاءٌ اتّسعَ لا يعودُ يضيق", judgeWidenedStayWide(functionsSql)],
+  ["(٨) والعتبةُ المكتوبةُ معدودةٌ لا تنمو", [
+    ...judgePinned("عتباتٌ مكتوبةٌ تفترضُ خانتَين", thresholdSites, PINNED_THRESHOLDS),
+    ...judgePinned("الدوالُّ التى تحملُها", thresholdFns.length, PINNED_THRESHOLD_FUNCTIONS),
   ]],
 ]
 
@@ -422,7 +558,8 @@ console.log(
     `و${CONVERTED.length} مساراتٍ مُحوَّلةٍ تنادِيه ${CONVERTED_CALLS_TOTAL} مرّة · ` +
     `وما زالَ يدويّاً: ${dbSites} موضعاً فى ${dbFns.length} دالّةً بالقاعدة، ` +
     `و${toFixed2} toFixed(2) و${mathRound100} Math.round(×100) فى ${files.length} ملفَّ شيفرة · ` +
-    `و${narrowSites} وعاءً بخانتين فى ${narrowFns.length} دالّة · ` +
+    `و${narrowSites} وعاءً بخانتين فى ${narrowFns.length} دالّة، ` +
+    `و${thresholdSites} عتبةً مكتوبةً فى ${thresholdFns.length} دالّة · ` +
     `${trapCount} فخّاً ذاتيّاً.`
 )
 console.log("  ! ومعدودٌ لا مسكوتٌ عنه — يُحوَّلون على دفعاتٍ مقيسة، والأثقلُ أوّلاً:")

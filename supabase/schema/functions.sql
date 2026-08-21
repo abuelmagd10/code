@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-21T12:05:23.585Z
+-- Generated: 2026-08-21T13:33:47.058Z
 -- Routines: 1416
 -- =====================================================================
 
@@ -18175,10 +18175,13 @@ AS $function$
 DECLARE
   v_run RECORD;
   v_updated INT := 0;
-  v_total NUMERIC(15,2) := 0;
+  v_total NUMERIC(18,4) := 0;
+  v_base_ccy TEXT;
   r RECORD;
 BEGIN
   PERFORM public.assert_company_access(p_company_id);
+  -- v3.75.79 — العملةُ التى يُقرَّبُ بها هذا المستند: تُقرَأُ مرّةً من البيتِ الواحد.
+  v_base_ccy := public.erp_company_base_currency(p_company_id);
 
   -- القفل أولاً: طلبان متزامنان لا يقرآن «غير مرتبطة» معاً ثم يربطان معاً.
   SELECT id, status, payroll_run_id INTO v_run
@@ -18237,7 +18240,8 @@ BEGIN
   END LOOP;
 
   RETURN jsonb_build_object('ok', TRUE, 'idempotent', FALSE,
-    'employeesUpdated', v_updated, 'totalCommissionAdded', v_total,
+    'employeesUpdated', v_updated,
+    'totalCommissionAdded', public.erp_round_money(v_total, v_base_ccy),
     'message', 'تم ربط دفعة العمولات بالمرتبات');
 END;
 $function$
@@ -47045,9 +47049,12 @@ CREATE OR REPLACE FUNCTION public.plw_approve_labour_payment(p_company_id uuid, 
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_temp'
 AS $function$
-DECLARE v_p RECORD; v_role TEXT; v_uid UUID := auth.uid(); v_sum NUMERIC(15,2);
+DECLARE v_p RECORD; v_role TEXT; v_uid UUID := auth.uid(); v_sum NUMERIC(18,4);
+  v_base_ccy TEXT;
 BEGIN
   PERFORM public.assert_company_access(p_company_id);
+  -- v3.75.79 — العملةُ التى يُقرَّبُ بها هذا المستند: تُقرَأُ مرّةً من البيتِ الواحد.
+  v_base_ccy := public.erp_company_base_currency(p_company_id);
   v_role := public.plw_caller_role(p_company_id);
   IF v_role NOT IN ('owner','admin','manager','service') THEN
     RAISE EXCEPTION 'الاعتماد من اختصاص المالك أو المدير العام وحدهما. | Only the owner or general manager may approve.'
@@ -47066,7 +47073,8 @@ BEGIN
   END IF;
   SELECT COALESCE(SUM(amount),0) INTO v_sum
     FROM public.production_labour_payment_lines WHERE payment_id = p_payment_id;
-  IF ROUND(v_sum,2) <> ROUND(v_p.total_amount,2) THEN
+  IF public.erp_round_money(v_sum, v_base_ccy)
+     <> public.erp_round_money(v_p.total_amount, v_base_ccy) THEN
     RAISE EXCEPTION 'إجمالى الصرف (%) لا يساوى مجموع سطور العمال (%) — راجع البيانات قبل الاعتماد. | The total (%) does not equal the sum of worker lines (%).',
       v_p.total_amount, v_sum, v_p.total_amount, v_sum USING ERRCODE='check_violation';
   END IF;
@@ -47160,10 +47168,13 @@ AS $function$
 DECLARE
   v_role TEXT; v_uid UUID := auth.uid();
   v_order RECORD; v_wc RECORD; v_acct RECORD;
-  v_branch UUID; v_total NUMERIC(15,2) := 0; v_id UUID; v_line JSONB;
-  v_est NUMERIC(15,2) := 0; v_conv NUMERIC(15,2);
+  v_branch UUID; v_total NUMERIC(18,4) := 0; v_id UUID; v_line JSONB;
+  v_est NUMERIC(18,4) := 0; v_conv NUMERIC(18,4);
+  v_base_ccy TEXT;
 BEGIN
   PERFORM public.assert_company_access(p_company_id);
+  -- v3.75.79 — العملةُ التى يُقرَّبُ بها هذا المستند: تُقرَأُ مرّةً من البيتِ الواحد.
+  v_base_ccy := public.erp_company_base_currency(p_company_id);
   v_role := public.plw_caller_role(p_company_id);
   IF v_role NOT IN ('owner','admin','manager','manufacturing_officer','service') THEN
     RAISE EXCEPTION 'لا تملك صلاحية إنشاء صرف أجور عمالة تصنيع — هذه مهمة مسؤول التصنيع أو المدير. | You are not permitted to create a production labour payment.'
@@ -47223,7 +47234,7 @@ BEGIN
     FROM public.manufacturing_production_order_operations o
     JOIN public.manufacturing_work_centers w ON w.id = o.work_center_id
    WHERE o.production_order_id = p_production_order_id;
-  v_est := ROUND(v_conv, 2);
+  v_est := public.erp_round_money(v_conv, v_base_ccy);
 
   INSERT INTO public.production_labour_payments (
     company_id, branch_id, production_order_id, work_center_id, cost_center_id,
@@ -47437,7 +47448,7 @@ CREATE OR REPLACE FUNCTION public.plw_submit_labour_payment(p_company_id uuid, p
  SECURITY DEFINER
  SET search_path TO 'public', 'pg_temp'
 AS $function$
-DECLARE v_p RECORD; v_role TEXT; v_lines INTEGER; v_sum NUMERIC(15,2);
+DECLARE v_p RECORD; v_role TEXT; v_lines INTEGER; v_sum NUMERIC(18,4);
 BEGIN
   PERFORM public.assert_company_access(p_company_id);
   v_role := public.plw_caller_role(p_company_id);
@@ -49317,16 +49328,19 @@ CREATE OR REPLACE FUNCTION public.post_payroll_atomic(p_company_id uuid, p_payro
  SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
-  v_net NUMERIC(15,2):=0; v_gross NUMERIC(15,2):=0; v_advances NUMERIC(15,2):=0;
-  v_insurance NUMERIC(15,2):=0; v_other_deductions NUMERIC(15,2):=0;
+  v_net NUMERIC(18,4):=0; v_gross NUMERIC(18,4):=0; v_advances NUMERIC(18,4):=0;
+  v_insurance NUMERIC(18,4):=0; v_other_deductions NUMERIC(18,4):=0;
   v_entry_id UUID; v_period_locked BOOLEAN:=FALSE; v_period_name TEXT;
   v_existing_entry UUID; v_idempotency_result JSONB; v_description TEXT;
   v_advances_acct UUID; v_insurance_acct UUID; v_deduction_acct UUID;
   v_branch RECORD;
-  v_accrued_bonus NUMERIC(15,2) := 0;
-  v_bonus_liab_acct UUID; v_diff NUMERIC(15,2);
+  v_accrued_bonus NUMERIC(18,4) := 0;
+  v_bonus_liab_acct UUID; v_diff NUMERIC(18,4);
+  v_base_ccy TEXT;
 BEGIN
   PERFORM public.assert_company_access(p_company_id);
+  -- v3.75.79 — العملةُ التى يُقرَّبُ بها هذا المستند: تُقرَأُ مرّةً من البيتِ الواحد.
+  v_base_ccy := public.erp_company_base_currency(p_company_id);
   -- v3.74.817 — بوابة الترحيل: بدونها كان الحارس يصد كل صرف مرتبات
   PERFORM set_config('app.allow_direct_post', 'true', true);
 
@@ -49383,7 +49397,8 @@ BEGIN
     RAISE EXCEPTION 'NO_PAYSLIPS: لا توجد كشوف مرتبات للصرف' USING ERRCODE='P0003';
   END IF;
 
-  v_diff := ROUND(v_gross - (v_net+v_advances+v_insurance+v_other_deductions), 2);
+  v_diff := public.erp_round_money(
+    v_gross - (v_net+v_advances+v_insurance+v_other_deductions), v_base_ccy);
   IF ABS(v_diff) > 0.01 THEN
     IF p_idempotency_key IS NOT NULL THEN
       PERFORM public.complete_idempotency_key(p_idempotency_key, p_company_id, 'payroll_pay',
@@ -49433,7 +49448,8 @@ BEGIN
   LOOP
     INSERT INTO public.journal_entry_lines
       (journal_entry_id, account_id, debit_amount, credit_amount, description, branch_id)
-    VALUES (v_entry_id, p_expense_account_id, ROUND(v_branch.branch_gross,2), 0,
+    VALUES (v_entry_id, p_expense_account_id,
+            public.erp_round_money(v_branch.branch_gross, v_base_ccy), 0,
             'إجمالى مستحقات المرتبات', v_branch.branch_id);
   END LOOP;
 
