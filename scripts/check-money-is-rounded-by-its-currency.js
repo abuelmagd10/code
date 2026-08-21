@@ -30,12 +30,26 @@
  *       **ومكسبٌ لا يُثبَّتُ يُلتَفُّ عليه**.
  *   (٥) **ولا بيتٌ ثالث**: لا أحدَ يعودُ يسألُ `currencies.decimals` عن عددِ
  *       خاناتِ عملة — فذلك الجدولُ يُجيبُ سؤالاً آخَرَ وهو فارغٌ أصلاً.
+ *   (٦) **والوعاءُ لا يكونُ أضيقَ من العملة** (v3.75.78): متغيّرٌ محلّىٌّ
+ *       مُعلَنٌ NUMERIC(‎…,2) يقصُّ المالَ إلى خانتين **بعدَ** أن يُقرِّبَه
+ *       البيتُ صحيحاً، فيصيرُ التحويلُ زينةً ويصيرُ القيدُ غيرَ متوازنٍ إن
+ *       حُوِّلَ طرفٌ دونَ طرف. معدودٌ ومُثبَّتٌ ولا ينمو.
  *
  * سجلُّ الأعدادِ المُثبَّتة — يُضافُ إليه ولا يُجمَّلُ ما مضى:
  *
  *   • v3.75.77 (2026-08-21): القاعدةُ 77 موضعاً فى 51 دالّة (كانت 80 فى 52،
  *     وحُوِّلَت ثلاثةٌ فى `post_expense_atomic`)، والشيفرةُ 718 toFixed(2)
  *     و42 Math.round(x*100)/100 — لم يُمَسَّ منها شىءٌ بعد.
+ *
+ *   • v3.75.78 (2026-08-21): القاعدةُ **68 موضعاً فى 46 دالّة** — حُوِّلَتْ
+ *     تسعةُ مواضعَ فى خمسِ دوالٍّ تكتبُ فى الدفترِ وتعرفُ عملتَها:
+ *     confirm_purchase_return_delivery_v2 (4)، process_purchase_return_multi_warehouse (2)،
+ *     plw_pay_labour_payment، run_fx_revaluation، process_purchase_return_atomic.
+ *     والشيفرةُ كما هى (718 و42) — لم تُمَسَّ فى هذه الدفعة.
+ *     **ولم يُحوَّلْ post_payroll_atomic وفيه موضعان**: أوعيتُه NUMERIC(15,2)
+ *     تقصُّ ما يُقرَّبُ، ولو حُوِّلَ طرفُ المَدينِ وحدَه لاختلَّ توازنُ القيدِ
+ *     لعملةٍ ثلاثيّة — فنصفُ العلاجِ أذى. ومنه وُلِدَ القانونُ (٦): **18 وعاءً
+ *     مُعلَناً بخانتين فى 8 دوالّ**، مُثبَّتةً اليومَ لتُحوَّلَ على دفعةٍ مقيسة.
  *
  * نقطةٌ عمياءُ معلومة: هذا الفحصُ يقرأُ الملفّاتِ ولقطةَ الدوالّ، فيقيسُ
  * **الشكلَ المكتوب** لا الأثرَ الحىّ. وأنَّ البيتَ يُعطى الرقمَ الصحيحَ
@@ -52,20 +66,41 @@ const { projectCodeFiles } = require("./lib/repo-code-files")
 
 const ROOT = path.resolve(__dirname, "..")
 
-const PINNED_DB_SITES = 77
-const PINNED_DB_FUNCTIONS = 51
+const PINNED_DB_SITES = 68
+const PINNED_DB_FUNCTIONS = 46
 const PINNED_TOFIXED2 = 718
 const PINNED_MATHROUND100 = 42
 
-/** المسارُ الذى حُوِّلَ أوّلاً — ويجبُ أن يبقى محوَّلاً. */
-const CONVERTED_FUNCTION = "post_expense_atomic"
-const CONVERTED_CALLS = 3
+/**
+ * (v3.75.78) فئةُ العيبِ المكتشَفةُ حديثاً: **وعاءٌ أضيقُ من العملة**.
+ * متغيّرٌ محلّىٌّ أو تحويلٌ مُعلَنٌ NUMERIC(‎…,2) يقصُّ المالَ إلى خانتين
+ * **بعدَ** أن يُقرِّبَه البيتُ صحيحاً — فيصيرُ التحويلُ زينةً. معدودٌ ومُثبَّت.
+ */
+const PINNED_NARROW_CONTAINERS = 18
+const PINNED_NARROW_FUNCTIONS = 8
+
+/**
+ * المساراتُ التى حُوِّلَتْ فعلاً — ويجبُ أن تبقى محوَّلة:
+ * لكلٍّ عددُ نداءاتِ البيتِ الذى كسبَتْه، **وصفرُ تقريبٍ يدوىٍّ باقٍ فيها**.
+ * الرجوعُ خطوةً هنا نقضٌ للقانون، لا «تعديلٌ صغير».
+ */
+const CONVERTED = [
+  { name: "post_expense_atomic", calls: 3, since: "v3.75.77" },
+  { name: "confirm_purchase_return_delivery_v2", calls: 4, since: "v3.75.78" },
+  { name: "plw_pay_labour_payment", calls: 1, since: "v3.75.78" },
+  { name: "run_fx_revaluation", calls: 1, since: "v3.75.78" },
+  { name: "process_purchase_return_atomic", calls: 1, since: "v3.75.78" },
+  { name: "process_purchase_return_multi_warehouse", calls: 2, since: "v3.75.78" },
+]
+const CONVERTED_CALLS_TOTAL = CONVERTED.reduce((a, c) => a + c.calls, 0)
 
 // ─────────────────────────── الجزءُ الخالصُ من المنطق ───────────────────────
 
 const ROUND2 = /round\s*\([^;]{0,120}?,\s*2\s*\)/gi
 const TOFIXED2 = /toFixed\(2\)/g
 const MATHROUND100 = /Math\.round\([^)]*\*\s*100\s*\)\s*\/\s*100/g
+/** وعاءٌ مُعلَنٌ بخانتين — يقصُّ ما قرَّبَه البيتُ صحيحاً (v3.75.78). */
+const NARROW_NUMERIC2 = /numeric\s*\(\s*\d+\s*,\s*2\s*\)/gi
 
 /** عددُ مواضعِ ROUND(‎…, 2) فى نصٍّ ما. */
 function countRound2(sql) {
@@ -95,6 +130,31 @@ function callsRoundHome(functionsSql, functionName) {
     return (b.match(/public\.erp_round_money\s*\(/g) || []).length
   }
   return -1
+}
+
+/** كم موضعَ تقريبٍ يدوىٍّ بقىَ داخلَ دالّةٍ بعينِها؟ (‎-1 إن لم تُوجَد) */
+function handRoundingIn(functionsSql, functionName) {
+  const blocks = functionsSql.split(/(?=CREATE OR REPLACE FUNCTION )/)
+  for (const b of blocks) {
+    const m = /^CREATE OR REPLACE FUNCTION ([\w.]+)\(/.exec(b)
+    if (!m) continue
+    if (m[1] !== "public." + functionName && m[1] !== functionName) continue
+    return countRound2(b)
+  }
+  return -1
+}
+
+/** الأوعيةُ المُعلَنةُ بخانتين، ومواضعُها فى كلِّ دالّة. */
+function scanNarrowContainers(functionsSql) {
+  const blocks = functionsSql.split(/(?=CREATE OR REPLACE FUNCTION )/)
+  const out = []
+  for (const b of blocks) {
+    const m = /^CREATE OR REPLACE FUNCTION ([\w.]+)\(/.exec(b)
+    if (!m) continue
+    const n = (b.match(NARROW_NUMERIC2) || []).length
+    if (n > 0) out.push({ name: m[1], sites: n })
+  }
+  return out
 }
 
 /** (١) البيوتُ قائمةٌ وتصرخُ ولا تخترع. */
@@ -128,16 +188,28 @@ function judgeHomes(functionsSql, utilsSrc) {
 }
 
 /** (٢)+(٣) البيتُ مطروقٌ فعلاً، ولا يتجاوزُ سعةَ الدفتر. */
-function judgeHomeIsKnocked(functionsSql) {
+function judgeHomeIsKnocked(functionsSql, converted = CONVERTED) {
   const problems = []
-  const calls = callsRoundHome(functionsSql, CONVERTED_FUNCTION)
-  if (calls === -1) {
-    problems.push(`الدالّةُ المُحوَّلةُ ${CONVERTED_FUNCTION} غيرُ موجودةٍ فى لقطةِ الدوالّ`)
-  } else if (calls < CONVERTED_CALLS) {
-    problems.push(
-      `${CONVERTED_FUNCTION} تنادى بيتَ التقريبِ ${calls} مرّةً والمُثبَّتُ ${CONVERTED_CALLS} — ` +
-        "إمّا عادَ التقريبُ اليدوىُّ وإمّا صارَ البيتُ زينةً على بابٍ لا يُفتَح"
-    )
+  for (const c of converted) {
+    const calls = callsRoundHome(functionsSql, c.name)
+    if (calls === -1) {
+      problems.push(`الدالّةُ المُحوَّلةُ ${c.name} (${c.since}) غيرُ موجودةٍ فى لقطةِ الدوالّ`)
+      continue
+    }
+    if (calls < c.calls) {
+      problems.push(
+        `${c.name} تنادى بيتَ التقريبِ ${calls} مرّةً والمُثبَّتُ ${c.calls} (${c.since}) — ` +
+          "إمّا عادَ التقريبُ اليدوىُّ وإمّا صارَ البيتُ زينةً على بابٍ لا يُفتَح"
+      )
+    }
+    // ومسارٌ حُوِّلَ لا يعودُ: صفرُ تقريبٍ يدوىٍّ فيه، وإلّا فقد رجعْنا خطوة.
+    const left = handRoundingIn(functionsSql, c.name)
+    if (left > 0) {
+      problems.push(
+        `${c.name} عادَ فيها ${left} موضعَ ROUND(‎…,2) بعدَ أن حُوِّلَتْ فى ${c.since} — ` +
+          "**والرجوعُ خطوةً نقضٌ للقانونِ لا تعديلٌ صغير**"
+      )
+    }
   }
   if (!/erp_round_money[\s\S]{0,2000}journal_entry_lines[\s\S]{0,400}debit_amount/.test(functionsSql)) {
     problems.push("بيتُ التقريبِ لا يقرأُ سعةَ الدفترِ من العمودِ نفسِه — رقمٌ مكتوبٌ يتخلّفُ عن القاعدة")
@@ -204,15 +276,43 @@ function selfTest() {
       "export function moneyDecimals(){ throw new Error('CURRENCY_DECIMALS_UNKNOWN') }\nexport function roundMoney(v){ return Math.round(v*100)/100 }"
     ).some((p) => p.includes("بيتانِ لا بيتٌ واحد")))
 
+  const ONE = [{ name: "f_x", calls: 3, since: "vTEST" }]
+  const LEDGER_READ =
+    "CREATE OR REPLACE FUNCTION public.erp_round_money(a numeric, b text)\n" +
+    "AS $$ journal_entry_lines ... debit_amount $$;\n"
+  const THREE_CALLS =
+    "CREATE OR REPLACE FUNCTION public.f_x(a uuid)\nAS $$ public.erp_round_money(1,'EGP');" +
+    " public.erp_round_money(2,'EGP'); public.erp_round_money(3,'EGP'); $$;\n"
+
   t("**والبيتُ بلا مُنادٍ → يُرفَض** — زينةٌ على بابٍ لا يُفتَح", () =>
     judgeHomeIsKnocked(
-      "CREATE OR REPLACE FUNCTION public.post_expense_atomic(a uuid)\nAS $$ ROUND(x,2) $$;"
+      "CREATE OR REPLACE FUNCTION public.f_x(a uuid)\nAS $$ ROUND(x,2) $$;", ONE
     ).some((p) => p.includes("زينةً على بابٍ لا يُفتَح")))
 
   t("ويُبرَّأُ حين ينادِيه ثلاثاً ويقرأُ سعةَ الدفتر", () =>
+    judgeHomeIsKnocked(LEDGER_READ + THREE_CALLS, ONE).length === 0)
+
+  t("**ومسارٌ حُوِّلَ ثمَّ عادَ فيه تقريبٌ يدوىٌّ → يُرفَض**", () =>
     judgeHomeIsKnocked(
-      "CREATE OR REPLACE FUNCTION public.erp_round_money(a numeric, b text)\nAS $$ journal_entry_lines ... debit_amount $$;\n" +
-        "CREATE OR REPLACE FUNCTION public.post_expense_atomic(a uuid)\nAS $$ public.erp_round_money(1,'EGP'); public.erp_round_money(2,'EGP'); public.erp_round_money(3,'EGP'); $$;"
+      LEDGER_READ +
+        "CREATE OR REPLACE FUNCTION public.f_x(a uuid)\nAS $$ public.erp_round_money(1,'EGP');" +
+        " public.erp_round_money(2,'EGP'); public.erp_round_money(3,'EGP'); ROUND(y,2); $$;\n",
+      ONE
+    ).some((p) => p.includes("الرجوعُ خطوةً نقضٌ للقانون")))
+
+  t("ودالّةٌ مُحوَّلةٌ اختفت → يُرفَض", () =>
+    judgeHomeIsKnocked(LEDGER_READ, ONE).some((p) => p.includes("غيرُ موجودةٍ")))
+
+  t("**ويرى وعاءً مُعلَناً بخانتين**", () => {
+    const r = scanNarrowContainers(
+      "CREATE OR REPLACE FUNCTION public.a(x int)\nAS $$ DECLARE v NUMERIC(15,2); w numeric(18,4); $$;\n"
+    )
+    return r.length === 1 && r[0].sites === 1
+  })
+
+  t("ولا يعدُّ وعاءً واسعاً ضيّقاً", () =>
+    scanNarrowContainers(
+      "CREATE OR REPLACE FUNCTION public.a(x int)\nAS $$ DECLARE v NUMERIC(18,4); $$;\n"
     ).length === 0)
 
   t("والعددُ المُثبَّتُ يمرُّ حين يُطابق", () => judgePinned("x", 5, 5).length === 0)
@@ -276,6 +376,9 @@ const files = census.files.filter((f) => /\.tsx?$/.test(f.rel) && !/\.test\.tsx?
 const dbFns = scanFunctionRoundings(functionsSql)
 const dbSites = dbFns.reduce((a, f) => a + f.sites, 0)
 
+const narrowFns = scanNarrowContainers(functionsSql)
+const narrowSites = narrowFns.reduce((a, f) => a + f.sites, 0)
+
 let toFixed2 = 0
 let mathRound100 = 0
 for (const { src } of files) {
@@ -293,6 +396,10 @@ const findings = [
     ...judgePinned("Math.round(x*100)/100 فى الشيفرة", mathRound100, PINNED_MATHROUND100),
   ]],
   ["(٥) ولا بيتٌ ثالثٌ يسألُ جدولَ العملاتِ عن الخانات", judgeNoThirdHome(files)],
+  ["(٦) والوعاءُ الأضيقُ من العملةِ معدودٌ لا ينمو", [
+    ...judgePinned("أوعيةٌ مُعلَنةٌ NUMERIC(‎…,2) فى دوالِّ القاعدة", narrowSites, PINNED_NARROW_CONTAINERS),
+    ...judgePinned("الدوالُّ التى تحملُها", narrowFns.length, PINNED_NARROW_FUNCTIONS),
+  ]],
 ]
 
 const broken = findings.filter(([, p]) => p.length > 0)
@@ -312,9 +419,10 @@ if (broken.length > 0) {
 const worst = dbFns.slice().sort((a, b) => b.sites - a.sites).slice(0, 5)
 console.log(
   `+ التقريبُ يسألُ العملة: بيتٌ فى القاعدة (erp_round_money) وبيتٌ فى الشيفرة (roundMoney)، ` +
-    `و${CONVERTED_FUNCTION} ينادِيه ${CONVERTED_CALLS} مرّات · ` +
+    `و${CONVERTED.length} مساراتٍ مُحوَّلةٍ تنادِيه ${CONVERTED_CALLS_TOTAL} مرّة · ` +
     `وما زالَ يدويّاً: ${dbSites} موضعاً فى ${dbFns.length} دالّةً بالقاعدة، ` +
     `و${toFixed2} toFixed(2) و${mathRound100} Math.round(×100) فى ${files.length} ملفَّ شيفرة · ` +
+    `و${narrowSites} وعاءً بخانتين فى ${narrowFns.length} دالّة · ` +
     `${trapCount} فخّاً ذاتيّاً.`
 )
 console.log("  ! ومعدودٌ لا مسكوتٌ عنه — يُحوَّلون على دفعاتٍ مقيسة، والأثقلُ أوّلاً:")

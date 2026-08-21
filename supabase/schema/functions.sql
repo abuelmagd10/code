@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-21T10:56:22.436Z
+-- Generated: 2026-08-21T12:05:23.585Z
 -- Routines: 1416
 -- =====================================================================
 
@@ -18852,6 +18852,7 @@ DECLARE
   v_take NUMERIC;
   v_is_cash_refund BOOLEAN := false;
   v_refund_executed BOOLEAN := false;
+  v_base_ccy TEXT;
 BEGIN
   -- v3.74.747 — reject a caller acting on another company's data.
   PERFORM public.assert_company_access_by_row('purchase_returns', p_purchase_return_id);
@@ -18860,6 +18861,8 @@ BEGIN
   IF NOT FOUND THEN RAISE EXCEPTION 'Purchase return not found'; END IF;
 
   v_company_id := v_pr.company_id;
+  -- v3.75.78 — العملةُ التى يُقرَّبُ بها هذا المستند: تُقرَأُ مرّةً من البيتِ الواحد.
+  v_base_ccy := public.erp_company_base_currency(v_company_id);
   v_supplier_id := v_pr.supplier_id;
   v_bill_id := v_pr.bill_id;
 
@@ -19087,7 +19090,7 @@ BEGIN
    WHERE consumption_type = 'purchase_return'
      AND reference_id = p_purchase_return_id;
 
-  v_cost_gap := ROUND(v_fifo_cost - COALESCE(v_pr.subtotal, 0), 2);
+  v_cost_gap := public.erp_round_money(v_fifo_cost - COALESCE(v_pr.subtotal, 0), v_base_ccy);
   IF ABS(v_cost_gap) >= 0.01 AND v_inventory_account_id IS NOT NULL THEN
     SELECT id INTO v_freight_account_id FROM chart_of_accounts
      WHERE company_id = v_company_id AND account_code = '5140' LIMIT 1;
@@ -19126,8 +19129,8 @@ BEGIN
       v_vc_ratio := v_vc_debit / NULLIF(v_return_total, 0);
       IF v_vc_ratio IS NULL THEN v_vc_ratio := 0; END IF;
 
-      v_vc_sub := ROUND(COALESCE(v_pr.subtotal, 0) * v_vc_ratio, 2);
-      v_vc_tax := ROUND(COALESCE(v_pr.tax_amount, 0) * v_vc_ratio, 2);
+      v_vc_sub := public.erp_round_money(COALESCE(v_pr.subtotal, 0) * v_vc_ratio, v_base_ccy);
+      v_vc_tax := public.erp_round_money(COALESCE(v_pr.tax_amount, 0) * v_vc_ratio, v_base_ccy);
       v_round_fix := v_vc_debit - (v_vc_sub + v_vc_tax);
       v_vc_tax := v_vc_tax + v_round_fix;
 
@@ -19153,7 +19156,7 @@ BEGIN
       )
       SELECT v_credit_id, pri.product_id, pri.description,
         pri.quantity, pri.unit_price, pri.tax_rate, pri.discount_percent,
-        ROUND(COALESCE(pri.line_total, 0) * v_vc_ratio, 2)
+        public.erp_round_money(COALESCE(pri.line_total, 0) * v_vc_ratio, v_base_ccy)
       FROM purchase_return_items pri
       WHERE pri.purchase_return_id = p_purchase_return_id;
     END IF;
@@ -47297,8 +47300,11 @@ DECLARE
   v_p RECORD; v_role TEXT; v_uid UUID := auth.uid();
   v_acct RECORD; v_wage_acct UUID; v_entry UUID; v_date DATE;
   v_member_branch UUID; v_order_no TEXT;
+  v_base_ccy TEXT;
 BEGIN
   PERFORM public.assert_company_access(p_company_id);
+  -- v3.75.78 — العملةُ التى يُقرَّبُ بها هذا المستند: تُقرَأُ مرّةً من البيتِ الواحد.
+  v_base_ccy := public.erp_company_base_currency(p_company_id);
   v_role := public.plw_caller_role(p_company_id);
   IF v_role NOT IN ('accountant','owner','admin','service') THEN
     RAISE EXCEPTION 'الصرف من اختصاص محاسب الفرع. | Paying is the branch accountant''s task.' USING ERRCODE='check_violation';
@@ -47382,7 +47388,7 @@ BEGIN
   RETURN jsonb_build_object('ok', true, 'id', p_payment_id, 'status', 'paid',
     'journal_entry_id', v_entry, 'amount', v_p.total_amount,
     'estimated', v_p.estimated_amount,
-    'variance', ROUND(v_p.total_amount - v_p.estimated_amount, 2));
+    'variance', public.erp_round_money(v_p.total_amount - v_p.estimated_amount, v_base_ccy));
 END;
 $function$
 ;
@@ -52431,6 +52437,7 @@ DECLARE
   v_priced          RECORD;
   v_rate            NUMERIC;
   v_base            TEXT;
+  v_orig_ccy        TEXT;
   v_orig_subtotal   NUMERIC := 0;
   v_orig_tax        NUMERIC := 0;
   v_orig_total      NUMERIC := 0;
@@ -52498,6 +52505,8 @@ BEGIN
   IF v_rate <= 0 THEN
     RAISE EXCEPTION 'v3.74.941: سعرُ صرفٍ غيرُ موجب (%) — لا يُحوَّل به مال.', v_rate;
   END IF;
+  -- v3.75.78 — عملةُ المستندِ الأصلىِّ تُقرَأُ مرّةً واحدة، ويُقرَّبُ بها ما يُحسَبُ بها.
+  v_orig_ccy := COALESCE(NULLIF(p_purchase_return->>'original_currency', ''), v_base);
 
   FOR v_item IN SELECT * FROM jsonb_array_elements(p_return_items) LOOP
     v_bill_item_id  := NULLIF(v_item->>'bill_item_id', '')::UUID;
@@ -52515,7 +52524,7 @@ BEGIN
       0.01, 'bill_item ' || v_bill_item_id::text);
 
     v_orig_subtotal := v_orig_subtotal + v_priced.line_total;
-    v_orig_tax      := v_orig_tax + ROUND(v_priced.line_total * v_priced.tax_rate / 100.0, 2);
+    v_orig_tax      := v_orig_tax + public.erp_round_money(v_priced.line_total * v_priced.tax_rate / 100.0, v_orig_ccy);
   END LOOP;
 
   v_orig_total   := v_orig_subtotal + v_orig_tax;
@@ -52579,7 +52588,7 @@ BEGIN
     -- أساسُ شركتِه مقروءاً من صفِّها. وهذا الصفُّ هو **المصدرُ** الذى يرثُ منه
     -- إشعارُ الدائنِ ومُشغِّلُ v3.75.52 وكلُّ ما بعدَهما — فاختراعُ «جنيه» هنا
     -- يُوسَمُ به سلسلةٌ كاملةٌ ولا يُكشَف.
-    COALESCE(NULLIF(p_purchase_return->>'original_currency', ''), v_base),
+    v_orig_ccy,
     v_orig_subtotal, v_orig_tax, v_orig_total,
     v_rate,
     NULLIF(p_purchase_return->>'exchange_rate_id', '')::UUID,
@@ -52718,6 +52727,7 @@ DECLARE
   -- v3.74.941
   v_priced         RECORD;
   v_rate           NUMERIC;
+  v_orig_ccy       TEXT;
   v_g_sub          NUMERIC;
   v_g_tax          NUMERIC;
   v_base           TEXT;
@@ -52796,6 +52806,8 @@ BEGIN
   IF v_rate <= 0 THEN
     RAISE EXCEPTION 'v3.74.941: سعرُ صرفٍ غيرُ موجب (%) — لا يُحوَّل به مال.', v_rate;
   END IF;
+  -- v3.75.78 — عملةُ المستندِ الأصلىِّ تُقرَأُ مرّةً واحدة، ويُقرَّبُ بها ما يُحسَبُ بها.
+  v_orig_ccy := COALESCE(NULLIF(p_purchase_return->>'original_currency', ''), v_base);
 
   FOR v_group IN SELECT * FROM jsonb_array_elements(p_warehouse_groups) LOOP
     v_g_sub := 0; v_g_tax := 0;
@@ -52815,7 +52827,7 @@ BEGIN
         0.01, 'bill_item ' || v_bill_item_id::text);
 
       v_g_sub := v_g_sub + v_priced.line_total;
-      v_g_tax := v_g_tax + ROUND(v_priced.line_total * v_priced.tax_rate / 100.0, 2);
+      v_g_tax := v_g_tax + public.erp_round_money(v_priced.line_total * v_priced.tax_rate / 100.0, v_orig_ccy);
     END LOOP;
 
     PERFORM public.assert_purchase_return_amount(
@@ -52860,7 +52872,7 @@ BEGIN
     -- أساسُ شركتِه مقروءاً من صفِّها. وهذا الصفُّ هو **المصدرُ** الذى يرثُ منه
     -- إشعارُ الدائنِ ومُشغِّلُ v3.75.52 وكلُّ ما بعدَهما — فاختراعُ «جنيه» هنا
     -- يُوسَمُ به سلسلةٌ كاملةٌ ولا يُكشَف.
-    COALESCE(NULLIF(p_purchase_return->>'original_currency', ''), v_base),
+    v_orig_ccy,
     v_orig_subtotal, v_orig_tax, v_orig_total,
     v_rate,
     NULLIF(p_purchase_return->>'exchange_rate_id', '')::UUID
@@ -52921,7 +52933,7 @@ BEGIN
       SELECT * INTO v_priced
         FROM public.purchase_return_priced_line(p_bill_id, v_bill_item_id, v_requested_qty);
       v_g_sub := v_g_sub + v_priced.line_total;
-      v_g_tax := v_g_tax + ROUND(v_priced.line_total * v_priced.tax_rate / 100.0, 2);
+      v_g_tax := v_g_tax + public.erp_round_money(v_priced.line_total * v_priced.tax_rate / 100.0, v_orig_ccy);
     END LOOP;
 
     INSERT INTO purchase_return_warehouse_allocations (
@@ -59342,7 +59354,7 @@ BEGIN
     'success', true,
     'journal_id', v_journal_id,
     'accounts_revalued', v_lines_added,
-    'total_delta_base_ccy', ROUND(v_total_delta, 2)
+    'total_delta_base_ccy', public.erp_round_money(v_total_delta, v_base_ccy)
   );
 END;
 $function$
