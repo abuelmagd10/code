@@ -10,6 +10,11 @@
 
 import { SupabaseClient } from '@supabase/supabase-js'
 import { writeAuditLog } from "@/lib/audit-log-write"
+// v3.75.77 — بيتُ التقريبِ الواحد. والاستيرادُ هنا دائرىٌّ فى الشكلِ لا فى
+// الأثر: `currency-utils` ينادى `readAppCurrency` **داخلَ جسمِ دالّة** لا عندَ
+// تحميلِ الوحدة، ومثلُه هذا الملفُّ لا يمسُّ التقريبَ إلّا داخلَ الدوالّ —
+// فلا يقرأُ أحدُهما الآخَرَ قبلَ أن يكتمل.
+import { roundMoney } from './currency-utils'
 
 // Types
 export interface Currency {
@@ -367,8 +372,7 @@ export async function convertCurrency(
   const { rate, rateId, source } = await getExchangeRate(supabase, fromCurrency, toCurrency, date, companyId)
 
   // Get decimal places for target currency
-  const decimals = await getCurrencyDecimals(supabase, toCurrency)
-  const convertedAmount = roundToDecimals(amount * rate, decimals)
+  const convertedAmount = roundMoney(amount * rate, toCurrency)
 
   return {
     original_amount: amount,
@@ -383,21 +387,14 @@ export async function convertCurrency(
 }
 
 /**
- * Get currency decimal places
+ * v3.75.77 — **بيتُ خاناتِ العملةِ لم يعُدْ هنا.**
+ *
+ * كان فى هذا الموضعِ `getCurrencyDecimals` تسألُ جدولَ `currencies` — وهو فى
+ * الإنتاج **فارغٌ: صفرُ صفّ** ومربوطٌ بشركةٍ أصلاً — فترتدُّ إلى اثنتين لكلِّ
+ * عملةٍ بلا استثناء، وهى تظنُّ أنّها سألت. حُذفت، ولم يُبنَ لها بديلٌ هنا:
+ * السؤالُ يُوجَّهُ إلى بيتِه الواحد `moneyDecimals` فى `lib/currency-utils.ts`،
+ * وأخيه فى القاعدة `erp_currency_decimals` — **ولا يُبنى بيتٌ ثالث**.
  */
-async function getCurrencyDecimals(supabase: SupabaseClient, currencyCode: string): Promise<number> {
-  try {
-    const { data } = await supabase
-      .from('currencies')
-      .select('decimals')
-      .eq('code', currencyCode)
-      .limit(1)
-      .single()
-    return data?.decimals || 2
-  } catch {
-    return 2
-  }
-}
 
 /**
  * Round to specific decimal places
@@ -433,14 +430,19 @@ export function calculateFXGainLoss(
   originalAmount: number,
   invoiceExchangeRate: number,
   paymentExchangeRate: number,
-  baseCurrencyDecimals: number = 2
+  baseCurrency: string
 ): FXGainLossResult {
-  const invoiceBaseAmount = roundToDecimals(originalAmount * invoiceExchangeRate, baseCurrencyDecimals)
-  const paymentBaseAmount = roundToDecimals(originalAmount * paymentExchangeRate, baseCurrencyDecimals)
-  const difference = roundToDecimals(paymentBaseAmount - invoiceBaseAmount, baseCurrencyDecimals)
+  // v3.75.77 — كان الوسيطُ عدداً افتراضيّاً (2)، فأىُّ مُنادٍ يسكتُ عنه يحسبُ
+  // فرقَ الصرفِ بخانتَين مهما كانت العملة. صارَ الوسيطُ **العملةَ نفسَها**،
+  // والتقريبُ يسألُها. ولا يتغيَّرُ رقمٌ لعملةٍ بخانتَين.
+  const invoiceBaseAmount = roundMoney(originalAmount * invoiceExchangeRate, baseCurrency)
+  const paymentBaseAmount = roundMoney(originalAmount * paymentExchangeRate, baseCurrency)
+  const difference = roundMoney(paymentBaseAmount - invoiceBaseAmount, baseCurrency)
 
   return {
-    hasGainLoss: Math.abs(difference) > 0.001,
+    // والفرقُ بعدَ التقريبِ إمّا صفرٌ وإمّا وحدةٌ صغرى كاملة، فالمقارنةُ
+    // بعتبةٍ مكتوبةٍ (0.001) كانت تفترضُ خانتَين. والحكمُ الآنَ بالأثرِ نفسِه.
+    hasGainLoss: difference !== 0,
     amount: difference,
     invoiceRate: invoiceExchangeRate,
     paymentRate: paymentExchangeRate,

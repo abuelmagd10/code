@@ -9,7 +9,7 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-20T23:52:13.825Z
+-- Generated: 2026-08-21T10:56:24.875Z
 -- Tables: 257 | Policies: 785 | Triggers: 609 | Constraints: 1844
 -- =====================================================================
 
@@ -12057,6 +12057,8 @@ GRANT EXECUTE ON FUNCTION public.erp_reference_row_exists(p_id uuid) TO service_
 REVOKE ALL ON FUNCTION public.erp_reports_seed_roles() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_reports_seed_roles() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_reports_seed_roles() TO service_role;
+REVOKE ALL ON FUNCTION public.erp_round_money(p_amount numeric, p_currency text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_round_money(p_amount numeric, p_currency text) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_self_approval_error(p_company_id uuid, p_created_by uuid, p_approver uuid, p_approver_roles text[]) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_self_approval_error(p_company_id uuid, p_created_by uuid, p_approver uuid, p_approver_roles text[]) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.erp_self_approval_error(p_company_id uuid, p_created_by uuid, p_approver uuid, p_approver_roles text[]) TO service_role;

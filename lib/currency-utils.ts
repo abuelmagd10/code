@@ -90,6 +90,48 @@ export const CURRENCIES_NOT_YET_SERVICEABLE: readonly string[] = Object.entries(
   .map(([code]) => code)
 
 /**
+ * v3.75.77 — **بيتُ التقريبِ الواحدُ فى التطبيق**، وأخوه فى القاعدة
+ * `erp_round_money`.
+ *
+ * كم خانةً تُحفَظُ لهذه العملة؟ الجوابُ من الجردِ المحكومِ أعلاه (المطابَقِ
+ * بالمعيارِ الدولىِّ وببذرةِ القاعدةِ فى كلِّ إصدار)، **لا من رقمٍ مكتوبٍ فى
+ * موضعِ الاستعمال**، ولا يزيدُ أبداً عمّا يتّسعُ له الدفتر.
+ *
+ * ويصرخُ إن سُئلَ عن عملةٍ لا يعرفُها ولا يرتدُّ إلى اثنتين — فالارتدادُ
+ * الصامتُ هو بعينِه ما جعلَ الدينارَ الكويتىَّ يُقَصُّ إلى خانتَين سنواتٍ
+ * وأحدٌ لا يرى.
+ */
+export function moneyDecimals(currencyCode: string): number {
+  const code = (currencyCode || '').trim().toUpperCase()
+  const curr = CURRENCIES[code]
+  if (!curr) {
+    throw new Error(
+      `CURRENCY_DECIMALS_UNKNOWN: لا أعرفُ عددَ خاناتِ [${code || '—'}]. ` +
+        `تُضافُ العملةُ إلى جردِ CURRENCIES بعددِ وحدتِها الصغرى من ISO 4217 — ولا يُفترَضُ لها رقم.`
+    )
+  }
+  return Math.min(curr.decimals, LEDGER_DECIMAL_PLACES)
+}
+
+/**
+ * v3.75.77 — يُقرِّبُ مبلغاً بعددِ خاناتِ **عملتِه**.
+ *
+ * والصيغةُ هى الصيغةُ القائمةُ فى المشروعِ حرفاً بحرف
+ * (`Math.round(v * 10^d) / 10^d`)، فلكلِّ عملةٍ بخانتَين — وهى كلُّ عملةٍ فى
+ * الإنتاجِ اليوم — **لا يتغيَّرُ رقمٌ واحد**. التغييرُ الوحيدُ يقعُ لعملةٍ
+ * خاناتُها ليست اثنتين، وهو الدواءُ المقصودُ لا أثرٌ جانبىّ.
+ *
+ * ولا يُصلَحُ هنا انحرافُ الفاصلةِ العائمةِ المعروف (مثل 1.005 التى تُقرَّبُ
+ * إلى 1.00 لأنَّ 1.005×100 تساوى 100.49999… فى الثنائىّ): إصلاحُه **يُغيِّرُ
+ * أرقاماً قائمة**، فهو دفعةٌ مستقلّةٌ تُقاسُ بذاتِها ولا تُهرَّبُ داخلَ هذه.
+ */
+export function roundMoney(value: number, currencyCode: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return value
+  const factor = Math.pow(10, moneyDecimals(currencyCode))
+  return Math.round(value * factor) / factor
+}
+
+/**
  * Get the current app currency from localStorage or cookie
  *
  * v3.75.66 — **وسؤالُ الاسمِ ليس سؤالَ الباب**: هذه الدالّةُ لم تعُدْ تقرأُ

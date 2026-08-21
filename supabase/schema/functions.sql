@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-20T23:52:11.393Z
--- Routines: 1415
+-- Generated: 2026-08-21T10:56:22.436Z
+-- Routines: 1416
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -26376,6 +26376,50 @@ $function$
 ;
 
 -- ---------------------------------------------------------------
+-- erp_round_money(p_amount numeric, p_currency text)
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_round_money(p_amount numeric, p_currency text)
+ RETURNS numeric
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
+AS $function$
+DECLARE
+  v_decimals smallint;
+  v_ledger   smallint;
+BEGIN
+  IF p_amount IS NULL THEN
+    RETURN NULL;
+  END IF;
+
+  -- يصرخُ إن لم يعرفِ العملة، ولا يرتدُّ إلى اثنتين
+  v_decimals := public.erp_currency_decimals(p_currency);
+
+  -- ولا يُقرِّبُ أدقَّ ممّا يحفظُه الدفترُ فعلاً — والسعةُ تُقرَأُ من العمودِ
+  -- نفسِه، فلا يبقى رقمٌ مكتوبٌ هنا يتخلّفُ عن القاعدةِ حين تتّسع.
+  SELECT ((a.atttypmod - 4) & 65535)::smallint
+    INTO v_ledger
+    FROM pg_attribute a
+    JOIN pg_class cl ON cl.oid = a.attrelid AND cl.relkind = 'r'
+    JOIN pg_namespace n ON n.oid = cl.relnamespace AND n.nspname = 'public'
+   WHERE cl.relname = 'journal_entry_lines'
+     AND a.attname = 'debit_amount'
+     AND a.attnum > 0 AND NOT a.attisdropped
+     AND a.atttypid = 'numeric'::regtype AND a.atttypmod > 0;
+
+  IF v_ledger IS NULL THEN
+    RAISE EXCEPTION
+      'LEDGER_SCALE_UNKNOWN: تعذّرت قراءةُ سعةِ عمودِ المدينِ من القاعدة، '
+      'فلا يُقرَّبُ مالٌ على تخمين.'
+      USING ERRCODE = 'P0001';
+  END IF;
+
+  RETURN round(p_amount, least(v_decimals, v_ledger)::int);
+END;
+$function$
+;
+
+-- ---------------------------------------------------------------
 -- erp_self_approval_error(p_company_id uuid, p_created_by uuid, p_approver uuid, p_approver_roles text[])
 -- ---------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.erp_self_approval_error(p_company_id uuid, p_created_by uuid, p_approver uuid, p_approver_roles text[])
@@ -48981,6 +49025,7 @@ DECLARE
   v_amount_gl numeric; v_exp_currency text; v_exp_rate numeric;
   v_cash_currency text; v_cash_native numeric; v_cash_rate numeric;
   v_tax_gl numeric := 0; v_net_gl numeric; v_tax_account uuid; v_tax_native numeric := 0;
+  v_base_currency text;
   v_lines jsonb;
   v_je jsonb; v_entry_id uuid; v_adopted boolean := false; v_rows integer; v_trace uuid;
 BEGIN
@@ -49013,12 +49058,16 @@ BEGIN
   v_exp_currency := NULLIF(upper(v_exp.currency_code::text), '');
   v_exp_rate     := COALESCE(NULLIF(v_exp.exchange_rate, 0), 1);
 
+  -- v3.75.77 — التقريبُ يسألُ العملةَ ولا يفترضُ خانتين. وعملةُ الدفترِ
+  -- تُقرَأُ من بيتِها الواحد، فإن لم تكن معروفةً صرخَ التقريبُ ولم يخترعْ.
+  v_base_currency := public.erp_company_base_currency(p_company_id);
+
   -- v3.74.820 input VAT — ضريبة المصروف قابلة للخصم: تُثبت أصلاً ضريبياً
   -- ولا تُحمَّل مصروفاً. كان الجدول بلا حقل ضريبة أصلاً فتضخّم المصروف
   -- وضاع حق الخصم من تقرير ضريبة المدخلات.
   v_tax_native := COALESCE(v_exp.tax_amount, 0);
   IF v_tax_native > 0 THEN
-    v_tax_gl := ROUND(v_amount_gl * (v_tax_native / NULLIF(v_exp.amount, 0)), 2);
+    v_tax_gl := public.erp_round_money(v_amount_gl * (v_tax_native / NULLIF(v_exp.amount, 0)), v_base_currency);
     SELECT id INTO v_tax_account FROM chart_of_accounts
      WHERE company_id = p_company_id
        AND (id = v_exp.tax_account_id OR lower(COALESCE(sub_type,'')) = 'vat_input' OR account_code = '1160')
@@ -49028,7 +49077,7 @@ BEGIN
       RETURN jsonb_build_object('success', false, 'error', 'VAT_INPUT_ACCOUNT_MISSING');
     END IF;
   END IF;
-  v_net_gl := ROUND(v_amount_gl - v_tax_gl, 2);
+  v_net_gl := public.erp_round_money(v_amount_gl - v_tax_gl, v_base_currency);
 
   SELECT NULLIF(upper(original_currency), '') INTO v_cash_currency
     FROM chart_of_accounts WHERE id = v_payment_account;
@@ -49045,7 +49094,7 @@ BEGIN
       'description', 'مصروف ' || v_exp.expense_number ||
         CASE WHEN v_exp_currency IS NOT NULL AND v_exp_currency <> public.erp_company_base_currency(p_company_id)
              THEN ' (' || v_exp_currency || ')' ELSE '' END,
-      'original_debit', ROUND(v_exp.amount - v_tax_native, 2), 'original_credit', 0,
+      'original_debit', public.erp_round_money(v_exp.amount - v_tax_native, COALESCE(v_exp_currency, v_base_currency)), 'original_credit', 0,
       'original_currency', v_exp_currency, 'exchange_rate_used', v_exp_rate),
     jsonb_build_object('account_id', v_payment_account,
       'debit_amount', 0, 'credit_amount', v_amount_gl,
