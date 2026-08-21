@@ -111,9 +111,19 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // v3.75.82 — **ونداءٌ بوسيطٍ لا وجودَ له لا يُنادى أحداً.**
+    //
+    // كان يُمرَّرُ هنا `p_company_id`، ولا نسخةَ من `close_accounting_period`
+    // تقبلُه (نسختاها `p_period_id, p_user_id, p_notes` و
+    // `p_period_id, p_closed_by, p_retained_earnings_account_id`). فكان
+    // PostgREST يردُّ «لا دالّةَ بهذا الشكل» — أى أنَّ **هذا المسارَ كان يفشلُ
+    // فى كلِّ مرّة**، ومعه فحصُ إعادةِ تقييمِ العملاتِ الأجنبيّةِ المكتوبُ أعلاه
+    // (v3.74.298) الذى لم يكن يبلغُ القاعدةَ قطّ.
+    //
+    // وعزلُ الشركةِ لم يضِعْ بحذفِه: الحراسةُ أعلاه تُثبتُ العضويّةَ والرتبة،
+    // والدالّةُ نفسُها تسألُ `assert_company_access_by_row` بنفسِها.
     const { data, error } = await admin.rpc('close_accounting_period', {
       p_period_id: period_id,
-      p_company_id: context!.companyId, // ✅ تمرير companyId لضمان عزل الشركات على مستوى RPC
       p_user_id: context!.user.id,
       p_notes: notes || null
     });

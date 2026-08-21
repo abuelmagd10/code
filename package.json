@@ -53,6 +53,8 @@
     "test:period-closing": "npx tsx scripts/test-period-closing.ts",
     "inventory:audit": "node scripts/inventory-audit.js",
     "check:scripts-tracked": "node scripts/check-referenced-scripts-tracked.js",
+    "check:period-lock": "node scripts/check-the-period-lock-is-one-home.js",
+    "check:period-lock:selftest": "node scripts/check-the-period-lock-is-one-home.js --selftest",
     "check:traps": "node scripts/check-every-selftest-trap-is-run.js",
     "check:traps:selftest": "node scripts/check-every-selftest-trap-is-run.js --selftest",
     "check:deployed": "node scripts/check-the-push-was-deployed.js",

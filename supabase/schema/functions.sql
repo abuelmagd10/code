@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-21T13:33:47.058Z
+-- Generated: 2026-08-21T18:22:06.168Z
 -- Routines: 1416
 -- =====================================================================
 
@@ -25319,25 +25319,37 @@ $function$
 CREATE OR REPLACE FUNCTION public.enforce_period_lock_lines()
  RETURNS trigger
  LANGUAGE plpgsql
- SET search_path TO 'public', 'extensions', 'pg_temp'
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
-  v_je_id UUID;
-  v_period_locked BOOLEAN;
+  v_je_id      uuid;
+  v_company_id uuid;
+  v_entry_date date;
+  v_is_closing boolean;
 BEGIN
   v_je_id := CASE WHEN TG_OP = 'DELETE' THEN OLD.journal_entry_id ELSE NEW.journal_entry_id END;
 
-  IF EXISTS (
-    SELECT 1 
-    FROM journal_entries je
-    JOIN accounting_periods ap ON je.company_id = ap.company_id 
-      AND je.entry_date BETWEEN ap.period_start AND ap.period_end
-    WHERE je.id = v_je_id
-      AND (ap.is_locked = TRUE OR ap.status = 'closed')
-      AND je.is_closing_entry = FALSE
-  ) THEN
-      RAISE EXCEPTION 'Action blocked: Cannot modify lines of a Journal Entry in a CLOSED period.';
+  SELECT je.company_id, je.entry_date, COALESCE(je.is_closing_entry, FALSE)
+    INTO v_company_id, v_entry_date, v_is_closing
+    FROM public.journal_entries je
+   WHERE je.id = v_je_id;
+
+  -- لا رأسَ لهذا السطر: يتركُ الحكمَ لقيودِ الجدولِ نفسِها، ولا يخترعُ رفضاً
+  -- لحالةٍ لم يُسأَلْ عنها.
+  IF NOT FOUND THEN
+    RETURN COALESCE(NEW, OLD);
   END IF;
+
+  -- قيدُ الإغلاقِ نفسُه يُكتبُ فى فترةٍ مُقفلة — وهذا هو عملُه، كما فى الرأس.
+  IF v_is_closing THEN
+    RETURN COALESCE(NEW, OLD);
+  END IF;
+
+  -- **بيتٌ واحدٌ للسؤال**: هو نفسُه الذى يسألُه الرأسُ منذ v3.74.982، فيرى
+  -- `status = 'locked'` ويرى الفتراتِ الماليّةَ — وكلاهما كان يسقطُ من النسخةِ
+  -- المكتوبةِ هنا بيدٍ.
+  PERFORM public.validate_transaction_period(v_company_id, v_entry_date);
 
   RETURN COALESCE(NEW, OLD);
 END;
@@ -64092,48 +64104,70 @@ CREATE OR REPLACE FUNCTION public.unlock_accounting_period(p_period_id uuid, p_u
  SET search_path TO 'public', 'pg_catalog', 'pg_temp'
 AS $function$
 DECLARE
-  v_period RECORD;
-  v_user_role TEXT;
+  v_period   RECORD;
+  v_actor    uuid;
+  v_role     text;
+  v_is_owner boolean;
 BEGIN
-  -- جلب بيانات الفترة
   SELECT * INTO v_period
-  FROM accounting_periods
-  WHERE id = p_period_id;
+    FROM public.accounting_periods
+   WHERE id = p_period_id;
 
   IF NOT FOUND THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'الفترة غير موجودة'
-    );
+    RETURN jsonb_build_object('success', false, 'error', 'الفترة غير موجودة');
   END IF;
 
-  -- التحقق من أن المستخدم مالك
-  SELECT role INTO v_user_role
-  FROM company_members
-  WHERE company_id = v_period.company_id
-    AND user_id = p_user_id;
+  -- ‏(أ) بيتُ الإذنِ الواحد: يرفضُ العبورَ إلى شركةٍ أخرى، ويصمتُ للنداءِ
+  -- الخادمىِّ (auth.uid() فارغة) كعادتِه المُعلَنة — فالطبقةُ التى فوقَه أذِنت.
+  PERFORM public.assert_company_access(v_period.company_id);
 
-  IF v_user_role != 'owner' THEN
+  -- ‏(ب) **الهويّةُ تُؤخَذُ من الجلسةِ لا ممّا يكتبُه الطارق.** ويبقى `p_user_id`
+  -- للنداءِ الخادمىِّ وحدَه، حيث لا جلسةَ أصلاً وقد أذِنَ المسارُ قبلَ النداء.
+  v_actor := COALESCE(auth.uid(), p_user_id);
+  IF v_actor IS NULL THEN
     RETURN jsonb_build_object(
       'success', false,
-      'error', 'غير مصرح - المالك فقط يمكنه فتح الفترة'
-    );
+      'error', 'لا هويّةَ للفاعل — ولا يُفتَحُ قفلٌ لفاعلٍ مجهول');
   END IF;
 
-  -- فتح الفترة
-  UPDATE accounting_periods
-  SET
-    status = 'open',
-    closed_by = NULL,
-    closed_at = NULL,
-    updated_at = NOW()
-  WHERE id = p_period_id;
+  SELECT lower(btrim(replace(m.role, ' ', '_')))
+    INTO v_role
+    FROM public.company_members m
+   WHERE m.company_id = v_period.company_id
+     AND m.user_id = v_actor
+   LIMIT 1;
+
+  -- ‏(ج) **والغيابُ ليس إذناً.** `IS NOT DISTINCT FROM` تُجيبُ نعم/لا ولا
+  -- تُجيبُ NULL، فلا يمرُّ غيرُ العضوِ من ثقبِ الفراغ. ومالكُ الشركةِ المسجَّلُ
+  -- على صفِّها هو نفسُ الشخصِ مُسجَّلاً فى مكانٍ آخر (درس v3.74.836).
+  v_is_owner := (v_role IS NOT DISTINCT FROM 'owner')
+             OR EXISTS (
+                  SELECT 1 FROM public.companies c
+                   WHERE c.id = v_period.company_id
+                     AND c.user_id = v_actor);
+
+  IF NOT v_is_owner THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'غير مصرح - المالك فقط يمكنه فتح الفترة');
+  END IF;
+
+  -- ‏(د) والفتحُ يرفعُ القفلَ **كلَّه**: كان يُعيدُ الحالةَ إلى `open` ويترك
+  -- `is_locked` كما هى، فتبقى الفترةُ ممنوعةً وهى تقولُ إنّها مفتوحة —
+  -- **علامتانِ لحقيقةٍ واحدةٍ تتناقضان**.
+  UPDATE public.accounting_periods
+     SET status     = 'open',
+         is_locked  = false,
+         closed_by  = NULL,
+         closed_at  = NULL,
+         updated_at = NOW()
+   WHERE id = p_period_id;
 
   RETURN jsonb_build_object(
-    'success', true,
-    'message', 'تم فتح الفترة بنجاح',
-    'period_id', p_period_id
-  );
+    'success',   true,
+    'message',   'تم فتح الفترة بنجاح',
+    'period_id', p_period_id,
+    'opened_by', v_actor);
 END;
 $function$
 ;

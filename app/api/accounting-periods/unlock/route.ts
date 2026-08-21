@@ -45,9 +45,17 @@ export async function POST(req: NextRequest) {
     }
 
     const admin = createClient(url, serviceKey);
+    // v3.75.82 — **ونداءٌ بوسيطٍ لا وجودَ له لا يُنادى أحداً.**
+    //
+    // كان يُمرَّرُ هنا `p_company_id`، ولا نسخةَ من `unlock_accounting_period`
+    // تقبلُه (توقيعُها `p_period_id, p_user_id` وحدَهما). فكان PostgREST يردُّ
+    // «لا دالّةَ بهذا الشكل» — أى أنَّ **هذا المسارَ كان يفشلُ فى كلِّ مرّة**،
+    // ولم يقلْ ذلك أحدٌ لأنَّ **لا شاشةَ تُنادِيه**.
+    //
+    // وعزلُ الشركةِ لم يضِعْ بحذفِه: الحراسةُ أعلاه تُثبتُ العضويّةَ والرتبة،
+    // والدالّةُ نفسُها صارت تسألُ `assert_company_access` بنفسِها.
     const { data, error } = await admin.rpc('unlock_accounting_period', {
       p_period_id: period_id,
-      p_company_id: context!.companyId, // ✅ عزل الشركات على مستوى RPC أيضاً
       p_user_id: context!.user.id
     });
 

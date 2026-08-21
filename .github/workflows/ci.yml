@@ -226,6 +226,14 @@ jobs:
       - name: Prove the trap-caller separates the three verdicts
         run: npm run check:traps:selftest
 
+      # v3.75.82 — 🔴 **قفلٌ يُفتَحُ باسمٍ يُرسلُه الطارقُ ليس قفلاً.** كانت
+      # `unlock_accounting_period` بصلاحيّاتٍ كاملةٍ وممنوحةً لكلِّ مستخدِمٍ مسجَّل،
+      # وتقرِّرُ الإذنَ من وسيطٍ يكتبُه المُنادى، و`NULL <> 'owner'` تُساوى NULL فلا
+      # يعملُ فرعُ الرفض — فيمرُّ غيرُ العضوِ إلى الفتح. والقياسُ الحقيقىُّ يحتاجُ
+      # القاعدةَ الحيّة، فهنا يُثبَتُ الحكمُ وحدَه ويُقاسُ الأثرُ فى بوّابةِ الدفع.
+      - name: Prove the period-lock guard refuses
+        run: npm run check:period-lock:selftest
+
       # v3.74.867 — اللقطة تطابق القاعدة الحيّة. الحارس القائم
       # (check-schema-snapshot-fresh) يعترف بأنه لا يرى ما أُضيف للقاعدة
       # وغاب عن الملف — وهو الاتجاه الذى فقدنا فيه أربعة جداول كاملة.
