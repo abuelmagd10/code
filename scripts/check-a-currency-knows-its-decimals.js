@@ -27,11 +27,22 @@
  *       هو العطبُ الأصلىُّ الذى أنجبَ الدفعة.
  *   (٤) قائمةُ العملاتِ غيرِ المخدومةِ **تُشتَقُّ ولا تُكتَبُ بيد** — وإلّا
  *       صارَ جردٌ ثالثٌ يُنسى تحديثُه.
- *   (٥) **والقانونُ يقرأُ سعةَ الدفترِ ويحكمُ بها**: ما دامَ عمودُ المدينِ
- *       يحفظُ أقلَّ من ثلاثِ خانات، فكلُّ عملةٍ خاناتُها ليست اثنتين تُعرَضُ
- *       **مقفولةً** على شاشةِ التسجيل. وفورَ أن يتّسعَ الدفترُ ينقلبُ الحكمُ
- *       من نفسِه: تصيرُ القائمةُ **مُلزَمةً أن تفرغ** — فلا يُنسى فتحُ البابِ
- *       بعدَ أن صارَ يُفتَح.
+ *   (٥) **والقانونُ يقرأُ سعةَ الدفترِ ويحكمُ بها**: العملةُ غيرُ مخدومةٍ
+ *       إذا كانت خاناتُها **أكثرَ ممّا يحفظُه عمودُ المدين**، وتُعرَضُ
+ *       حينَها مقفولةً على شاشةِ التسجيل. ويُحرَسُ معها أنَّ ثابتَ
+ *       `LEDGER_DECIMAL_PLACES` فى الشيفرةِ يقولُ ما تقولُه القاعدةُ بالضبط
+ *       — فالقفلُ يرتفعُ وينزلُ من نفسِه، ولا يُنتظَرُ قرارٌ يُكتَبُ باليد.
+ *
+ * سجلُّ تعديلِ القانون — يُضافُ إليه ولا يُجمَّلُ ما مضى:
+ *
+ *   • v3.75.75 (2026-08-20): القانونُ (٥) كان «كلُّ عملةٍ خاناتُها ليست
+ *     اثنتين تُقفَل، وتُلزَمُ القائمةُ بأن تفرغَ فورَ اتّساعِ الدفتر».
+ *   • v3.75.76 (2026-08-21): اتّسعَ الدفترُ إلى أربعِ خانات، فظهرَ أنَّ
+ *     الصياغةَ الأولى خلطت مسألتين: الينُّ اليابانىُّ **بلا خانات** كان
+ *     يُقفَلُ بلا سبب، ودفترٌ بخانتين يحفظُ الصفرَ بلا أىِّ فقد. فصارَ
+ *     الحكمُ بالمقارنةِ الصحيحةِ وحدَها: `خاناتُ العملة > سعةُ الدفتر`.
+ *     ولم يعُدْ ثمَّةَ «قفلٌ يُرفَعُ» أصلاً، بل قائمةٌ تفرغُ من نفسِها —
+ *     ومكانُ النسيانِ الوحيدُ الباقى (ثابتُ السعةِ فى الشيفرة) صارَ مقيساً.
  *
  * نقطةٌ عمياءُ معلومة: هذا الفحصُ يقرأُ الملفّاتِ ولقطةَ القاعدة، فيُطابقُ
  * بذرةَ الهجرةِ بجردِ الشيفرة. أمّا أنَّ صفوفَ القاعدةِ الحيّةَ تُطابقُ بذرةَ
@@ -95,6 +106,12 @@ function parseMigrationSeed(src) {
   return out
 }
 
+/** سعةُ الدفترِ كما تُعلنُها الشيفرة (ثابتُ LEDGER_DECIMAL_PLACES). */
+function parseLedgerConstant(src) {
+  const m = /export const LEDGER_DECIMAL_PLACES\s*=\s*(\d+)/.exec(src)
+  return m ? Number(m[1]) : null
+}
+
 /** سعةُ الدفتر: عددُ الخاناتِ التى يحفظُها عمودُ المدينِ فعلاً. */
 function parseLedgerScale(schemaSql) {
   const m = /CREATE TABLE(?: IF NOT EXISTS)? public\.journal_entry_lines\s*\(([\s\S]*?)\n\);/.exec(schemaSql)
@@ -136,37 +153,45 @@ function judgeSignupCoverage(signupCodes, vocab) {
   return problems
 }
 
-/** (٤)+(٥) القائمةُ مشتقّة، والقفلُ يتبعُ سعةَ الدفترِ لا الذاكرة. */
+/** (٤)+(٥) القائمةُ مشتقّة، وتُقاسُ بسعةِ الدفترِ لا برقمٍ ثابت. */
 function judgeLockMatchesLedger(ledgerScale, vocabSrc, signupSrc, vocab) {
   const problems = []
   if (ledgerScale === null) return ["تعذّرت قراءةُ سعةِ عمودِ المدينِ من لقطةِ القاعدة"]
 
-  if (!/CURRENCIES_NOT_YET_SERVICEABLE[\s\S]{0,400}Object\.entries\(CURRENCIES\)/.test(vocabSrc)) {
+  // (٤) القائمةُ مشتقّةٌ من الجردِ لا مكتوبةٌ بيد
+  if (!/CURRENCIES_NOT_YET_SERVICEABLE[\s\S]{0,600}Object\.entries\(CURRENCIES\)/.test(vocabSrc)) {
     problems.push("قائمةُ غيرِ المخدومةِ ليست مشتقّةً من الجرد — جردٌ ثالثٌ يُنسى تحديثُه")
   }
 
-  const derived = Object.entries(vocab).filter(([, d]) => d !== 2).map(([c]) => c).sort()
+  // (٥أ) سعةُ الدفترِ فى الشيفرةِ هى سعتُه فى القاعدةِ بالضبط
+  const declared = parseLedgerConstant(vocabSrc)
+  if (declared === null) {
+    problems.push("لا ثابتَ LEDGER_DECIMAL_PLACES فى جردِ الشيفرة — سعةُ الدفترِ بلا بيتٍ واحدٍ يُقرَأ")
+  } else if (declared !== ledgerScale) {
+    problems.push(
+      `الشيفرةُ تقولُ إنَّ الدفترَ يحفظُ ${declared} خانةً والقاعدةُ تحفظُ ${ledgerScale} — ` +
+        "رقمانِ لسعةٍ واحدة، وأحدُهما كاذب"
+    )
+  }
+
+  // (٥ب) والقائمةُ تُقاسُ بتلك السعةِ لا برقمٍ ثابتٍ يُنسى
+  if (!/decimals\s*>\s*LEDGER_DECIMAL_PLACES/.test(vocabSrc)) {
+    problems.push("القائمةُ لا تُقاسُ بسعةِ الدفترِ — قفلٌ يُرفَعُ باليدِ هو قفلٌ يُنسى")
+  }
+
+  // (٥ج) والآليّةُ تبقى حيّةً على الشاشةِ وإن فرغت القائمةُ اليوم
   const usesDerived = /CURRENCIES_NOT_YET_SERVICEABLE/.test(signupSrc)
   const disables = /disabled=\{\s*notYet\s*\}/.test(signupSrc)
-
-  if (ledgerScale < 3) {
-    if (derived.length === 0) {
-      problems.push("لا عملةَ محسوبةٌ غيرَ مخدومةٍ رغمَ أنَّ الدفترَ ما زالَ بخانتين — الجردُ سقطَ منه شىء")
-    }
-    if (!usesDerived) {
-      problems.push(`الدفترُ يحفظُ ${ledgerScale} خانةً، وشاشةُ التسجيلِ لا تقرأُ قائمةَ غيرِ المخدومةِ أصلاً`)
-    }
-    if (!disables) {
-      problems.push("شاشةُ التسجيلِ تعرضُ العملاتِ غيرَ المخدومةِ **قابلةً للاختيار** — والدفترُ لا يتّسعُ لها")
-    }
-  } else {
-    if (derived.length > 0 && usesDerived && disables) {
-      problems.push(
-        `الدفترُ صارَ يحفظُ ${ledgerScale} خاناتٍ ومع ذلك ما زالت ${derived.length} عملةً مقفولةً ` +
-          `(${derived.join("، ")}) — يُرفَعُ القفلُ الآن، ولا يُنسى بابٌ صارَ يُفتَح`
-      )
-    }
+  if (!usesDerived) {
+    problems.push("شاشةُ التسجيلِ لا تقرأُ قائمةَ غيرِ المخدومةِ أصلاً")
   }
+  if (!disables) {
+    problems.push(
+      "شاشةُ التسجيلِ لا تقفلُ ما لا يتّسعُ له الدفتر — والقائمةُ فارغةٌ اليومَ، " +
+        "لكنَّ نزعَ الآليّةِ يعنى أنَّ عملةً أوسعَ تُعرَضُ غداً بلا قفل"
+    )
+  }
+
   return problems
 }
 
@@ -212,20 +237,41 @@ function selfTest() {
   t("وتُبرَّأُ حين يُغطّيها الجرد", () =>
     judgeSignupCoverage(["KWD", "EGP"], VOCAB_OK).length === 0)
 
+  const VOCAB_SRC = (n) =>
+    `export const LEDGER_DECIMAL_PLACES = ${n}\n` +
+    "export const CURRENCIES_NOT_YET_SERVICEABLE = Object.entries(CURRENCIES)\n" +
+    "  .filter(([, v]) => v.decimals > LEDGER_DECIMAL_PLACES)\n"
+  const SIGNUP_OK = "CURRENCIES_NOT_YET_SERVICEABLE disabled={notYet}"
+
   t("دفترٌ ضيّقٌ وشاشةٌ لا تقفلُ → يُرفَض", () =>
-    judgeLockMatchesLedger(2, "CURRENCIES_NOT_YET_SERVICEABLE = Object.entries(CURRENCIES)", "no lock here", VOCAB_OK).length > 0)
+    judgeLockMatchesLedger(2, VOCAB_SRC(2), "no lock here", VOCAB_OK).length > 0)
 
   t("دفترٌ ضيّقٌ وشاشةٌ تقفلُ بالمشتقّ → يُبرَّأ", () =>
-    judgeLockMatchesLedger(2, "CURRENCIES_NOT_YET_SERVICEABLE = Object.entries(CURRENCIES)",
-      "CURRENCIES_NOT_YET_SERVICEABLE disabled={notYet}", VOCAB_OK).length === 0)
+    judgeLockMatchesLedger(2, VOCAB_SRC(2), SIGNUP_OK, VOCAB_OK).length === 0)
+
+  t("دفترٌ واسعٌ والقائمةُ تُقاسُ بسعتِه → يُبرَّأ", () =>
+    judgeLockMatchesLedger(4, VOCAB_SRC(4), SIGNUP_OK, VOCAB_OK).length === 0)
 
   t("قائمةٌ مكتوبةٌ بيدٍ لا مشتقّة → تُرفَض", () =>
-    judgeLockMatchesLedger(2, "const CURRENCIES_NOT_YET_SERVICEABLE = ['KWD']",
-      "CURRENCIES_NOT_YET_SERVICEABLE disabled={notYet}", VOCAB_OK).length > 0)
+    judgeLockMatchesLedger(2, "export const LEDGER_DECIMAL_PLACES = 2\nconst CURRENCIES_NOT_YET_SERVICEABLE = ['KWD']",
+      SIGNUP_OK, VOCAB_OK).length > 0)
 
-  t("**دفترٌ اتّسعَ والقفلُ باقٍ → يُرفَض** — ولا يُنسى بابٌ صارَ يُفتَح", () =>
-    judgeLockMatchesLedger(4, "CURRENCIES_NOT_YET_SERVICEABLE = Object.entries(CURRENCIES)",
-      "CURRENCIES_NOT_YET_SERVICEABLE disabled={notYet}", VOCAB_OK).length > 0)
+  t("**الشيفرةُ تدّعى سعةً غيرَ سعةِ القاعدة → تُرفَض** — رقمانِ لسعةٍ واحدة", () =>
+    judgeLockMatchesLedger(4, VOCAB_SRC(2), SIGNUP_OK, VOCAB_OK)
+      .some((p) => p.includes("وأحدُهما كاذب")))
+
+  t("**لا ثابتَ للسعةِ أصلاً → يُرفَض**", () =>
+    judgeLockMatchesLedger(4, "export const CURRENCIES_NOT_YET_SERVICEABLE = Object.entries(CURRENCIES)\n  .filter(([, v]) => v.decimals > LEDGER_DECIMAL_PLACES)",
+      SIGNUP_OK, VOCAB_OK).some((p) => p.includes("LEDGER_DECIMAL_PLACES")))
+
+  t("**قائمةٌ تُقاسُ برقمٍ ثابتٍ لا بالسعة → تُرفَض**", () =>
+    judgeLockMatchesLedger(4,
+      "export const LEDGER_DECIMAL_PLACES = 4\nexport const CURRENCIES_NOT_YET_SERVICEABLE = Object.entries(CURRENCIES).filter(([, v]) => v.decimals !== 2)",
+      SIGNUP_OK, VOCAB_OK).some((p) => p.includes("قفلٌ يُرفَعُ باليد")))
+
+  t("ويرى ثابتَ السعةِ فى الشيفرة", () =>
+    parseLedgerConstant("export const LEDGER_DECIMAL_PLACES = 4\n") === 4 &&
+    parseLedgerConstant("nothing here") === null)
 
   let failed = 0
   for (const [name, fn] of traps) {
@@ -290,9 +336,13 @@ if (broken.length > 0) {
   process.exit(1)
 }
 
-const nonTwo = Object.entries(vocab).filter(([, d]) => d !== 2).map(([c]) => c).sort()
+const beyond = Object.entries(vocab).filter(([, d]) => d > ledgerScale).map(([c]) => c).sort()
+const widest = Math.max(...Object.values(vocab))
 console.log(
   `+ العملةُ تعرفُ خاناتِها: ${Object.keys(vocab).length} عملةً فى الجرد، و${Object.keys(seed).length} فى بذرةِ القاعدة، ` +
-    `كلُّها تُطابقُ ISO 4217 · الدفترُ يحفظُ ${ledgerScale} خانةً · ` +
-    `${nonTwo.length} عملةً مقفولةً حتى يتّسع (${nonTwo.join("، ")}) · ${trapCount} فخّاً ذاتيّاً.`
+    `كلُّها تُطابقُ ISO 4217 · الدفترُ يحفظُ ${ledgerScale} خانةً وأوسعُ عملةٍ تحتاجُ ${widest} · ` +
+    (beyond.length === 0
+      ? "ولا عملةَ مقفولة"
+      : `${beyond.length} عملةً مقفولةً لأنَّ الدفترَ لا يتّسعُ لها (${beyond.join("، ")})`) +
+    ` · ${trapCount} فخّاً ذاتيّاً.`
 )
