@@ -9,8 +9,8 @@
 -- project and a comparison. Until then: we can see what production holds,
 -- not yet recreate it.
 --
--- Generated: 2026-08-22T15:17:25.075Z
--- Tables: 257 | Policies: 785 | Triggers: 617 | Constraints: 1844
+-- Generated: 2026-08-22T16:40:21.897Z
+-- Tables: 257 | Policies: 785 | Triggers: 620 | Constraints: 1844
 -- =====================================================================
 
 
@@ -7638,6 +7638,7 @@ CREATE TRIGGER trg_generate_invoice_number BEFORE INSERT ON public.billing_invoi
 CREATE TRIGGER aa_bill_receipt_transition_guard BEFORE UPDATE ON public.bills FOR EACH ROW EXECUTE FUNCTION bill_receipt_transition_guard_trg();
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.bills FOR EACH ROW EXECUTE FUNCTION erp_sod_guard('created_by|approved_by|مُعتَمِدُ فاتورةِ الشراء لا يَجوزُ أن يكون هو نفسَه مُنشِئَها.');
 CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.bills FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency_code', 'original_currency');
+CREATE TRIGGER aba_one_rate_per_question BEFORE INSERT OR UPDATE ON public.bills FOR EACH ROW EXECUTE FUNCTION erp_one_rate_per_question('exchange_rate', 'exchange_rate_used');
 CREATE TRIGGER abb_foreign_money_is_translated_at_birth BEFORE INSERT OR UPDATE ON public.bills FOR EACH ROW EXECUTE FUNCTION erp_foreign_money_is_translated_at_birth('currency_code', 'exchange_rate', 'base_currency_total', 'total_amount');
 CREATE TRIGGER ac_foreign_money_is_translated BEFORE INSERT OR UPDATE ON public.bills FOR EACH ROW EXECUTE FUNCTION erp_foreign_money_is_translated('currency_code', 'exchange_rate', 'base_currency_total', 'total_amount');
 CREATE TRIGGER audit_bills AFTER INSERT OR DELETE OR UPDATE ON public.bills FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
@@ -7869,6 +7870,7 @@ CREATE TRIGGER invoice_item_evaluate_discount AFTER INSERT OR DELETE OR UPDATE O
 CREATE TRIGGER invoice_items_sync_warehouse_status AFTER INSERT OR DELETE OR UPDATE ON public.invoice_items FOR EACH ROW EXECUTE FUNCTION sync_invoice_warehouse_from_items_trg();
 CREATE TRIGGER trg_prevent_paid_invoice_items_mod BEFORE INSERT OR DELETE OR UPDATE ON public.invoice_items FOR EACH ROW EXECUTE FUNCTION prevent_paid_invoice_items_modification();
 CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.invoices FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency_code', 'original_currency');
+CREATE TRIGGER aba_one_rate_per_question BEFORE INSERT OR UPDATE ON public.invoices FOR EACH ROW EXECUTE FUNCTION erp_one_rate_per_question('exchange_rate', 'exchange_rate_used');
 CREATE TRIGGER abb_foreign_money_is_translated_at_birth BEFORE INSERT OR UPDATE ON public.invoices FOR EACH ROW EXECUTE FUNCTION erp_foreign_money_is_translated_at_birth('currency_code', 'exchange_rate', 'base_currency_total', 'total_amount');
 CREATE TRIGGER ac_foreign_money_is_translated BEFORE INSERT OR UPDATE ON public.invoices FOR EACH ROW EXECUTE FUNCTION erp_foreign_money_is_translated('currency_code', 'exchange_rate', 'base_currency_total', 'total_amount');
 CREATE TRIGGER audit_invoices AFTER INSERT OR DELETE OR UPDATE ON public.invoices FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
@@ -8039,6 +8041,7 @@ CREATE TRIGGER recalc_invoice_after_allocation AFTER INSERT OR DELETE OR UPDATE 
 CREATE TRIGGER aa_erp_sod_guard BEFORE INSERT OR UPDATE ON public.payments FOR EACH ROW WHEN ((new.supplier_id IS NOT NULL)) EXECUTE FUNCTION erp_sod_guard('created_by|approved_by|مُعتَمِدُ مدفوعةِ المورّد لا يَجوزُ أن يكون هو نفسَه مُنشِئَها.');
 CREATE TRIGGER aa_payment_names_its_author BEFORE INSERT ON public.payments FOR EACH ROW EXECUTE FUNCTION enforce_payment_names_its_author();
 CREATE TRIGGER ab_currency_asked_at_birth BEFORE INSERT ON public.payments FOR EACH ROW EXECUTE FUNCTION erp_currency_is_asked_at_birth('currency_code', 'original_currency');
+CREATE TRIGGER aba_one_rate_per_question BEFORE INSERT OR UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION erp_one_rate_per_question('exchange_rate', 'exchange_rate_used');
 CREATE TRIGGER abb_foreign_money_is_translated_at_birth BEFORE INSERT OR UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION erp_foreign_money_is_translated_at_birth('currency_code', 'exchange_rate', 'base_currency_amount', 'amount');
 CREATE TRIGGER ac_foreign_money_is_translated BEFORE INSERT OR UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION erp_foreign_money_is_translated('currency_code', 'exchange_rate', 'base_currency_amount', 'amount');
 CREATE TRIGGER audit_payments AFTER INSERT OR DELETE OR UPDATE ON public.payments FOR EACH ROW EXECUTE FUNCTION audit_trigger_function();
@@ -12056,6 +12059,8 @@ REVOKE ALL ON FUNCTION public.erp_notice_close_orphans(p_company_id uuid) FROM P
 GRANT EXECUTE ON FUNCTION public.erp_notice_close_orphans(p_company_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_notice_follows_its_document() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_notice_follows_its_document() TO service_role;
+REVOKE ALL ON FUNCTION public.erp_one_rate_per_question() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.erp_one_rate_per_question() TO service_role;
 REVOKE ALL ON FUNCTION public.erp_payment_privileged(p_company_id uuid, p_user_id uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.erp_payment_privileged(p_company_id uuid, p_user_id uuid) TO service_role;
 REVOKE ALL ON FUNCTION public.erp_policy_role_groups() FROM PUBLIC;

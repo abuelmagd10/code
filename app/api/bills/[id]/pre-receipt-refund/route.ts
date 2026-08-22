@@ -86,7 +86,10 @@ export async function POST(
     // Regular role -> file a vendor_refund_requests row, source_type='pre_receipt'.
     const { data: bill, error: billErr } = await admin
       .from("bills")
-      .select("id, company_id, supplier_id, branch_id, cost_center_id, status, receipt_status, paid_amount, pre_receipt_refund_at, currency_code, exchange_rate_used")
+      // v3.75.88 — **ولا سعرانِ لسؤالٍ واحد**: تُقرَأُ `exchange_rate` وحدَها،
+      // فهى بيتُ السعرِ الذى تمتحنُه قوانينُ v3.75.84 → v3.75.87 والذى يُقاسُ
+      // ضدَّه `base_currency_total`؛ و`exchange_rate_used` ظلٌّ يتبعُه.
+      .select("id, company_id, supplier_id, branch_id, cost_center_id, status, receipt_status, paid_amount, pre_receipt_refund_at, currency_code, exchange_rate")
       .eq("id", id)
       .eq("company_id", context.companyId)
       .maybeSingle()
@@ -136,7 +139,7 @@ export async function POST(
         branch_id: (bill as any).branch_id || null,
         cost_center_id: (bill as any).cost_center_id || null,
         currency: (bill as any).currency_code || "EGP",
-        exchange_rate: Number((bill as any).exchange_rate_used || 1) || 1,
+        exchange_rate: Number((bill as any).exchange_rate || 1) || 1,
         base_amount: paid,
         notes: reason,
         status: "pending_approval",

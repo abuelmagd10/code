@@ -187,6 +187,45 @@ const TRIGGER_ORDER = [
   "ac_foreign_money_is_translated",
 ]
 
+/** بيتُ السعرِ الواحد — يجعلُ الاسمَ الثانىَ ظلّاً لبيتِه لا بيتاً ثانياً. */
+const ONE_RATE_HOME = "erp_one_rate_per_question"
+
+/** مُشغِّلُه — واسمُه مُختارٌ ليقعَ بينَ بيتِ العملةِ وبيتِ الملء. */
+const ONE_RATE_TRIGGER = "aba_one_rate_per_question"
+
+/** الاسمُ الثانى لسعرِ الصرف: **ظلٌّ يتبعُ بيتَه ولا يُسأَلُ وحدَه**. */
+const RATE_SHADOW_COLUMN = "exchange_rate_used"
+
+/**
+ * **الجداولُ التى تحملُ الاسمَين** — قِيست يومَ ٢٢ أغسطس ٢٠٢٦: `bills` ·
+ * `invoices` · `payments`، **ولا رابعَ لها فى القاعدةِ كلِّها**. ولا تُكتَبُ
+ * أسماؤُها هنا: **الحارسُ يقرأُها من القاعدةِ نفسِها فى كلِّ إصدار**، فيلزَمُ
+ * المُشغِّلُ كلَّ جدولٍ يظهرُ فيه الاسمانِ ولو وُلدَ غداً. والعددُ وحدَه مُثبَّتٌ
+ * ليُسمَّى النموُّ **والنقصانُ** كلاهما.
+ */
+const PINNED_TWO_RATE_TABLES = 3
+
+/** ترتيبُ المُشغِّلاتِ على مستندٍ يحملُ الاسمَين — **أربعةٌ لا ثلاثة**. */
+const TRIGGER_ORDER_WITH_ONE_RATE = [
+  "ab_currency_asked_at_birth",
+  "aba_one_rate_per_question",
+  "abb_foreign_money_is_translated_at_birth",
+  "ac_foreign_money_is_translated",
+]
+
+/**
+ * **شكلُ العطبِ نفسِه فى الشيفرة**: سعرُ صرفٍ يُكتَبُ على مستندٍ جديدٍ **مقروءاً
+ * من الظلِّ لا من بيتِه**، أو ظلٌّ يُسأَلُ **قبلَ** بيتِه. قِيسَ يومَ ٢٢ أغسطس
+ * ٢٠٢٦ فكانَ ثلاثةَ مواضع (مسارُ ردِّ ما قبلَ الاستلامِ · مسارُ ردِّ ما قبلَ
+ * الشحنِ · نافذةُ تفاصيلِ الدفعة) **وأُصلِحت كلُّها، فالمطلوبُ صفر**.
+ */
+const PINNED_SHADOW_FIRST_READS = 0
+
+/** سعرُ صرفٍ يُكتَبُ على مستندٍ جديدٍ مقروءاً من الظلّ. */
+const SHADOW_FED_RATE = /(?:^|[^_\w])exchange_rate\s*:\s*Number\([^\n]*exchange_rate_used/
+/** والظلُّ يُسأَلُ قبلَ بيتِه فى تعبيرٍ واحد. */
+const SHADOW_BEFORE_HOME = /exchange_rate_used[^\n]{0,40}?(?:\|\||\?\?)[^\n]{0,60}?\bexchange_rate\b/
+
 // ═══════════════════════════════════════════════════════════════════════════
 // الجزءُ الخالصُ من المنطق — يُختبَرُ بلا قرصٍ ولا قاعدة
 // ═══════════════════════════════════════════════════════════════════════════
@@ -466,23 +505,120 @@ function judgeTheBirthFill(defs) {
  * @param {string} tbl اسمُ الجدولِ للرسالة
  * @returns {string[]}
  */
-function judgeTriggerOrder(names, tbl) {
+function judgeTriggerOrder(names, tbl, want) {
   const problems = []
-  const present = TRIGGER_ORDER.filter((n) => (names || []).includes(n))
-  for (const want of TRIGGER_ORDER) {
-    if (!present.includes(want)) {
-      problems.push(`${tbl}: المُشغِّلُ ${want} غائب — **وحلقةٌ ناقصةٌ تكسرُ السلسلةَ كلَّها**.`)
+  const wanted = Array.isArray(want) && want.length > 0 ? want : TRIGGER_ORDER
+  const present = wanted.filter((n) => (names || []).includes(n))
+  for (const w of wanted) {
+    if (!present.includes(w)) {
+      problems.push(`${tbl}: المُشغِّلُ ${w} غائب — **وحلقةٌ ناقصةٌ تكسرُ السلسلةَ كلَّها**.`)
     }
   }
-  if (present.length === TRIGGER_ORDER.length) {
+  if (present.length === wanted.length) {
     const sorted = [...present].sort()
-    if (sorted.join("|") !== TRIGGER_ORDER.join("|")) {
+    if (sorted.join("|") !== wanted.join("|")) {
       problems.push(
         `${tbl}: ترتيبُ المُشغِّلاتِ ${sorted.join(" ثمّ ")} وليس ` +
-        `${TRIGGER_ORDER.join(" ثمّ ")} — **ومَن يحكمُ قبلَ أن يُملأَ الفراغُ يرفضُ البرىء**.`)
+        `${wanted.join(" ثمّ ")} — **ومَن يحكمُ قبلَ أن يُملأَ الفراغُ يرفضُ البرىء**.`)
     }
   }
   return problems
+}
+
+/**
+ * **ولا سعرانِ لسؤالٍ واحد** — يُحاكَمُ بيتُ توحيدِ السعرِ **بالأثرِ لا بالاسم**.
+ * @param {string[]} defs نصُّ الدالّةِ كما هو منشورٌ فى القاعدة
+ * @returns {string[]}
+ */
+function judgeTheOneRateHome(defs) {
+  const problems = []
+  const list = (Array.isArray(defs) ? defs : []).filter(Boolean)
+  if (list.length === 0) {
+    problems.push(
+      `${ONE_RATE_HOME} غائبٌ من القاعدة — ` +
+      "**فيعودُ الاسمانِ بيتَينِ لسؤالٍ واحد، وبيتانِ يفترقانِ يوماً**.")
+    return problems
+  }
+  if (list.length > 1) {
+    problems.push(`${ONE_RATE_HOME} له ${list.length} صيغةً منشورة — **وبيتانِ يُوحِّدانِ بيتَينِ مزحة**.`)
+  }
+  for (const def of list) {
+    const body = maskSqlComments(def)
+    // **ولا يُسمّى عموداً بيدِه**: الاسمانِ من وسائطِ المُشغِّلِ لا من نصِّ البيت.
+    if (!/TG_ARGV\[0\]/.test(body) || !/TG_ARGV\[1\]/.test(body)) {
+      problems.push(
+        `${ONE_RATE_HOME} يُسمّى العمودَينِ بيدِه لا من وسائطِ المُشغِّل — ` +
+        "**واسمٌ مكتوبٌ فى بيتٍ يُنسى يومَ يظهرُ جدولٌ ثالث**.")
+    }
+    // **والبيتُ يغلبُ الظلَّ**: آخرُ ما يُكتَبُ هو الظلُّ من البيتِ لا العكس.
+    if (!/jsonb_build_object\(\s*v_shadow_col\s*,\s*v_home\s*\)/.test(body)) {
+      problems.push(
+        `${ONE_RATE_HOME} لا يجعلُ الظلَّ يتبعُ بيتَه — ` +
+        "**وظلٌّ يقودُ بيتَه ليس ظلّاً، وسعرٌ صالحٌ يُمحى بسعرٍ افتراضىٍّ كارثة**.")
+    }
+    // **ولا يخترعُ سعراً**: صمتُ الاثنينِ يُترَكُ للقاضى ليصرخَ به.
+    if (!/v_home\s+IS\s+NULL[\s\S]{0,80}RETURN\s+NEW/i.test(body)) {
+      problems.push(
+        `${ONE_RATE_HOME} لا يترُكُ الصفَّ الصامتَ كما هو — ` +
+        "**ولا يُخترَعُ سعرٌ لينجوَ صفّ؛ الصمتُ يُرفَعُ إلى القاضى لا يُغطّى**.")
+    }
+    // **ولا يُنقِذُ برقمٍ فاسد**.
+    if (!/v_shadow\s*>\s*0/.test(body)) {
+      problems.push(
+        `${ONE_RATE_HOME} يتبنّى ظلّاً غيرَ موجب — **وإنقاذٌ برقمٍ فاسدٍ إتلافٌ باسمِ الإنقاذ**.`)
+    }
+    // **ولا شأنَ له بعمودٍ ثالث**: لا اسمَ عمودٍ مكتوبٌ بين علامتَى اقتباس.
+    if (/jsonb_build_object\(\s*'/.test(body)) {
+      problems.push(
+        `${ONE_RATE_HOME} يكتبُ عموداً باسمٍ مكتوبٍ بيد — ` +
+        "**وبيتٌ يُوحِّدُ سعرَينِ لا يمسُّ عموداً ثالثاً أبداً**.")
+    }
+  }
+  return problems
+}
+
+/**
+ * **والشيفرةُ لا تسألُ الظلَّ**: موضعٌ يبنى سعرَ مستندٍ جديدٍ من الاسمِ الثانى،
+ * أو يسألُه قبلَ بيتِه. **والقاعدةُ تُسوّيهما اليوم**، لكنَّ مَن يسألُ الظلَّ
+ * يسألُ الاسمَ الذى **لا يمتحنُه قانون**.
+ * @param {string[]} hits مواضعُ بشكلِ "ملف:سطر"
+ * @returns {string[]}
+ */
+function judgeShadowFirstReads(hits) {
+  const problems = []
+  const list = (Array.isArray(hits) ? hits : []).filter(Boolean)
+  if (list.length > PINNED_SHADOW_FIRST_READS) {
+    problems.push(
+      `${list.length} موضعاً فى الشيفرةِ يسألُ الظلَّ قبلَ بيتِه أو يبنى منه سعراً ` +
+      `(${list.slice(0, 8).join(" · ")}${list.length > 8 ? " …" : ""}) — ` +
+      "**والمُثبَّتُ " + PINNED_SHADOW_FIRST_READS + "**.")
+  }
+  return problems
+}
+
+/**
+ * يجمعُ مواضعَ سؤالِ الظلّ. **والجردُ من بيتِه الواحد لا بيدٍ**: أوّلُ ما كُتبَ
+ * هذا الماسحُ مشى على أربعةِ مجلّداتٍ مكتوبةٍ باسمِها، **فأمسكَه حارسُ الجردِ
+ * فى المسحِ الفارقىِّ نفسِه** (`check-code-census-has-one-home`) بوصفِه السادسَ
+ * عشرَ فى دَينٍ مُثبَّتٍ عندَ خمسةَ عشر. **ودَينٌ يُكتَبُ ولا يُسدَّدُ يصيرُ عادة**،
+ * فصارَ ينادى `projectCodeFiles` — فيدخلُ أىُّ مجلّدٍ جديدٍ تلقائيّاً، ولا
+ * يُقاسُ إلّا ما يعرفُه المستودَعُ لا ما يعرفُه القرص.
+ */
+function scanShadowFirstReads(options) {
+  const { projectCodeFiles } = require("./lib/repo-code-files")
+  const { files } = projectCodeFiles(options || {})
+  const hits = []
+  for (const f of files) {
+    if (!/\.(ts|tsx)$/.test(f.rel)) continue
+    if (f.src.indexOf("exchange_rate_used") < 0) continue
+    const lines = f.src.split("\n")
+    for (let i = 0; i < lines.length; i++) {
+      if (SHADOW_FED_RATE.test(lines[i]) || SHADOW_BEFORE_HOME.test(lines[i])) {
+        hits.push(`${f.rel}:${i + 1}`)
+      }
+    }
+  }
+  return hits.sort()
 }
 
 // **ولا يُنسَخُ حكمٌ ليُقاسَ به**: من استوردَ هذا الملفَّ أخذَ دوالَّ الحارسِ عينَها.
@@ -491,8 +627,11 @@ if (require.main !== module) {
     LAW, CURRENCY_HOME, MUST_CARRY_THE_LAW, PINNED_CANNOT_TRANSLATE,
     COST_HOME, RATE_COLUMN, RATE_VAR, ALLOC_VAR,
     POSTING_DOOR, MOVEMENT_HOME, PINNED_LEGACY_PURCHASE_MOVES, BIRTH_FILL, TRIGGER_ORDER,
+    ONE_RATE_HOME, ONE_RATE_TRIGGER, RATE_SHADOW_COLUMN, PINNED_TWO_RATE_TABLES,
+    TRIGGER_ORDER_WITH_ONE_RATE, PINNED_SHADOW_FIRST_READS,
     maskSqlComments, judgeTheLaw, judgeRoster, judgeInstallation, judgeTheCostHome,
     judgeThePostingDoor, judgeTheMovementHome, judgeTheBirthFill, judgeTriggerOrder,
+    judgeTheOneRateHome, judgeShadowFirstReads, scanShadowFirstReads,
   }
   return
 }
@@ -682,6 +821,76 @@ if (process.argv.includes("--selftest")) {
   t("والأسماءُ الثلاثةُ مرتَّبةٌ أبجديّاً كما كُتبت — وإلّا فالقانونُ يُناقضُ نفسَه",
     [...TRIGGER_ORDER].sort().join("|"), TRIGGER_ORDER.join("|"))
 
+  // ── (٩) ولا سعرانِ لسؤالٍ واحد ───────────────────────────────────────────
+  const GOOD_ONE_RATE = `
+    BEGIN
+      v_home   := NULLIF(v_row ->> TG_ARGV[0], '')::numeric;
+      v_shadow := NULLIF(v_row ->> TG_ARGV[1], '')::numeric;
+      IF (v_home IS NULL OR v_home <= 0) AND (v_shadow IS NOT NULL AND v_shadow > 0) THEN
+        NEW := jsonb_populate_record(NEW,
+                 jsonb_build_object(v_home_col, v_shadow, v_shadow_col, v_shadow));
+        RETURN NEW;
+      END IF;
+      IF v_home IS NULL THEN RETURN NEW; END IF;
+      IF v_shadow IS NOT DISTINCT FROM v_home THEN RETURN NEW; END IF;
+      NEW := jsonb_populate_record(NEW, jsonb_build_object(v_shadow_col, v_home));
+      RETURN NEW;
+    END`
+
+  t("يُبرِّئُ بيتاً يجعلُ الظلَّ يتبعُ بيتَه ولا يخترعُ ولا يُتلِف",
+    judgeTheOneRateHome([GOOD_ONE_RATE]).length, 0)
+  t("ويرفضُ غيابَ بيتِ السعرِ الواحدِ كلِّه", judgeTheOneRateHome([]).length, 1)
+  t("ويرفضُ بيتَينِ يُوحِّدانِ بيتَين", judgeTheOneRateHome([GOOD_ONE_RATE, GOOD_ONE_RATE]).length > 0, true)
+  t("**ويرفضُ من يُسمّى العمودَ بيدِه** — فيُنسى يومَ يظهرُ جدولٌ ثالث",
+    judgeTheOneRateHome([GOOD_ONE_RATE.replace("TG_ARGV[0]", "'exchange_rate'")]).length, 1)
+  t("**ويرفضُ ظلّاً يقودُ بيتَه** — فسعرٌ صالحٌ يُمحى برقمٍ افتراضىّ",
+    judgeTheOneRateHome([GOOD_ONE_RATE.replace(
+      "jsonb_build_object(v_shadow_col, v_home));",
+      "jsonb_build_object(v_home_col, v_shadow));")]).length, 1)
+  t("**ويرفضُ من يخترعُ سعراً عندَ صمتِ الاثنَين** — والصمتُ يُرفَعُ للقاضى",
+    judgeTheOneRateHome([GOOD_ONE_RATE.replace("IF v_home IS NULL THEN RETURN NEW; END IF;", "")]).length, 1)
+  t("**ويرفضُ إنقاذاً بظلٍّ غيرِ موجب** — وإنقاذٌ برقمٍ فاسدٍ إتلاف",
+    judgeTheOneRateHome([GOOD_ONE_RATE.replace("v_shadow > 0", "true")]).length, 1)
+  t("**ويرفضُ من يمسُّ عموداً ثالثاً باسمٍ مكتوبٍ بيد**",
+    judgeTheOneRateHome([GOOD_ONE_RATE.replace(
+      "RETURN NEW;\n    END",
+      "NEW := jsonb_populate_record(NEW, jsonb_build_object('total_amount', 0));\n      RETURN NEW;\n    END")]).length, 1)
+  t("ولا يخدعُه بيتٌ كلُّه فى تعليق",
+    judgeTheOneRateHome(["-- TG_ARGV[0] TG_ARGV[1] jsonb_build_object( v_shadow_col , v_home ) v_home IS NULL RETURN NEW v_shadow > 0"]).length > 0, true)
+
+  // ── وترتيبُ الأربعةِ على مستندٍ يحملُ الاسمَين ───────────────────────────
+  t("يُبرِّئُ ترتيبَ الأربعةِ الواجب",
+    judgeTriggerOrder(TRIGGER_ORDER_WITH_ONE_RATE, "bills", TRIGGER_ORDER_WITH_ONE_RATE).length, 0)
+  t("ويمسكُ غيابَ مُشغِّلِ السعرِ الواحدِ من جدولٍ يحملُ الاسمَين",
+    judgeTriggerOrder(TRIGGER_ORDER, "payments", TRIGGER_ORDER_WITH_ONE_RATE).length, 1)
+  t("**ويمسكُ اسماً يُوحِّدُ السعرَ بعدَ أن يُملأَ به المبلغ** — فتوحيدٌ بعدَ فوات",
+    judgeTriggerOrder(
+      [TRIGGER_ORDER[0], TRIGGER_ORDER[1], "abc_one_rate_after_the_fill", TRIGGER_ORDER[2]],
+      "bills",
+      [TRIGGER_ORDER[0], "abc_one_rate_after_the_fill", TRIGGER_ORDER[1], TRIGGER_ORDER[2]]).length, 1)
+  t("والترتيبُ الثلاثىُّ ما زالَ يُبرَّأُ بلا وسيطٍ ثالث",
+    judgeTriggerOrder(TRIGGER_ORDER, "expenses").length, 0)
+  t("والأسماءُ الأربعةُ مرتَّبةٌ أبجديّاً كما كُتبت",
+    [...TRIGGER_ORDER_WITH_ONE_RATE].sort().join("|"), TRIGGER_ORDER_WITH_ONE_RATE.join("|"))
+  t("ومُشغِّلُ السعرِ الواحدِ يقعُ بينَ بيتِ العملةِ وبيتِ الملء",
+    TRIGGER_ORDER_WITH_ONE_RATE.indexOf(ONE_RATE_TRIGGER), 1)
+
+  // ── والشيفرةُ لا تسألُ الظلَّ ─────────────────────────────────────────────
+  t("يُبرِّئُ شيفرةً لا تسألُ الظلَّ", judgeShadowFirstReads([]).length, 0)
+  t("ويمسكُ موضعاً واحداً", judgeShadowFirstReads(["a.ts:1"]).length, 1)
+  t("والمُثبَّتُ صفرٌ كما قِيسَ بعدَ الإصلاح", PINNED_SHADOW_FIRST_READS, 0)
+  t("**ويمسكُ سعراً يُبنى من الظلّ**",
+    SHADOW_FED_RATE.test('exchange_rate: Number((bill as any).exchange_rate_used || 1) || 1,'), true)
+  t("ولا يُخطئُ سعراً يُبنى من بيتِه",
+    SHADOW_FED_RATE.test('exchange_rate: Number((bill as any).exchange_rate || 1) || 1,'), false)
+  t("ولا يُخطئُ سطرَ كتابةٍ للظلِّ نفسِه — فالكتابةُ ليست سؤالاً",
+    SHADOW_FED_RATE.test('            exchange_rate_used: exchangeRate,'), false)
+  t("**ويمسكُ ظلّاً يُسأَلُ قبلَ بيتِه**",
+    SHADOW_BEFORE_HOME.test('const rate = Number(payment?.exchange_rate_used || payment?.exchange_rate || 1)'), true)
+  t("ولا يُخطئُ بيتاً يُسأَلُ قبلَ ظلِّه",
+    SHADOW_BEFORE_HOME.test('const rate = Number(payment?.exchange_rate || payment?.exchange_rate_used || 1)'), false)
+  t("**والجداولُ الحاملةُ للاسمَينِ ثلاثةٌ كما قِيست**", PINNED_TWO_RATE_TABLES, 3)
+
   let fail = 0
   for (const [name, got, exp] of cases) {
     if (got !== exp) { console.error(`  X ${name}: قِيسَ ${got} والمنتظَرُ ${exp}`); fail++ }
@@ -694,6 +903,21 @@ if (process.argv.includes("--selftest")) {
 // ═══════════════════════════════════════════════════════════════════════════
 // القياسُ الحقيقىّ — على القاعدةِ الحيّة
 // ═══════════════════════════════════════════════════════════════════════════
+// ── (٩-أ) والشيفرةُ لا تسألُ الظلَّ — يُقاسُ بلا قاعدةٍ فى كلِّ تشغيل ─────────
+// **والجردُ من بيتِه الواحد** (`projectCodeFiles`) لا من قائمةِ مجلّداتٍ بيد:
+// ما يعرفُه المستودَعُ يُقاسُ، وما يخصُّ جهازاً واحداً لا يُقاسُ — **فالحكمُ صفةُ
+// المشروعِ لا صفةُ الجهاز**.
+{
+  const shadowHits = scanShadowFirstReads()
+  const shadowProblems = judgeShadowFirstReads(shadowHits)
+  if (shadowProblems.length > 0) {
+    console.error(`X ولا سعرانِ لسؤالٍ واحد (${shadowProblems.length}):`)
+    for (const p of shadowProblems) console.error(`  - ${p}`)
+    console.error("  انظر supabase/migrations/20260822000037_v3_75_88_no_two_rates_for_one_question.sql")
+    process.exit(1)
+  }
+}
+
 const requireDb = process.argv.includes("--require-db")
 const url = process.env.FX_TRANSLATED_DB_URL || process.env.PRODUCTION_SUPABASE_DB_URL
 if (!url) {
@@ -947,6 +1171,77 @@ const notes = []
       problems.push(...judgeTriggerOrder(tnames.map((x) => x.tgname), tbl))
     }
 
+    // ── (٩) ولا سعرانِ لسؤالٍ واحد ─────────────────────────────────────────
+    const { rows: oneRateRows } = await client.query(
+      `SELECT pg_get_functiondef(p.oid) AS def, p.prosecdef,
+              array_to_string(COALESCE(p.proconfig, ARRAY[]::text[]), ',') AS cfg,
+              COALESCE(array_to_string(p.proacl, ','), '(default)') AS acl
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public' AND p.proname = $1`, [ONE_RATE_HOME])
+    problems.push(...judgeTheOneRateHome(oneRateRows.map((r) => r.def)))
+    for (const r of oneRateRows) {
+      if (!r.prosecdef) {
+        problems.push(`${ONE_RATE_HOME} ليس بصلاحيّاتٍ كاملة — فقد لا يعملُ لكلِّ مُنادٍ.`)
+      }
+      if (!/search_path=/.test(r.cfg)) {
+        problems.push(`${ONE_RATE_HOME} بلا مسارِ بحثٍ مضبوط — **وبابٌ بصلاحيّاتٍ كاملةٍ بلا مسارٍ يُزوَّرُ اسمُه**.`)
+      }
+      if (/\banon=/.test(r.acl) || /\bauthenticated=/.test(r.acl) || /^=/.test(r.acl) || /,=/.test(r.acl)) {
+        problems.push(
+          `${ONE_RATE_HOME} يبلغُه زائرٌ أو مستخدِمٌ مسجَّل (${r.acl}) — ` +
+          "**وهو مُشغِّلٌ لا ينادِيه إنسان، فيُسوَّى بإخوتِه لا أوسع**.")
+      }
+    }
+
+    // **وقائمةُ الجداولِ الحاملةِ للاسمَينِ تُقرَأُ من القاعدةِ لا من نصٍّ مكتوب.**
+    const { rows: twoRate } = await client.query(
+      `SELECT c.relname AS tbl
+         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public' AND c.relkind = 'r'
+          AND EXISTS (SELECT 1 FROM pg_attribute a
+                       WHERE a.attrelid = c.oid AND NOT a.attisdropped AND a.attname = $1)
+          AND EXISTS (SELECT 1 FROM pg_attribute a
+                       WHERE a.attrelid = c.oid AND NOT a.attisdropped AND a.attname = $2)
+        ORDER BY 1`, [RATE_COLUMN, RATE_SHADOW_COLUMN])
+    const twoRateTables = twoRate.map((x) => x.tbl).filter((x) => /^[a-z_][a-z0-9_]*$/.test(x))
+    if (twoRateTables.length > PINNED_TWO_RATE_TABLES) {
+      problems.push(
+        `الجداولُ الحاملةُ للاسمَين ${twoRateTables.length} والمُثبَّتُ ${PINNED_TWO_RATE_TABLES} ` +
+        `(${twoRateTables.join(" · ")}) — **وجدولٌ جديدٌ بسعرَينِ عطبٌ جديدٌ لا زيادةُ عمود**.`)
+    } else if (twoRateTables.length < PINNED_TWO_RATE_TABLES) {
+      problems.push(
+        `الجداولُ الحاملةُ للاسمَين ${twoRateTables.length} والمُثبَّتُ ${PINNED_TWO_RATE_TABLES} — ` +
+        "**والتاريخُ لا يُجمَّل**: يُحدَّثُ PINNED_TWO_RATE_TABLES فى الدفعةِ التى استحقَّت النقصان.")
+    }
+
+    let twoRateRows = 0
+    for (const tbl of twoRateTables) {
+      const { rows: tn } = await client.query(
+        `SELECT t.tgname, (t.tgtype & 4) > 0 AS on_ins, (t.tgtype & 16) > 0 AS on_upd
+           FROM pg_trigger t
+           JOIN pg_class c ON c.oid = t.tgrelid
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE NOT t.tgisinternal AND n.nspname = 'public' AND c.relname = $1`, [tbl])
+      problems.push(...judgeTriggerOrder(tn.map((x) => x.tgname), tbl, TRIGGER_ORDER_WITH_ONE_RATE))
+      const mine = tn.find((x) => x.tgname === ONE_RATE_TRIGGER)
+      if (mine && (!mine.on_ins || !mine.on_upd)) {
+        problems.push(
+          `${tbl}: مُشغِّلُ السعرِ الواحدِ لا يعملُ على ${!mine.on_ins ? "الإنشاء" : "التعديل"} — ` +
+          "**وسعرٌ يُوحَّدُ عندَ الدخولِ ويُترَكُ عندَ التبديلِ يفترقُ بالتبديل**.")
+      }
+      const { rows: dis } = await client.query(
+        `SELECT count(*)::int AS n FROM public.${tbl}
+          WHERE ${RATE_COLUMN} IS DISTINCT FROM ${RATE_SHADOW_COLUMN}`)
+      twoRateRows += dis[0].n
+      if (dis[0].n > 0) {
+        problems.push(
+          `${tbl}: ${dis[0].n} صفّاً يحملُ جوابَينِ مختلفَينِ لسؤالٍ واحد — ` +
+          "**وأحدُهما كذبٌ بالضرورة، ولا يُعرَفُ أيُّهما من الصفِّ نفسِه**.")
+      }
+    }
+
+    notes.push(`  بيتُ السعرِ الواحد: صيغةٌ منشورة=${oneRateRows.length} · صلاحيّاتُه=${(oneRateRows[0] || {}).acl || "—"} · جداولُ الاسمَين=${twoRateTables.length} (المُثبَّت ${PINNED_TWO_RATE_TABLES}): ${twoRateTables.join(" · ") || "—"} · صفوفٌ بجوابَين=${twoRateRows} (المطلوبُ صفر)`)
+
     notes.push(`  بيتُ ملءِ الترجمة: صيغةٌ منشورة=${fillRows.length} · صلاحيّاتُه=${(fillRows[0] || {}).acl || "—"} · والترتيبُ (عملةٌ ثمّ ملءٌ ثمّ حكم) مقيسٌ على المستنداتِ الأربعة`)
 
     notes.push(`  بابُ الترحيل: صيغةٌ منشورة=${doorRows.length} · بيتُ حركةِ الشراء=${moveRows.length} · قيودٌ أجنبيّةٌ بلا عملتِها=${silent[0].n} (المطلوبُ صفر) · قيودٌ مُترجَمةٌ حُوسبت=${df.judged} تُخالفُ أصلَها=${df.off} غيرُ متوازنة=${df.unbalanced} · حركاتُ شراءٍ بلا عملة=${lg} (المُثبَّت ${PINNED_LEGACY_PURCHASE_MOVES})`)
@@ -962,6 +1257,7 @@ const notes = []
     console.error("  و supabase/migrations/20260822000034_v3_75_85_the_cost_is_measured_in_the_ledgers_currency_not_the_sellers.sql")
     console.error("  و supabase/migrations/20260822000035_v3_75_86_no_number_is_posted_to_the_ledger_in_the_sellers_currency.sql")
     console.error("  و supabase/migrations/20260822000036_v3_75_87_the_translation_is_born_with_the_money.sql")
+    console.error("  و supabase/migrations/20260822000037_v3_75_88_no_two_rates_for_one_question.sql")
     process.exit(1)
   }
 
@@ -972,5 +1268,6 @@ const notes = []
     "ومن لا يستطيعُ معدودٌ بالاسمِ لا مسكوتٌ عنه · ولا صفَّ قائمٌ يُخالفُه · " +
     "**وبيتُ التكلفةِ المُنزَلةِ يسألُ سعرَ الصرفِ ويُترجِمُ كلَّ مخرجٍ له، وحفظُ المجموعِ مقيسٌ لا موعود** · " +
     "**ولا يُقيَّدُ فى الدفترِ رقمٌ بعملةِ البائع: البابُ يضربُ فى السعرِ ويحفظُ الأصل، ولا قيدَ أجنبىٌّ بلا عملتِه** · " +
-    "**وتُولَدُ الترجمةُ مع المال: بيتٌ واحدٌ يملأُ الفراغَ ولا يخترعُ سعراً ولا يُصحِّحُ قولَ مُنادٍ، والترتيبُ مقيسٌ لا مفترَض**.")
+    "**وتُولَدُ الترجمةُ مع المال: بيتٌ واحدٌ يملأُ الفراغَ ولا يخترعُ سعراً ولا يُصحِّحُ قولَ مُنادٍ، والترتيبُ مقيسٌ لا مفترَض** · " +
+    "**ولا سعرانِ لسؤالٍ واحد: الظلُّ يتبعُ بيتَه على كلِّ جدولٍ يحملُ الاسمَينِ — والقائمةُ من القاعدةِ لا من نصٍّ — ولا صفَّ بجوابَين، ولا موضعَ فى الشيفرةِ يسألُ الظلَّ قبلَ بيتِه**.")
 })().catch((e) => { console.error(`X ${e.message}`); process.exit(1) })

@@ -84,7 +84,10 @@ export async function POST(
     // Regular role -> file a customer_refund_requests row, source_type='pre_shipment'.
     const { data: inv, error: invErr } = await admin
       .from("invoices")
-      .select("id, company_id, customer_id, branch_id, cost_center_id, status, warehouse_status, paid_amount, pre_shipment_refund_at, currency_code, exchange_rate_used")
+      // v3.75.88 — **ولا سعرانِ لسؤالٍ واحد**: تُقرَأُ `exchange_rate` وحدَها،
+      // فهى بيتُ السعرِ الذى تمتحنُه قوانينُ v3.75.84 → v3.75.87 والذى يُقاسُ
+      // ضدَّه `base_currency_total`؛ و`exchange_rate_used` ظلٌّ يتبعُه.
+      .select("id, company_id, customer_id, branch_id, cost_center_id, status, warehouse_status, paid_amount, pre_shipment_refund_at, currency_code, exchange_rate")
       .eq("id", id)
       .eq("company_id", context.companyId)
       .maybeSingle()
@@ -135,7 +138,7 @@ export async function POST(
         branch_id: (inv as any).branch_id || null,
         cost_center_id: (inv as any).cost_center_id || null,
         currency: (inv as any).currency_code || "EGP",
-        exchange_rate: Number((inv as any).exchange_rate_used || 1) || 1,
+        exchange_rate: Number((inv as any).exchange_rate || 1) || 1,
         base_amount: paid,
         notes: reason,
         status: "pending",

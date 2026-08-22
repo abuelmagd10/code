@@ -393,7 +393,10 @@ export function PaymentDetailsModal({ paymentId, isOpen, onClose, appLang }: Pay
   // التحميلِ العابرةُ أو فشلُ القراءة) يبقى فارغاً صراحةً بدلاً من عملةٍ
   // مخترَعة.
   const currency = payment?.currency_code || baseCurrency
-  const rate = Number(payment?.exchange_rate_used || payment?.exchange_rate || 1)
+  // v3.75.88 — **ولا سعرانِ لسؤالٍ واحد**: كانَ الظلُّ يُقرَأُ قبلَ بيتِه، فدفعةُ
+  // ٥ يوليو ٢٠٢٦ بالدولارِ (سعرُها ٤٩٫٢٨ ومالُها صادق) كانت تُعرَضُ **بسعرِ ١**
+  // لأنَّ `exchange_rate_used` بقىَ على رقمِه الافتراضىّ. فيُقرَأُ البيتُ أوّلاً.
+  const rate = Number(payment?.exchange_rate || payment?.exchange_rate_used || 1)
   const hasFx = (currency !== baseCurrency) || (rate !== 1)
 
   // v3.74.226 — for cross-currency payments (e.g., a USD refund on an EGP

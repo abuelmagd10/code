@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-22T15:17:22.530Z
--- Routines: 1418
+-- Generated: 2026-08-22T16:40:19.482Z
+-- Routines: 1419
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -26422,6 +26422,52 @@ BEGIN
      AND (status <> 'archived' OR read_at IS NULL);
   RETURN OLD;
 END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- erp_one_rate_per_question()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_one_rate_per_question()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
+AS $function$
+DECLARE
+  v_row        jsonb := to_jsonb(NEW);
+  v_home_col   text  := TG_ARGV[0];   -- البيتُ: ما تقرؤُه القوانينُ ويُحاكَمُ عليه المال
+  v_shadow_col text  := TG_ARGV[1];   -- الظلُّ: الاسمُ الثانى لنفسِ السؤال
+  v_home       numeric;
+  v_shadow     numeric;
+BEGIN
+  v_home   := NULLIF(v_row ->> v_home_col,   '')::numeric;
+  v_shadow := NULLIF(v_row ->> v_shadow_col, '')::numeric;
+
+  -- ‏(١) البيتُ غائبٌ أو غيرُ موجب، والظلُّ وحدَه ناطقٌ بسعرٍ صالح:
+  --     يتبنّى البيتُ ما نطقَ به الظلُّ ثمّ يتساويان — **إنقاذٌ لا اختراع**.
+  IF (v_home IS NULL OR v_home <= 0) AND (v_shadow IS NOT NULL AND v_shadow > 0) THEN
+    NEW := jsonb_populate_record(
+             NEW,
+             jsonb_build_object(v_home_col, v_shadow, v_shadow_col, v_shadow)
+           );
+    RETURN NEW;
+  END IF;
+
+  -- ‏(٢) الاثنانِ صامتان: **لا يُخترَعُ سعرٌ لينجوَ صفّ** — يُترَكُ للقاضى.
+  IF v_home IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  -- ‏(٣) جوابٌ واحدٌ بالفعل: لا يُكتَبُ حرف.
+  IF v_shadow IS NOT DISTINCT FROM v_home THEN
+    RETURN NEW;
+  END IF;
+
+  -- ‏(٤) وإلّا: **البيتُ يغلبُ الظلَّ دائماً** — لا فرعَ يستطيعُ إتلافَ سعرٍ صالح.
+  NEW := jsonb_populate_record(NEW, jsonb_build_object(v_shadow_col, v_home));
+  RETURN NEW;
+END;
 $function$
 ;
 
