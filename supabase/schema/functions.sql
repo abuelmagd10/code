@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-21T18:22:06.168Z
--- Routines: 1416
+-- Generated: 2026-08-22T12:20:00.083Z
+-- Routines: 1417
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -26097,6 +26097,85 @@ CREATE OR REPLACE FUNCTION public.erp_financial_reports_seed_roles()
  SET search_path TO 'public', 'extensions', 'pg_temp'
 AS $function$
   SELECT ARRAY['owner','admin']::text[];
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- erp_foreign_money_is_translated()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_foreign_money_is_translated()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
+AS $function$
+DECLARE
+  v_row      jsonb := to_jsonb(NEW);
+  v_ccy_col  text  := TG_ARGV[0];
+  v_rate_col text  := TG_ARGV[1];
+  v_base_col text  := TG_ARGV[2];
+  v_amt_col  text  := TG_ARGV[3];
+  v_home     text;
+  v_ccy      text;
+  v_rate     numeric;
+  v_base     numeric;
+  v_amt      numeric;
+  v_tol      numeric;
+  v_expected numeric;
+BEGIN
+  IF (v_row ->> 'company_id') IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  v_ccy := upper(btrim(COALESCE(v_row ->> v_ccy_col, '')));
+  -- عملةٌ فارغة: بيتُها يملؤُها قبلَ هذا الحكم، ولا يُحاكَمُ فراغ.
+  IF v_ccy = '' THEN
+    RETURN NEW;
+  END IF;
+
+  v_home := upper(btrim(COALESCE(
+    public.erp_company_base_currency((v_row ->> 'company_id')::uuid), '')));
+  -- ولا عملةَ أساسٍ معروفة: لا يُحكَمُ بما لا يُقاس.
+  IF v_home = '' OR v_ccy = v_home THEN
+    RETURN NEW;
+  END IF;
+
+  v_amt := NULLIF(btrim(COALESCE(v_row ->> v_amt_col, '')), '')::numeric;
+  -- لا مالَ يُترجَم.
+  IF v_amt IS NULL OR v_amt = 0 THEN
+    RETURN NEW;
+  END IF;
+
+  v_rate := NULLIF(btrim(COALESCE(v_row ->> v_rate_col, '')), '')::numeric;
+  v_base := NULLIF(btrim(COALESCE(v_row ->> v_base_col, '')), '')::numeric;
+
+  IF v_rate IS NULL OR v_rate <= 0 THEN
+    RAISE EXCEPTION
+      'ولا يُسجَّلُ مالٌ بعملةٍ لم تُترجَم: % فى %.% وعملةُ الأساسِ %، ولا سعرَ صرفٍ صالحٍ فى %.',
+      v_ccy, TG_TABLE_NAME, v_ccy_col, v_home, v_rate_col
+      USING ERRCODE = '23514';
+  END IF;
+
+  IF v_base IS NULL THEN
+    RAISE EXCEPTION
+      'ولا يُسجَّلُ مالٌ بعملةٍ لم تُترجَم: % فى % بمبلغِ %، ولا مبلغَ مُترجَمَ فى %.',
+      v_ccy, TG_TABLE_NAME, v_amt, v_base_col
+      USING ERRCODE = '23514';
+  END IF;
+
+  -- سماحُ التقريبِ من بيتِ خاناتِ العملةِ الواحد — نصفُ أصغرِ وحدةٍ لا أكثر.
+  v_tol := 0.5 / power(10::numeric, public.erp_currency_decimals(v_home)) + 0.000000001;
+  v_expected := v_amt * v_rate;
+
+  IF abs(v_base - v_expected) > v_tol THEN
+    RAISE EXCEPTION
+      'ولا يُسجَّلُ مالٌ بعملةٍ لم تُترجَم: % × % = % والمكتوبُ فى % هو % (السماحُ %).',
+      v_amt, v_rate, round(v_expected, 6), v_base_col, v_base, v_tol
+      USING ERRCODE = '23514';
+  END IF;
+
+  RETURN NEW;
+END
 $function$
 ;
 
