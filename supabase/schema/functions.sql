@@ -2,8 +2,8 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-22T14:23:57.919Z
--- Routines: 1417
+-- Generated: 2026-08-22T15:17:22.530Z
+-- Routines: 1418
 -- =====================================================================
 
 -- ---------------------------------------------------------------
@@ -26173,6 +26173,70 @@ BEGIN
       v_amt, v_rate, round(v_expected, 6), v_base_col, v_base, v_tol
       USING ERRCODE = '23514';
   END IF;
+
+  RETURN NEW;
+END
+$function$
+;
+
+-- ---------------------------------------------------------------
+-- erp_foreign_money_is_translated_at_birth()
+-- ---------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.erp_foreign_money_is_translated_at_birth()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_catalog', 'pg_temp'
+AS $function$
+DECLARE
+  v_row      jsonb := to_jsonb(NEW);
+  v_ccy_col  text  := TG_ARGV[0];
+  v_rate_col text  := TG_ARGV[1];
+  v_base_col text  := TG_ARGV[2];
+  v_amt_col  text  := TG_ARGV[3];
+  v_home     text;
+  v_ccy      text;
+  v_rate     numeric;
+  v_base     numeric;
+  v_amt      numeric;
+BEGIN
+  IF (v_row ->> 'company_id') IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  v_ccy := upper(btrim(COALESCE(v_row ->> v_ccy_col, '')));
+  -- عملةٌ فارغة: بيتُها يملؤُها قبلَ هذا، ولا يُترجَمُ فراغ.
+  IF v_ccy = '' THEN
+    RETURN NEW;
+  END IF;
+
+  v_home := upper(btrim(COALESCE(
+    public.erp_company_base_currency((v_row ->> 'company_id')::uuid), '')));
+  -- (١) لا شأنَ للترجمةِ بمستندٍ بعملةِ الأساس.
+  IF v_home = '' OR v_ccy = v_home THEN
+    RETURN NEW;
+  END IF;
+
+  v_amt := NULLIF(btrim(COALESCE(v_row ->> v_amt_col, '')), '')::numeric;
+  IF v_amt IS NULL OR v_amt = 0 THEN
+    RETURN NEW;
+  END IF;
+
+  v_base := NULLIF(btrim(COALESCE(v_row ->> v_base_col, '')), '')::numeric;
+  -- (٣) ولا يُصحَّحُ قولُ المُنادى صامتاً: المكتوبُ يبقى ويُحاكَم.
+  IF v_base IS NOT NULL THEN
+    RETURN NEW;
+  END IF;
+
+  v_rate := NULLIF(btrim(COALESCE(v_row ->> v_rate_col, '')), '')::numeric;
+  -- (٢) ولا يُخترَعُ سعرٌ لينجىَ صفّاً — يُترَكُ ليرفضَه القاضى بصوتٍ عالٍ.
+  IF v_rate IS NULL OR v_rate <= 0 THEN
+    RETURN NEW;
+  END IF;
+
+  -- والتقريبُ من بيتِ خاناتِ العملةِ الواحد، فيقعُ داخلَ سماحِ القاضى بالضرورة.
+  NEW := jsonb_populate_record(NEW, jsonb_build_object(
+    v_base_col, round(v_amt * v_rate, public.erp_currency_decimals(v_home))));
 
   RETURN NEW;
 END

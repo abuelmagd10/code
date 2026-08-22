@@ -5,6 +5,7 @@
  * v3.75.84 — **ولا يُسجَّلُ مالٌ بعملةٍ لم تُترجَم.**
  * v3.75.85 — **وتكلفةُ الصنفِ تُقاسُ بعملةِ الدفترِ لا بعملةِ البائع.**
  * v3.75.86 — **ولا يُقيَّدُ فى الدفترِ رقمٌ بعملةِ البائع.**
+ * v3.75.87 — **وتُولَدُ الترجمةُ مع المال.**
  *
  * ═══ الحادثةُ التى وُلد منها هذا الحارس ═══
  *
@@ -46,7 +47,7 @@
  * جديدٌ يحملُ عملةً ولا يمرُّ عليه القانون، **ولا يتغيّرُ حرفٌ فى المستودع**.
  * ولا سبيلَ إلّا سؤالُ القاعدةِ الحيّةِ فى كلِّ إصدار.
  *
- * ═══ القوانينُ السبعة ═══
+ * ═══ القوانينُ الثمانية ═══
  *
  *   ‏(١) **البيتُ قائمٌ ومحصَّن**: `erp_foreign_money_is_translated` موجودةٌ
  *       بصلاحيّاتٍ كاملةٍ وبمسارِ بحثٍ مضبوط.
@@ -78,6 +79,14 @@
  *       حركةِ المخزون. ثمّ يُقاسُ حيّاً: **لا قيدَ لفاتورةٍ أجنبيّةٍ بلا عملتِها**،
  *       **ولا قيدٌ مُترجَمٌ يخالفُ أصلَه × سعرَه**، **ولا حركةُ شراءٍ جديدةٌ بلا
  *       عملتِها** فوقَ الدَّينِ القديمِ المُثبَّت.
+ *   ‏(٨) **وتُولَدُ الترجمةُ مع المال** (v3.75.87): قِيسَ أنَّ **ثلاثةَ مواضعَ فى
+ *       الشيفرةِ تضربُ بيدِها** وفاتورةُ الشراءِ لا موضعَ لها، فصارَ الملءُ بيتاً
+ *       واحداً فى القاعدة: `erp_foreign_money_is_translated_at_birth` يملأُ
+ *       الفراغَ من سعرِ المستندِ نفسِه مُقرَّباً بخاناتِ عملةِ الأساس. **وثلاثةٌ
+ *       لا يفعلُها عمداً**: لا يلمسُ عملةَ الأساس · **ولا يخترعُ سعراً لينجىَ
+ *       صفّاً** (فيُترَكُ ليرفضَه القاضى) · **ولا يُصحِّحُ رقماً كتبَه المُنادى**
+ *       (وحارسٌ يُصلحُ ما يُحاكِمُه لا يُمسكُ أحداً). **والترتيبُ نفسُه قانون**:
+ *       يقعُ بينَ بيتِ العملةِ وبيتِ الحكم — **ويُقاسُ من القاعدةِ لا يُفترَض**.
  *
  * ═══ وبيتٌ واحدٌ لكلِّ سؤال ═══
  *
@@ -167,6 +176,16 @@ const MOVEMENT_HOME = "fn_set_purchase_movement_landed_cost"
  * كلُّ حركةِ شراءٍ جديدةٍ تحملُ عملتَها وسعرَها من فاتورتِها.
  */
 const PINNED_LEGACY_PURCHASE_MOVES = 13
+
+/** بيتُ ملءِ الترجمةِ عندَ الميلاد — يقعُ بينَ بيتِ العملةِ وبيتِ الحكم. */
+const BIRTH_FILL = "erp_foreign_money_is_translated_at_birth"
+
+/** أسماءُ المُشغِّلاتِ الثلاثةِ على المستندِ الواحد، **بترتيبِها الواجب**. */
+const TRIGGER_ORDER = [
+  "ab_currency_asked_at_birth",
+  "abb_foreign_money_is_translated_at_birth",
+  "ac_foreign_money_is_translated",
+]
 
 // ═══════════════════════════════════════════════════════════════════════════
 // الجزءُ الخالصُ من المنطق — يُختبَرُ بلا قرصٍ ولا قاعدة
@@ -394,14 +413,86 @@ function judgeTheMovementHome(defs) {
   return problems
 }
 
+/**
+ * **وتُولَدُ الترجمةُ مع المال** — v3.75.87.
+ * @param {string[]} defs أجسادُ كلِّ صيغةٍ منشورةٍ من بيتِ الملء
+ * @returns {string[]}
+ */
+function judgeTheBirthFill(defs) {
+  const problems = []
+  const list = (Array.isArray(defs) ? defs : []).filter(Boolean)
+  if (list.length === 0) {
+    problems.push(
+      `${BIRTH_FILL} غائبٌ من القاعدة — **فيُولَدُ المالُ الأجنبىُّ بلا ترجمةٍ ويُرفَض**.`)
+    return problems
+  }
+  if (list.length > 1) {
+    problems.push(`${BIRTH_FILL} له ${list.length} صيغةً منشورة — **وبيتانِ للملءِ يفترقانِ يوماً**.`)
+  }
+  for (const def of list) {
+    const body = maskSqlComments(def)
+    if (!/erp_company_base_currency\s*\(/i.test(body)) {
+      problems.push(`${BIRTH_FILL} لا يسألُ بيتَ عملةِ الأساس — **ولا تُخترَعُ عملةُ أساسٍ بيد**.`)
+    }
+    if (!/erp_currency_decimals\s*\(/i.test(body)) {
+      problems.push(
+        `${BIRTH_FILL} لا يقرأُ خاناتِ العملةِ من بيتِها — ` +
+        "**وتقريبٌ بيدٍ يقعُ خارجَ سماحِ القاضى فيرفضُ ما ملأَه أخوه**.")
+    }
+    // **ولا يخترعُ سعراً لينجىَ صفّاً**.
+    if (!/<=\s*0/.test(body)) {
+      problems.push(
+        `${BIRTH_FILL} لا يمتنعُ عن سعرٍ غيرِ موجب — ` +
+        "**وبابٌ يُفتَحُ بسعرٍ مُخترَعٍ أسوأُ من بابٍ مُقفَل**.")
+    }
+    // **ولا يُصحِّحُ قولَ المُنادى صامتاً**: مبلغٌ مكتوبٌ يخرجُ كما دخل.
+    if (!/IS\s+NOT\s+NULL[\s\S]{0,120}RETURN\s+NEW/i.test(body)) {
+      problems.push(
+        `${BIRTH_FILL} لا يترُكُ المبلغَ المكتوبَ كما هو — ` +
+        "**وحارسٌ يُصلحُ ما يُحاكِمُه لا يُمسكُ أحداً أبداً**.")
+    }
+    // ولا يلمسُ عملةَ الأساس.
+    if (!/v_ccy\s*=\s*v_home/.test(body)) {
+      problems.push(
+        `${BIRTH_FILL} لا يستثنى مستندَ عملةِ الأساس — **ولا تُترجَمُ عملةٌ إلى نفسِها**.`)
+    }
+  }
+  return problems
+}
+
+/**
+ * **والترتيبُ نفسُه قانون**: يُملأُ الفراغُ بعدَ أن تُعرَفَ العملةُ وقبلَ أن يُحكَم.
+ * @param {string[]} names أسماءُ مُشغِّلاتِ المستندِ كما هى فى القاعدة
+ * @param {string} tbl اسمُ الجدولِ للرسالة
+ * @returns {string[]}
+ */
+function judgeTriggerOrder(names, tbl) {
+  const problems = []
+  const present = TRIGGER_ORDER.filter((n) => (names || []).includes(n))
+  for (const want of TRIGGER_ORDER) {
+    if (!present.includes(want)) {
+      problems.push(`${tbl}: المُشغِّلُ ${want} غائب — **وحلقةٌ ناقصةٌ تكسرُ السلسلةَ كلَّها**.`)
+    }
+  }
+  if (present.length === TRIGGER_ORDER.length) {
+    const sorted = [...present].sort()
+    if (sorted.join("|") !== TRIGGER_ORDER.join("|")) {
+      problems.push(
+        `${tbl}: ترتيبُ المُشغِّلاتِ ${sorted.join(" ثمّ ")} وليس ` +
+        `${TRIGGER_ORDER.join(" ثمّ ")} — **ومَن يحكمُ قبلَ أن يُملأَ الفراغُ يرفضُ البرىء**.`)
+    }
+  }
+  return problems
+}
+
 // **ولا يُنسَخُ حكمٌ ليُقاسَ به**: من استوردَ هذا الملفَّ أخذَ دوالَّ الحارسِ عينَها.
 if (require.main !== module) {
   module.exports = {
     LAW, CURRENCY_HOME, MUST_CARRY_THE_LAW, PINNED_CANNOT_TRANSLATE,
     COST_HOME, RATE_COLUMN, RATE_VAR, ALLOC_VAR,
-    POSTING_DOOR, MOVEMENT_HOME, PINNED_LEGACY_PURCHASE_MOVES,
+    POSTING_DOOR, MOVEMENT_HOME, PINNED_LEGACY_PURCHASE_MOVES, BIRTH_FILL, TRIGGER_ORDER,
     maskSqlComments, judgeTheLaw, judgeRoster, judgeInstallation, judgeTheCostHome,
-    judgeThePostingDoor, judgeTheMovementHome,
+    judgeThePostingDoor, judgeTheMovementHome, judgeTheBirthFill, judgeTriggerOrder,
   }
   return
 }
@@ -549,6 +640,47 @@ if (process.argv.includes("--selftest")) {
     judgeTheMovementHome([GOOD_MOVE.replace(/NEW\.original_unit_cost[^;]*;/, "")]).length, 1)
   t("ويرفضُ غيابَ بيتِ الحركةِ كلِّه", judgeTheMovementHome([]).length, 1)
   t("والدَّينُ القديمُ ثلاثَ عشرةَ حركةً كما قِيست", PINNED_LEGACY_PURCHASE_MOVES, 13)
+
+  // ── (٨) بيتُ ملءِ الترجمةِ عندَ الميلاد ──────────────────────────────────
+  const GOOD_FILL = `
+    BEGIN
+      v_home := public.erp_company_base_currency(x);
+      IF v_home = '' OR v_ccy = v_home THEN RETURN NEW; END IF;
+      IF v_base IS NOT NULL THEN RETURN NEW; END IF;
+      IF v_rate IS NULL OR v_rate <= 0 THEN RETURN NEW; END IF;
+      NEW := jsonb_populate_record(NEW, jsonb_build_object(
+        v_base_col, round(v_amt * v_rate, public.erp_currency_decimals(v_home))));
+      RETURN NEW;
+    END`
+
+  t("يُبرِّئُ بيتَ ملءٍ يسألُ البيوتَ ولا يخترعُ ولا يُصحِّح", judgeTheBirthFill([GOOD_FILL]).length, 0)
+  t("ويرفضُ غيابَ بيتِ الملءِ كلِّه", judgeTheBirthFill([]).length, 1)
+  t("ويرفضُ بيتَين للملء", judgeTheBirthFill([GOOD_FILL, GOOD_FILL]).length > 0, true)
+  t("ويرفضُ من يخترعُ عملةَ الأساسِ بيدِه",
+    judgeTheBirthFill([GOOD_FILL.replace("public.erp_company_base_currency(x)", "'EGP'")]).length, 1)
+  t("ويرفضُ تقريباً مكتوباً بيد — فيقعُ خارجَ سماحِ القاضى",
+    judgeTheBirthFill([GOOD_FILL.replace("public.erp_currency_decimals(v_home)", "2")]).length, 1)
+  t("**ويرفضُ من يملأُ بسعرٍ غيرِ موجب** — وبابٌ بسعرٍ مُخترَعٍ أسوأُ من بابٍ مُقفَل",
+    judgeTheBirthFill([GOOD_FILL.replace("v_rate IS NULL OR v_rate <= 0", "false")]).length, 1)
+  t("**ويرفضُ من يُصحِّحُ رقماً كتبَه المُنادى** — وحارسٌ يُصلحُ ما يُحاكِمُه لا يُمسكُ أحداً",
+    judgeTheBirthFill([GOOD_FILL.replace("IF v_base IS NOT NULL THEN RETURN NEW; END IF;", "")]).length, 1)
+  t("ويرفضُ من يلمسُ مستندَ عملةِ الأساس",
+    judgeTheBirthFill([GOOD_FILL.replace("v_home = '' OR v_ccy = v_home", "false")]).length, 1)
+  t("ولا يخدعُه بيتٌ كلُّه فى تعليق",
+    judgeTheBirthFill(["-- erp_company_base_currency( erp_currency_decimals( <= 0 IS NOT NULL RETURN NEW v_ccy = v_home"]).length > 0, true)
+
+  // ── الترتيبُ نفسُه قانون ─────────────────────────────────────────────────
+  t("يُبرِّئُ الترتيبَ الواجب", judgeTriggerOrder(TRIGGER_ORDER, "bills").length, 0)
+  t("ولا يخدعُه وجودُ مُشغِّلاتٍ أخرى بينَها",
+    judgeTriggerOrder(["aa_other", ...TRIGGER_ORDER, "zz_audit"], "bills").length, 0)
+  t("ويمسكُ غيابَ بيتِ الملءِ من الجدول",
+    judgeTriggerOrder([TRIGGER_ORDER[0], TRIGGER_ORDER[2]], "bills").length, 1)
+  t("ويمسكُ غيابَ القاضى", judgeTriggerOrder([TRIGGER_ORDER[0], TRIGGER_ORDER[1]], "bills").length, 1)
+  t("ويمسكُ غيابَ الثلاثةِ جميعاً", judgeTriggerOrder([], "bills").length, 3)
+  t("**ويمسكُ اسماً يُرتِّبُ الملءَ بعدَ الحكم** — فيرفضُ البرىء",
+    judgeTriggerOrder([TRIGGER_ORDER[0], TRIGGER_ORDER[2], "ad_fill_after_the_judge"], "bills").length, 1)
+  t("والأسماءُ الثلاثةُ مرتَّبةٌ أبجديّاً كما كُتبت — وإلّا فالقانونُ يُناقضُ نفسَه",
+    [...TRIGGER_ORDER].sort().join("|"), TRIGGER_ORDER.join("|"))
 
   let fail = 0
   for (const [name, got, exp] of cases) {
@@ -782,6 +914,41 @@ const notes = []
         "**والتاريخُ لا يُجمَّل**: يُحدَّثُ PINNED_LEGACY_PURCHASE_MOVES فى الدفعةِ التى استحقَّت النقصان.")
     }
 
+    // ── (٨) وتُولَدُ الترجمةُ مع المال ──────────────────────────────────────
+    const { rows: fillRows } = await client.query(
+      `SELECT pg_get_functiondef(p.oid) AS def, p.prosecdef,
+              array_to_string(COALESCE(p.proconfig, ARRAY[]::text[]), ',') AS cfg,
+              COALESCE(array_to_string(p.proacl, ','), '(default)') AS acl
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public' AND p.proname = $1`, [BIRTH_FILL])
+    problems.push(...judgeTheBirthFill(fillRows.map((r) => r.def)))
+    for (const r of fillRows) {
+      if (!r.prosecdef) {
+        problems.push(`${BIRTH_FILL} ليس بصلاحيّاتٍ كاملة — فقد لا يقرأُ عملةَ الأساسِ لكلِّ مُنادٍ.`)
+      }
+      if (!/search_path=/.test(r.cfg)) {
+        problems.push(`${BIRTH_FILL} بلا مسارِ بحثٍ مضبوط — **وبابٌ بصلاحيّاتٍ كاملةٍ بلا مسارٍ يُزوَّرُ اسمُه**.`)
+      }
+      // **ولا يُفتَحُ بابٌ لم يُطلَبْ فتحُه** — يُسوَّى بأخيه القاضى بالضبط.
+      if (/\banon=/.test(r.acl) || /\bauthenticated=/.test(r.acl) || /^=/.test(r.acl) || /,=/.test(r.acl)) {
+        problems.push(
+          `${BIRTH_FILL} يبلغُه زائرٌ أو مستخدِمٌ مسجَّل (${r.acl}) — ` +
+          "**وهو مُشغِّلٌ لا ينادِيه إنسان، فيُسوَّى بأخيه لا أوسع**.")
+      }
+    }
+
+    // **والترتيبُ يُقاسُ من القاعدةِ لا يُفترَض** — على كلِّ مستندٍ يحملُ القانون.
+    for (const tbl of Object.keys(MUST_CARRY_THE_LAW).sort()) {
+      const { rows: tnames } = await client.query(
+        `SELECT t.tgname
+           FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE NOT t.tgisinternal AND n.nspname = 'public' AND c.relname = $1`, [tbl])
+      problems.push(...judgeTriggerOrder(tnames.map((x) => x.tgname), tbl))
+    }
+
+    notes.push(`  بيتُ ملءِ الترجمة: صيغةٌ منشورة=${fillRows.length} · صلاحيّاتُه=${(fillRows[0] || {}).acl || "—"} · والترتيبُ (عملةٌ ثمّ ملءٌ ثمّ حكم) مقيسٌ على المستنداتِ الأربعة`)
+
     notes.push(`  بابُ الترحيل: صيغةٌ منشورة=${doorRows.length} · بيتُ حركةِ الشراء=${moveRows.length} · قيودٌ أجنبيّةٌ بلا عملتِها=${silent[0].n} (المطلوبُ صفر) · قيودٌ مُترجَمةٌ حُوسبت=${df.judged} تُخالفُ أصلَها=${df.off} غيرُ متوازنة=${df.unbalanced} · حركاتُ شراءٍ بلا عملة=${lg} (المُثبَّت ${PINNED_LEGACY_PURCHASE_MOVES})`)
 
     notes.push(`  مستنداتٌ تحملُ عملة: ${carriers.length} · تحملُ القانون: ${Object.keys(installed).length} · لا تستطيعُ الترجمة: ${cannot.length} (المُثبَّت ${PINNED_CANNOT_TRANSLATE.length})`)
@@ -794,6 +961,7 @@ const notes = []
     console.error("  انظر supabase/migrations/20260822000032_v3_75_84_no_money_is_recorded_in_a_currency_that_was_not_translated.sql")
     console.error("  و supabase/migrations/20260822000034_v3_75_85_the_cost_is_measured_in_the_ledgers_currency_not_the_sellers.sql")
     console.error("  و supabase/migrations/20260822000035_v3_75_86_no_number_is_posted_to_the_ledger_in_the_sellers_currency.sql")
+    console.error("  و supabase/migrations/20260822000036_v3_75_87_the_translation_is_born_with_the_money.sql")
     process.exit(1)
   }
 
@@ -803,5 +971,6 @@ const notes = []
     "ولا يخترعُ رقماً · ومُركَّبٌ على المستنداتِ الأربعةِ التى تستطيعُ الترجمةَ إنشاءً وتعديلاً · " +
     "ومن لا يستطيعُ معدودٌ بالاسمِ لا مسكوتٌ عنه · ولا صفَّ قائمٌ يُخالفُه · " +
     "**وبيتُ التكلفةِ المُنزَلةِ يسألُ سعرَ الصرفِ ويُترجِمُ كلَّ مخرجٍ له، وحفظُ المجموعِ مقيسٌ لا موعود** · " +
-    "**ولا يُقيَّدُ فى الدفترِ رقمٌ بعملةِ البائع: البابُ يضربُ فى السعرِ ويحفظُ الأصل، ولا قيدَ أجنبىٌّ بلا عملتِه**.")
+    "**ولا يُقيَّدُ فى الدفترِ رقمٌ بعملةِ البائع: البابُ يضربُ فى السعرِ ويحفظُ الأصل، ولا قيدَ أجنبىٌّ بلا عملتِه** · " +
+    "**وتُولَدُ الترجمةُ مع المال: بيتٌ واحدٌ يملأُ الفراغَ ولا يخترعُ سعراً ولا يُصحِّحُ قولَ مُنادٍ، والترتيبُ مقيسٌ لا مفترَض**.")
 })().catch((e) => { console.error(`X ${e.message}`); process.exit(1) })
