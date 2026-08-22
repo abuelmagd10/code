@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-22T13:22:24.860Z
+-- Generated: 2026-08-22T14:23:57.919Z
 -- Routines: 1417
 -- =====================================================================
 
@@ -29635,6 +29635,8 @@ CREATE OR REPLACE FUNCTION public.fn_set_purchase_movement_landed_cost()
 AS $function$
 DECLARE
   v_cost NUMERIC;
+  v_rate NUMERIC;
+  v_ccy  TEXT;
 BEGIN
   -- يخصّ الشراء وحده. باقى الأنواع لها مصادر تكلفتها.
   IF NEW.transaction_type <> 'purchase' THEN
@@ -29660,6 +29662,23 @@ BEGIN
 
   NEW.unit_cost  := v_cost;
   NEW.total_cost := ROUND(COALESCE(NEW.quantity_change, 0) * v_cost, 6);
+
+  -- v3.75.86 — وبكم اشتريناه بعملةِ البائع؟ سؤالٌ لا بدّ له من جواب.
+  SELECT upper(btrim(COALESCE(b.currency_code, ''))),
+         CASE WHEN COALESCE(b.exchange_rate, 1) > 0 THEN COALESCE(b.exchange_rate, 1) ELSE 1 END
+    INTO v_ccy, v_rate
+  FROM public.bills b
+  WHERE b.id = NEW.reference_id;
+
+  IF v_ccy IS NULL OR v_ccy = '' OR v_rate IS NULL OR v_rate <= 0 THEN
+    RETURN NEW;
+  END IF;
+
+  NEW.original_currency   := v_ccy;
+  NEW.exchange_rate_used  := v_rate;
+  NEW.original_unit_cost  := ROUND(v_cost / v_rate, 6);
+  NEW.original_total_cost := ROUND(COALESCE(NEW.quantity_change, 0) * (v_cost / v_rate), 6);
+
   RETURN NEW;
 END;
 $function$
@@ -48676,6 +48695,13 @@ DECLARE
   v_result JSONB := '{}'::JSONB;
   v_journal_entry_id UUID;
   v_receipt_status TEXT;
+  -- v3.75.86 — عملةُ الفاتورةِ وسعرُها وعملةُ الدفتر.
+  v_ccy     TEXT;
+  v_home    TEXT;
+  v_rate    NUMERIC := 1;
+  v_foreign BOOLEAN := false;
+  v_odr     NUMERIC := 0;
+  v_ocr     NUMERIC := 0;
 BEGIN
   PERFORM public.assert_company_access(p_company_id);
   PERFORM set_config('app.allow_direct_post', 'true', true);
@@ -48700,10 +48726,29 @@ BEGIN
     RAISE EXCEPTION 'v3.74.955: هذا المستندُ له قيدٌ مُقيَّدٌ سلفاً — لا يُقيَّد مرتين. حدّث الصفحة.';
   END IF;
 
+  -- تُقرَأُ العملةُ مرّةً واحدةً من الفاتورةِ نفسِها، وعملةُ الأساسِ من بيتِها
+  -- الواحد. **ولا يُترجَمُ إلّا ما يخالفُ عملةَ الدفتر.**
+  SELECT upper(btrim(COALESCE(b.currency_code, ''))),
+         CASE WHEN COALESCE(b.exchange_rate, 1) > 0 THEN COALESCE(b.exchange_rate, 1) ELSE 1 END
+    INTO v_ccy, v_rate
+    FROM public.bills b
+   WHERE b.id = p_bill_id;
+
+  v_home := upper(btrim(COALESCE(public.erp_company_base_currency(p_company_id), '')));
+  v_foreign := (COALESCE(v_ccy, '') <> '' AND v_home <> '' AND v_ccy <> v_home AND COALESCE(v_rate, 0) > 0);
+
   IF p_journal_entry IS NOT NULL THEN
+    IF v_foreign AND p_journal_entry->'lines' IS NOT NULL THEN
+      SELECT COALESCE(SUM(COALESCE((line->>'debit_amount')::NUMERIC, 0)), 0),
+             COALESCE(SUM(COALESCE((line->>'credit_amount')::NUMERIC, 0)), 0)
+        INTO v_odr, v_ocr
+        FROM jsonb_array_elements(p_journal_entry->'lines') AS line;
+    END IF;
+
     INSERT INTO public.journal_entries (
       company_id, branch_id, cost_center_id, entry_date, description,
-      reference_type, reference_id, status
+      reference_type, reference_id, status,
+      original_currency, exchange_rate, original_total_debit, original_total_credit
     ) VALUES (
       p_company_id,
       NULLIF(p_journal_entry->>'branch_id', '')::UUID,
@@ -48712,24 +48757,51 @@ BEGIN
       p_journal_entry->>'description',
       COALESCE(NULLIF(p_journal_entry->>'reference_type', ''), 'bill'),
       COALESCE(NULLIF(p_journal_entry->>'reference_id', '')::UUID, p_bill_id),
-      COALESCE(NULLIF(p_journal_entry->>'status', ''), 'posted')
+      COALESCE(NULLIF(p_journal_entry->>'status', ''), 'posted'),
+      CASE WHEN v_foreign THEN v_ccy ELSE NULL END,
+      CASE WHEN v_foreign THEN v_rate ELSE 1 END,
+      CASE WHEN v_foreign THEN v_odr ELSE NULL END,
+      CASE WHEN v_foreign THEN v_ocr ELSE NULL END
     )
     RETURNING id INTO v_journal_entry_id;
 
     IF p_journal_entry->'lines' IS NOT NULL THEN
+      -- جملةٌ واحدة: تُضرَبُ السطورُ فى السعرِ وتُقرَّب، ويُحسَبُ كسرُ الجانبَين،
+      -- ويُوضَعُ كلُّه على سطرِ الدائنِ الأكبرِ **قبلَ أن يُكتَبَ حرف**.
+      WITH src AS (
+        SELECT (row_number() OVER ())::int AS ord,
+               line,
+               COALESCE((line->>'debit_amount')::NUMERIC, 0)  AS od,
+               COALESCE((line->>'credit_amount')::NUMERIC, 0) AS oc,
+               CASE WHEN v_foreign
+                    THEN ROUND(COALESCE((line->>'debit_amount')::NUMERIC, 0) * v_rate, 4)
+                    ELSE COALESCE((line->>'debit_amount')::NUMERIC, 0) END AS d,
+               CASE WHEN v_foreign
+                    THEN ROUND(COALESCE((line->>'credit_amount')::NUMERIC, 0) * v_rate, 4)
+                    ELSE COALESCE((line->>'credit_amount')::NUMERIC, 0) END AS c
+          FROM jsonb_array_elements(p_journal_entry->'lines') AS line
+      ),
+      residue AS (SELECT COALESCE(SUM(d), 0) - COALESCE(SUM(c), 0) AS r FROM src),
+      carrier AS (SELECT ord FROM src WHERE c > 0 ORDER BY c DESC, ord LIMIT 1)
       INSERT INTO public.journal_entry_lines (
         journal_entry_id, account_id, description, debit_amount, credit_amount,
-        branch_id, cost_center_id
+        branch_id, cost_center_id,
+        original_debit, original_credit, original_currency, exchange_rate_used
       )
       SELECT
         v_journal_entry_id,
-        (line->>'account_id')::UUID,
-        line->>'description',
-        COALESCE((line->>'debit_amount')::NUMERIC, 0),
-        COALESCE((line->>'credit_amount')::NUMERIC, 0),
-        NULLIF(line->>'branch_id', '')::UUID,
-        NULLIF(line->>'cost_center_id', '')::UUID
-      FROM jsonb_array_elements(p_journal_entry->'lines') AS line;
+        (src.line->>'account_id')::UUID,
+        src.line->>'description',
+        src.d,
+        src.c + CASE WHEN src.ord = (SELECT ord FROM carrier)
+                     THEN (SELECT r FROM residue) ELSE 0 END,
+        NULLIF(src.line->>'branch_id', '')::UUID,
+        NULLIF(src.line->>'cost_center_id', '')::UUID,
+        CASE WHEN v_foreign THEN src.od ELSE NULL END,
+        CASE WHEN v_foreign THEN src.oc ELSE NULL END,
+        CASE WHEN v_foreign THEN v_ccy ELSE NULL END,
+        CASE WHEN v_foreign THEN v_rate ELSE 1 END
+      FROM src;
     END IF;
 
     v_result := jsonb_set(v_result, '{journal_entry_id}', to_jsonb(v_journal_entry_id), true);

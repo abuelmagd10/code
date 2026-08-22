@@ -4,6 +4,7 @@
  * ---------------------------------------------------------------------------
  * v3.75.84 — **ولا يُسجَّلُ مالٌ بعملةٍ لم تُترجَم.**
  * v3.75.85 — **وتكلفةُ الصنفِ تُقاسُ بعملةِ الدفترِ لا بعملةِ البائع.**
+ * v3.75.86 — **ولا يُقيَّدُ فى الدفترِ رقمٌ بعملةِ البائع.**
  *
  * ═══ الحادثةُ التى وُلد منها هذا الحارس ═══
  *
@@ -45,7 +46,7 @@
  * جديدٌ يحملُ عملةً ولا يمرُّ عليه القانون، **ولا يتغيّرُ حرفٌ فى المستودع**.
  * ولا سبيلَ إلّا سؤالُ القاعدةِ الحيّةِ فى كلِّ إصدار.
  *
- * ═══ القوانينُ الستّة ═══
+ * ═══ القوانينُ السبعة ═══
  *
  *   ‏(١) **البيتُ قائمٌ ومحصَّن**: `erp_foreign_money_is_translated` موجودةٌ
  *       بصلاحيّاتٍ كاملةٍ وبمسارِ بحثٍ مضبوط.
@@ -67,6 +68,16 @@
  *       **وكلُّ مخرجٍ مُترجَمٌ بما فيه طريقُ الاحتياط**. ثمّ يُقاسُ حيّاً حفظُ
  *       المجموع: تكاليفُ أصنافِ الفاتورةِ تُساوى (القيمة + الشحن) × السعر —
  *       **وهو الوعدُ الذى وُلد له هذا البيتُ منذ v3.74.704**.
+ *   ‏(٧) **ولا يُقيَّدُ فى الدفترِ رقمٌ بعملةِ البائع** (v3.75.86): صِدقُ التكلفةِ
+ *       لا يكفى إن كذبَ القيد. `post_bill_receipt_atomic` هو البابُ الذى يكتبُ
+ *       قيدَ فاتورةِ الشراءِ وحركةَ مخزونِها، فيجبُ أن **يقرأَ سعرَ الفاتورةِ
+ *       ويسألَ بيتَ عملةِ الأساس**، وأن **يضربَ سطورَ القيدَ فيه**، وأن **يحفظَ
+ *       الأصلَ بعملةِ البائع** (`original_debit` · `original_credit` ·
+ *       `original_currency` · `exchange_rate_used`) — **فرقمٌ مُترجَمٌ بلا أصلٍ
+ *       محفوظٍ لا يُراجَع**. و`fn_set_purchase_movement_landed_cost` مثلُه فى
+ *       حركةِ المخزون. ثمّ يُقاسُ حيّاً: **لا قيدَ لفاتورةٍ أجنبيّةٍ بلا عملتِها**،
+ *       **ولا قيدٌ مُترجَمٌ يخالفُ أصلَه × سعرَه**، **ولا حركةُ شراءٍ جديدةٌ بلا
+ *       عملتِها** فوقَ الدَّينِ القديمِ المُثبَّت.
  *
  * ═══ وبيتٌ واحدٌ لكلِّ سؤال ═══
  *
@@ -143,6 +154,19 @@ const COST_HOME = "fn_bill_item_landed_unit_cost"
 const RATE_COLUMN = "exchange_rate"
 const RATE_VAR = "v_rate"
 const ALLOC_VAR = "v_allocatable"
+
+/** بابُ ترحيلِ فاتورةِ الشراءِ الواحد — منه يُكتَبُ القيدُ وحركةُ المخزون. */
+const POSTING_DOOR = "post_bill_receipt_atomic"
+
+/** بيتُ تكلفةِ حركةِ الشراء — يُترجِمُ منذ v3.75.85 ويحفظُ الأصلَ منذ v3.75.86. */
+const MOVEMENT_HOME = "fn_set_purchase_movement_landed_cost"
+
+/**
+ * **حركاتُ شراءٍ وُلدت قبلَ أن يُسأَلَ السؤال** — قِيست يومَ ٢٢ أغسطس ٢٠٢٦:
+ * ثلاثَ عشرةَ حركةَ شراءٍ بلا عملةٍ أصليّة، أحدثُها ٣١ يوليو ٢٠٢٦. **لا تنمو**:
+ * كلُّ حركةِ شراءٍ جديدةٍ تحملُ عملتَها وسعرَها من فاتورتِها.
+ */
+const PINNED_LEGACY_PURCHASE_MOVES = 13
 
 // ═══════════════════════════════════════════════════════════════════════════
 // الجزءُ الخالصُ من المنطق — يُختبَرُ بلا قرصٍ ولا قاعدة
@@ -291,12 +315,93 @@ function judgeTheCostHome(defs) {
   return problems
 }
 
+/**
+ * **ولا يُقيَّدُ فى الدفترِ رقمٌ بعملةِ البائع** — v3.75.86.
+ * @param {string[]} defs أجسادُ كلِّ صيغةٍ منشورةٍ من بابِ الترحيل
+ * @returns {string[]}
+ */
+function judgeThePostingDoor(defs) {
+  const problems = []
+  const list = (Array.isArray(defs) ? defs : []).filter(Boolean)
+  if (list.length === 0) {
+    problems.push(`${POSTING_DOOR} غائبٌ من القاعدة — **ومنه يُكتَبُ قيدُ كلِّ فاتورةِ شراء**.`)
+    return problems
+  }
+  if (list.length > 1) {
+    problems.push(
+      `${POSTING_DOOR} له ${list.length} صيغةً منشورة — **وبابانِ لقيدٍ واحدٍ يفترقانِ يوماً**.`)
+  }
+  for (const def of list) {
+    const body = maskSqlComments(def)
+    // **والاسمُ المركَّبُ ليس الاسم**: `exchange_rate_used` عمودُ حفظٍ لا قراءةُ سعر.
+    if (!new RegExp(`\\b${RATE_COLUMN}\\b`, "i").test(body)) {
+      problems.push(
+        `${POSTING_DOOR} لا يقرأُ ${RATE_COLUMN} من الفاتورة — ` +
+        "**فيدخلُ رقمُ البائعِ الدفترَ كأنّه بعملةِ الأساسِ ولا يصرخُ أحد**.")
+      continue
+    }
+    if (!/FROM\s+public\.bills\b/i.test(body)) {
+      problems.push(
+        `${POSTING_DOOR} لا يقرأُ الفاتورةَ نفسَها — **ولا يُؤخَذُ سعرُ الصرفِ ممّا يُرسِلُه المُنادى**.`)
+    }
+    if (!/erp_company_base_currency\s*\(/i.test(body)) {
+      problems.push(
+        `${POSTING_DOOR} لا يسألُ بيتَ عملةِ الأساس — **ولا تُخترَعُ عملةُ أساسٍ بيد**.`)
+    }
+    if (!new RegExp(`\\*\\s*${RATE_VAR}\\b`).test(body)) {
+      problems.push(
+        `${POSTING_DOOR} لا يضربُ سطورَ القيدِ فى ${RATE_VAR} — **فالقيدُ بعملةِ البائع**.`)
+    }
+    for (const col of ["original_debit", "original_credit", "original_currency", "exchange_rate_used"]) {
+      if (!new RegExp(`\\b${col}\\b`).test(body)) {
+        problems.push(
+          `${POSTING_DOOR} لا يحفظُ ${col} — **ورقمٌ مُترجَمٌ بلا أصلٍ محفوظٍ لا يُراجَعُ أبداً**.`)
+      }
+    }
+  }
+  return problems
+}
+
+/**
+ * **وحركةُ المخزونِ تحفظُ أصلَها كما تحفظُ المُترجَم** — v3.75.86.
+ * @param {string[]} defs
+ * @returns {string[]}
+ */
+function judgeTheMovementHome(defs) {
+  const problems = []
+  const list = (Array.isArray(defs) ? defs : []).filter(Boolean)
+  if (list.length === 0) {
+    problems.push(`${MOVEMENT_HOME} غائبٌ من القاعدة — **ومنه تُسعَّرُ حركةُ الشراء**.`)
+    return problems
+  }
+  if (list.length > 1) {
+    problems.push(`${MOVEMENT_HOME} له ${list.length} صيغةً منشورة — **وبيتانِ يفترقانِ يوماً**.`)
+  }
+  for (const def of list) {
+    const body = maskSqlComments(def)
+    if (!new RegExp(`${COST_HOME}\\s*\\(`).test(body)) {
+      problems.push(
+        `${MOVEMENT_HOME} لا ينادى ${COST_HOME} — **فصارت للتكلفةِ صيغةٌ ثانية**.`)
+      continue
+    }
+    for (const col of ["original_unit_cost", "original_currency", "exchange_rate_used"]) {
+      if (!new RegExp(`\\b${col}\\b`).test(body)) {
+        problems.push(
+          `${MOVEMENT_HOME} لا يحفظُ ${col} — **فلا يُعرَفُ بكم اشترينا بعملةِ البائع**.`)
+      }
+    }
+  }
+  return problems
+}
+
 // **ولا يُنسَخُ حكمٌ ليُقاسَ به**: من استوردَ هذا الملفَّ أخذَ دوالَّ الحارسِ عينَها.
 if (require.main !== module) {
   module.exports = {
     LAW, CURRENCY_HOME, MUST_CARRY_THE_LAW, PINNED_CANNOT_TRANSLATE,
     COST_HOME, RATE_COLUMN, RATE_VAR, ALLOC_VAR,
+    POSTING_DOOR, MOVEMENT_HOME, PINNED_LEGACY_PURCHASE_MOVES,
     maskSqlComments, judgeTheLaw, judgeRoster, judgeInstallation, judgeTheCostHome,
+    judgeThePostingDoor, judgeTheMovementHome,
   }
   return
 }
@@ -401,6 +506,49 @@ if (process.argv.includes("--selftest")) {
     judgeTheCostHome(["-- exchange_rate v_rate > 0 THEN ELSE 1 v_allocatable"]).length > 0, true)
   t("ويُسمّى بيتَ التكلفةِ فى كلِّ سببٍ يرفعُه",
     judgeTheCostHome(["BEGIN RETURN 1; END"]).every((p) => p.includes(COST_HOME)), true)
+
+  // ── (٧) بابُ الترحيلِ وبيتُ حركةِ المخزون ────────────────────────────────
+  const GOOD_DOOR = `
+    DECLARE v_rate numeric; v_ccy text; v_home text;
+    BEGIN
+      SELECT b.currency_code, b.exchange_rate INTO v_ccy, v_rate FROM public.bills b WHERE b.id = p_bill_id;
+      v_home := public.erp_company_base_currency(p_company_id);
+      INSERT INTO journal_entry_lines (debit_amount, credit_amount, original_debit, original_credit,
+                                       original_currency, exchange_rate_used)
+      SELECT ROUND(x.d * v_rate, 4), ROUND(x.c * v_rate, 4), x.d, x.c, v_ccy, v_rate FROM src x;
+    END`
+
+  const GOOD_MOVE = `
+    BEGIN
+      v_cost := public.fn_bill_item_landed_unit_cost(NEW.reference_id, NEW.product_id);
+      NEW.unit_cost := v_cost;
+      NEW.original_currency := v_ccy;
+      NEW.exchange_rate_used := v_rate;
+      NEW.original_unit_cost := ROUND(v_cost / v_rate, 6);
+    END`
+
+  t("يُبرِّئُ باباً يقرأُ السعرَ ويضربُ ويحفظُ الأصل", judgeThePostingDoor([GOOD_DOOR]).length, 0)
+  t("ويرفضُ غيابَ بابِ الترحيلِ كلِّه", judgeThePostingDoor([]).length, 1)
+  t("ويرفضُ بابَين لقيدٍ واحد", judgeThePostingDoor([GOOD_DOOR, GOOD_DOOR]).length > 0, true)
+  t("ويرفضُ باباً لا يذكرُ عمودَ سعرِ الصرفِ أصلاً",
+    judgeThePostingDoor([GOOD_DOOR.replace(/exchange_rate,/g, "subtotal,").replace(/b\.exchange_rate/g, "b.subtotal")]).length > 0, true)
+  t("ويرفضُ باباً لا يسألُ بيتَ عملةِ الأساس",
+    judgeThePostingDoor([GOOD_DOOR.replace("public.erp_company_base_currency(p_company_id)", "'EGP'")]).length, 1)
+  t("ويرفضُ باباً لا يقرأُ الفاتورةَ نفسَها — ولا يُؤخَذُ السعرُ ممّا يُرسِلُه المُنادى",
+    judgeThePostingDoor([GOOD_DOOR.replace("FROM public.bills b", "FROM nothing n")]).length, 1)
+  t("ويرفضُ باباً لا يضربُ السطورَ فى السعر — فالقيدُ بعملةِ البائع",
+    judgeThePostingDoor([GOOD_DOOR.replace(/ROUND\(x\.d \* v_rate, 4\), ROUND\(x\.c \* v_rate, 4\)/, "x.d, x.c")]).length, 1)
+  t("ويرفضُ باباً يُترجِمُ ولا يحفظُ الأصل — ورقمٌ بلا أصلٍ لا يُراجَع",
+    judgeThePostingDoor([GOOD_DOOR.replace(/original_debit, original_credit,\n\s*original_currency, exchange_rate_used/, "branch_id")]).length, 4)
+  t("ولا يخدعُه بابٌ كلُّه فى تعليق",
+    judgeThePostingDoor(["-- exchange_rate erp_company_base_currency( * v_rate original_debit"]).length > 0, true)
+  t("ويُبرِّئُ بيتَ حركةٍ ينادى بيتَ التكلفةِ ويحفظُ الأصل", judgeTheMovementHome([GOOD_MOVE]).length, 0)
+  t("ويرفضُ بيتَ حركةٍ كفَّ عن نداءِ بيتِ التكلفة — فصارت صيغةٌ ثانية",
+    judgeTheMovementHome([GOOD_MOVE.replace(COST_HOME, "my_own_formula")]).length, 1)
+  t("ويرفضُ بيتَ حركةٍ لا يحفظُ الأصل",
+    judgeTheMovementHome([GOOD_MOVE.replace(/NEW\.original_unit_cost[^;]*;/, "")]).length, 1)
+  t("ويرفضُ غيابَ بيتِ الحركةِ كلِّه", judgeTheMovementHome([]).length, 1)
+  t("والدَّينُ القديمُ ثلاثَ عشرةَ حركةً كما قِيست", PINNED_LEGACY_PURCHASE_MOVES, 13)
 
   let fail = 0
   for (const [name, got, exp] of cases) {
@@ -561,6 +709,81 @@ const notes = []
     }
     notes.push(`  بيتُ التكلفةِ المُنزَلة: صيغةٌ منشورة=${costRows.length} · فواتيرُ حُوسبت=${cn.bills} · بلا تكلفة=${cn.blind} · تُخالفُ حفظَ المجموع=${cn.off} (المطلوبُ صفر) · أسوأُ فرق=${cn.worst}`)
 
+    // ── (٧) ولا يُقيَّدُ فى الدفترِ رقمٌ بعملةِ البائع ───────────────────────
+    const { rows: doorRows } = await client.query(
+      `SELECT pg_get_functiondef(p.oid) AS def
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public' AND p.proname = $1`, [POSTING_DOOR])
+    problems.push(...judgeThePostingDoor(doorRows.map((r) => r.def)))
+
+    const { rows: moveRows } = await client.query(
+      `SELECT pg_get_functiondef(p.oid) AS def
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public' AND p.proname = $1`, [MOVEMENT_HOME])
+    problems.push(...judgeTheMovementHome(moveRows.map((r) => r.def)))
+
+    // **ولا قيدَ لفاتورةٍ أجنبيّةٍ بلا عملتِها** — الصمتُ نفسُه يُقاس.
+    const { rows: silent } = await client.query(
+      `SELECT count(*)::int AS n
+         FROM public.journal_entries e
+         JOIN public.bills b ON b.id = e.reference_id
+        WHERE e.reference_type = 'bill'
+          AND COALESCE(btrim(b.currency_code), '') <> ''
+          AND upper(btrim(b.currency_code))
+              <> upper(COALESCE(public.erp_company_base_currency(b.company_id), ''))
+          AND e.original_currency IS DISTINCT FROM upper(btrim(b.currency_code))`)
+    if (silent[0].n > 0) {
+      problems.push(
+        `${silent[0].n} قيداً لفاتورةٍ بعملةٍ أجنبيّةٍ ولا يحملُ عملتَها — ` +
+        "**وهذا هو الصمتُ بعينِه: رقمُ البائعِ فى دفترِ عملةِ الأساس**.")
+    }
+
+    // **ولا قيدٌ مُترجَمٌ يخالفُ أصلَه × سعرَه** — والسماحُ كسرُ تقريبٍ لا أكثر.
+    const { rows: drift } = await client.query(
+      `WITH t AS (
+         SELECT e.id,
+                COALESCE(e.original_total_debit, 0) * COALESCE(e.exchange_rate, 1) AS expected,
+                (SELECT COALESCE(SUM(l.debit_amount), 0)
+                   FROM public.journal_entry_lines l WHERE l.journal_entry_id = e.id) AS got,
+                (SELECT COALESCE(SUM(l.debit_amount), 0) - COALESCE(SUM(l.credit_amount), 0)
+                   FROM public.journal_entry_lines l WHERE l.journal_entry_id = e.id) AS diff
+           FROM public.journal_entries e
+          WHERE e.original_currency IS NOT NULL
+            AND e.original_total_debit IS NOT NULL
+            AND COALESCE(e.exchange_rate, 1) <> 1)
+       SELECT count(*)::int AS judged,
+              count(*) FILTER (WHERE abs(got - expected) > 0.01)::int AS off,
+              count(*) FILTER (WHERE diff <> 0)::int AS unbalanced
+         FROM t`)
+    const df = drift[0] || { judged: 0, off: 0, unbalanced: 0 }
+    if (df.off > 0) {
+      problems.push(
+        `${df.off} قيداً مُترجَماً لا يُساوى أصلَه × سعرَه — **والترجمةُ إمّا صادقةٌ وإمّا لا تكون**.`)
+    }
+    if (df.unbalanced > 0) {
+      problems.push(`${df.unbalanced} قيداً مُترجَماً غيرُ متوازن — **وكسرُ التقريبِ لا يُترَكُ معلَّقاً**.`)
+    }
+
+    // **وحركةُ شراءٍ بلا عملتِها معدودةٌ لا مسكوتٌ عنها** — ولا تنمو.
+    const { rows: legacy } = await client.query(
+      `SELECT count(*)::int AS n
+         FROM public.inventory_transactions t
+        WHERE t.transaction_type = 'purchase'
+          AND t.original_currency IS NULL
+          AND EXISTS (SELECT 1 FROM public.bills b WHERE b.id = t.reference_id)`)
+    const lg = legacy[0].n
+    if (lg > PINNED_LEGACY_PURCHASE_MOVES) {
+      problems.push(
+        `حركاتُ الشراءِ بلا عملةٍ أصليّة ${lg} والمُثبَّتُ ${PINNED_LEGACY_PURCHASE_MOVES} — ` +
+        "**وحركةٌ جديدةٌ بلا عملتِها تعنى أنَّ البيتَ كفَّ عن السؤال**.")
+    } else if (lg < PINNED_LEGACY_PURCHASE_MOVES) {
+      problems.push(
+        `حركاتُ الشراءِ بلا عملةٍ أصليّة ${lg} والمُثبَّتُ ${PINNED_LEGACY_PURCHASE_MOVES} — ` +
+        "**والتاريخُ لا يُجمَّل**: يُحدَّثُ PINNED_LEGACY_PURCHASE_MOVES فى الدفعةِ التى استحقَّت النقصان.")
+    }
+
+    notes.push(`  بابُ الترحيل: صيغةٌ منشورة=${doorRows.length} · بيتُ حركةِ الشراء=${moveRows.length} · قيودٌ أجنبيّةٌ بلا عملتِها=${silent[0].n} (المطلوبُ صفر) · قيودٌ مُترجَمةٌ حُوسبت=${df.judged} تُخالفُ أصلَها=${df.off} غيرُ متوازنة=${df.unbalanced} · حركاتُ شراءٍ بلا عملة=${lg} (المُثبَّت ${PINNED_LEGACY_PURCHASE_MOVES})`)
+
     notes.push(`  مستنداتٌ تحملُ عملة: ${carriers.length} · تحملُ القانون: ${Object.keys(installed).length} · لا تستطيعُ الترجمة: ${cannot.length} (المُثبَّت ${PINNED_CANNOT_TRANSLATE.length})`)
     notes.push(`  صفوفٌ قائمةٌ تُخالفُ القانون: ${violators} (المطلوبُ صفر)`)
   }, { onAttempt: () => { problems.length = 0; notes.length = 0 } })
@@ -570,6 +793,7 @@ const notes = []
     for (const p of problems) console.error(`  - ${p}`)
     console.error("  انظر supabase/migrations/20260822000032_v3_75_84_no_money_is_recorded_in_a_currency_that_was_not_translated.sql")
     console.error("  و supabase/migrations/20260822000034_v3_75_85_the_cost_is_measured_in_the_ledgers_currency_not_the_sellers.sql")
+    console.error("  و supabase/migrations/20260822000035_v3_75_86_no_number_is_posted_to_the_ledger_in_the_sellers_currency.sql")
     process.exit(1)
   }
 
@@ -578,5 +802,6 @@ const notes = []
     "+ ولا يُسجَّلُ مالٌ بعملةٍ لم تُترجَم: الحكمُ فى بيتٍ واحدٍ يسألُ عملةَ الأساسِ وخاناتِها " +
     "ولا يخترعُ رقماً · ومُركَّبٌ على المستنداتِ الأربعةِ التى تستطيعُ الترجمةَ إنشاءً وتعديلاً · " +
     "ومن لا يستطيعُ معدودٌ بالاسمِ لا مسكوتٌ عنه · ولا صفَّ قائمٌ يُخالفُه · " +
-    "**وبيتُ التكلفةِ المُنزَلةِ يسألُ سعرَ الصرفِ ويُترجِمُ كلَّ مخرجٍ له، وحفظُ المجموعِ مقيسٌ لا موعود**.")
+    "**وبيتُ التكلفةِ المُنزَلةِ يسألُ سعرَ الصرفِ ويُترجِمُ كلَّ مخرجٍ له، وحفظُ المجموعِ مقيسٌ لا موعود** · " +
+    "**ولا يُقيَّدُ فى الدفترِ رقمٌ بعملةِ البائع: البابُ يضربُ فى السعرِ ويحفظُ الأصل، ولا قيدَ أجنبىٌّ بلا عملتِه**.")
 })().catch((e) => { console.error(`X ${e.message}`); process.exit(1) })
