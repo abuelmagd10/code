@@ -3,6 +3,7 @@
  * check-foreign-money-is-translated.js
  * ---------------------------------------------------------------------------
  * v3.75.84 — **ولا يُسجَّلُ مالٌ بعملةٍ لم تُترجَم.**
+ * v3.75.85 — **وتكلفةُ الصنفِ تُقاسُ بعملةِ الدفترِ لا بعملةِ البائع.**
  *
  * ═══ الحادثةُ التى وُلد منها هذا الحارس ═══
  *
@@ -30,13 +31,21 @@
  * مستندٌ بعملةٍ تخالفُ عملةَ الأساسِ يجبُ أن يحملَ سعرَ صرفٍ موجبٍ ومبلغاً
  * مُترجَماً يُطابقُ الأصلَ × السعر — وإلّا رُفض.
  *
+ * ═══ ثمّ عُولجَ العمقُ نفسُه فى v3.75.85 ═══
+ *
+ * وصِدقُ **رأسِ** الفاتورةِ وحدَه لا يكفى. بيتُ التكلفةِ المُنزَلةِ ظلَّ يقرأُ
+ * القيمةَ والشحنَ بلا ضربٍ فى سعرِ الصرف، **ورأسٌ صادقٌ وعمقٌ كاذبٌ أخطرُ من
+ * كذبٍ ظاهرٍ فى الاثنَين**. فصارَ يسألُ سعرَ الصرفَ ويُترجِمُ كلَّ مخرجٍ له،
+ * وقِيسَ قبلَ العلاجِ أنَّ الحسابَ لا يتغيّرُ على الإنتاج: **١٤ زوجاً، صفرٌ منها
+ * يتحرّك**، لأنَّ كلَّ الأسعارِ القائمةِ واحدٌ صحيح.
+ *
  * ═══ ولماذا حارسٌ لا هجرةٌ فقط ═══
  *
  * لأنَّ المُشغِّلَ يُنزَعُ بسطرٍ واحدٍ فى لوحةِ التحكّم، أو يُنشَأُ جدولُ مالٍ
  * جديدٌ يحملُ عملةً ولا يمرُّ عليه القانون، **ولا يتغيّرُ حرفٌ فى المستودع**.
  * ولا سبيلَ إلّا سؤالُ القاعدةِ الحيّةِ فى كلِّ إصدار.
  *
- * ═══ القوانينُ الخمسة ═══
+ * ═══ القوانينُ الستّة ═══
  *
  *   ‏(١) **البيتُ قائمٌ ومحصَّن**: `erp_foreign_money_is_translated` موجودةٌ
  *       بصلاحيّاتٍ كاملةٍ وبمسارِ بحثٍ مضبوط.
@@ -50,6 +59,14 @@
  *       صامتةً (مستندُ مالٍ جديدٌ بعملةٍ بلا ترجمة يُرفَض)، ولا تنقصُ صامتةً
  *       (من نالَ عمودَ ترجمةٍ يُنزَلُ من القائمةِ ويُركَّبُ عليه القانون).
  *   ‏(٥) **ولا صفَّ قائمٌ يُخالفُ القانون** — يُقاسُ حيّاً فى كلِّ إصدار.
+ *   ‏(٦) **وبيتُ التكلفةِ المُنزَلةِ يسألُ سعرَ الصرف** (v3.75.85): من
+ *       `fn_bill_item_landed_unit_cost` تُبنى تكلفةُ وحدةِ الوارد-أوّلاً وتكلفةُ
+ *       حركةِ المخزون، ومنهما تكلفةُ المبيعاتِ ثمّ الربح. **بيتٌ واحدٌ لا صيغتان**
+ *       · يقرأُ `exchange_rate` · **وسعرٌ غيرُ موجبٍ يُقرَأُ كواحدٍ لا كصفرٍ يمحو
+ *       التكلفة** (عطبُ v3.74.702) · والمبلغُ الموزَّعُ مضروبٌ فى السعر ·
+ *       **وكلُّ مخرجٍ مُترجَمٌ بما فيه طريقُ الاحتياط**. ثمّ يُقاسُ حيّاً حفظُ
+ *       المجموع: تكاليفُ أصنافِ الفاتورةِ تُساوى (القيمة + الشحن) × السعر —
+ *       **وهو الوعدُ الذى وُلد له هذا البيتُ منذ v3.74.704**.
  *
  * ═══ وبيتٌ واحدٌ لكلِّ سؤال ═══
  *
@@ -114,6 +131,18 @@ const PINNED_CANNOT_TRANSLATE = [
   "user_bonuses",
   "vendor_refund_requests",
 ]
+
+/**
+ * **بيتُ التكلفةِ المُنزَلةِ الواحد** — منه تُبنى تكلفةُ وحدةِ الوارد-أوّلاً
+ * (`create_fifo_lot_on_purchase`) وتكلفةُ حركةِ المخزون
+ * (`fn_set_purchase_movement_landed_cost`)، **ولا صيغةَ ثانيةَ لهما**.
+ */
+const COST_HOME = "fn_bill_item_landed_unit_cost"
+
+/** عمودُ سعرِ الصرفِ فى الفاتورة، والاسمانِ اللذانِ يحملانِه داخلَ البيت. */
+const RATE_COLUMN = "exchange_rate"
+const RATE_VAR = "v_rate"
+const ALLOC_VAR = "v_allocatable"
 
 // ═══════════════════════════════════════════════════════════════════════════
 // الجزءُ الخالصُ من المنطق — يُختبَرُ بلا قرصٍ ولا قاعدة
@@ -206,11 +235,68 @@ function judgeInstallation(required, installed) {
   return problems
 }
 
+/**
+ * **وبيتُ التكلفةِ المُنزَلةِ يسألُ سعرَ الصرف** — v3.75.85.
+ * يُحكَمُ عليه بأثرِه لا باسمِه: بيتٌ واحدٌ · يقرأُ السعرَ · لا يمحو تكلفةً بسعرٍ
+ * غيرِ موجب · يضربُ المبلغَ الموزَّعَ فيه · **ويُترجِمُ كلَّ مخرجٍ له**.
+ * @param {string[]} defs أجسادُ كلِّ صيغةٍ منشورةٍ من الدالّة
+ * @returns {string[]} أسبابُ الرفض، وفارغةٌ تعنى سلامةَ البيت
+ */
+function judgeTheCostHome(defs) {
+  const problems = []
+  const list = (Array.isArray(defs) ? defs : []).filter(Boolean)
+  if (list.length === 0) {
+    problems.push(
+      `${COST_HOME} غائبةٌ من القاعدة — **ومنها تُبنى تكلفةُ المخزونِ والمبيعاتِ كلُّها**.`)
+    return problems
+  }
+  if (list.length > 1) {
+    problems.push(
+      `${COST_HOME} لها ${list.length} صيغةً منشورة — **وبيتانِ لتكلفةٍ واحدةٍ يفترقانِ يوماً**.`)
+  }
+  const rate = new RegExp(`\\b${RATE_VAR}\\b`)
+  const alloc = new RegExp(`\\b${ALLOC_VAR}\\b`)
+  for (const def of list) {
+    const body = maskSqlComments(def)
+    if (!new RegExp(RATE_COLUMN, "i").test(body)) {
+      problems.push(
+        `${COST_HOME} لا تقرأُ ${RATE_COLUMN} أصلاً — ` +
+        "**فيدخلُ الرقمُ الأجنبىُّ المخزونَ كأنّه محلّىٌّ ولا يصرخُ أحد**.")
+      continue
+    }
+    if (!rate.test(body)) {
+      problems.push(`${COST_HOME} لا تحفظُ سعرَ الصرفِ فى ${RATE_VAR} — **ولا يُقاسُ ما لا يُسمّى**.`)
+      continue
+    }
+    if (!/>\s*0\s+THEN/i.test(body) || !/ELSE\s+1\b/i.test(body)) {
+      problems.push(
+        `${COST_HOME} لا تقرأُ سعراً غيرَ موجبٍ كواحد — ` +
+        "**وسعرٌ صفرٌ يمحو التكلفةَ كلَّها، وهو بعينُه عطبُ التكلفةِ الصفريّةِ فى v3.74.702**.")
+    }
+    const stmt = new RegExp(`SELECT[^;]*?INTO\\s+${ALLOC_VAR}\\b`, "i").exec(body)
+    if (!stmt || !rate.test(stmt[0])) {
+      problems.push(
+        `${COST_HOME}: المبلغُ الموزَّعُ (${ALLOC_VAR}) لا يُضرَبُ فى ${RATE_VAR} — ` +
+        "**فيجرى التوزيعُ بعملةِ البائعِ لا بعملةِ الدفتر**.")
+    }
+    for (const ret of body.match(/RETURN\s+[^;]+/gi) || []) {
+      const e = ret.replace(/^RETURN\s+/i, "").trim()
+      if (/^(NULL|NEW|OLD|QUERY)\b/i.test(e)) continue
+      if (rate.test(e) || alloc.test(e)) continue
+      problems.push(
+        `${COST_HOME}: مخرجٌ غيرُ مُترجَمٍ «${e.replace(/\s+/g, " ").slice(0, 60)}» — ` +
+        "**وطريقُ الاحتياطِ إن لم يُترجَمْ صارَ بابَ الكذبِ الوحيدَ الباقى**.")
+    }
+  }
+  return problems
+}
+
 // **ولا يُنسَخُ حكمٌ ليُقاسَ به**: من استوردَ هذا الملفَّ أخذَ دوالَّ الحارسِ عينَها.
 if (require.main !== module) {
   module.exports = {
     LAW, CURRENCY_HOME, MUST_CARRY_THE_LAW, PINNED_CANNOT_TRANSLATE,
-    maskSqlComments, judgeTheLaw, judgeRoster, judgeInstallation,
+    COST_HOME, RATE_COLUMN, RATE_VAR, ALLOC_VAR,
+    maskSqlComments, judgeTheLaw, judgeRoster, judgeInstallation, judgeTheCostHome,
   }
   return
 }
@@ -278,6 +364,43 @@ if (process.argv.includes("--selftest")) {
     PINNED_CANNOT_TRANSLATE.filter((x) => MUST_CARRY_THE_LAW[x]).length, 0)
   t("والأربعةُ الحاملةُ للقانونِ لكلٍّ أربعةُ أعمدة",
     Object.values(MUST_CARRY_THE_LAW).every((c) => c.length === 4), true)
+
+  // ── (٦) بيتُ التكلفةِ المُنزَلة ───────────────────────────────────────────
+  const GOOD_COST = `
+    DECLARE v_rate numeric; v_allocatable numeric;
+    BEGIN
+      SELECT CASE WHEN COALESCE(b.exchange_rate, 1) > 0 THEN COALESCE(b.exchange_rate, 1) ELSE 1 END
+        INTO v_rate FROM bills b WHERE b.id = p_bill_id;
+      SELECT (COALESCE(b.subtotal,0) + COALESCE(b.shipping,0)) * v_rate
+        INTO v_allocatable FROM bills b WHERE b.id = p_bill_id;
+      IF v_qty IS NULL THEN RETURN NULL; END IF;
+      IF v_base <= 0 THEN RETURN COALESCE(v_unit_price,0) * COALESCE(v_rate,1); END IF;
+      RETURN ROUND((v_allocatable * (v_line_net / v_base)) / v_qty, 6);
+    END`
+
+  t("يُبرِّئُ بيتَ تكلفةٍ يسألُ السعرَ ويُترجِمُ كلَّ مخرجٍ له",
+    judgeTheCostHome([GOOD_COST]).length, 0)
+  t("ويرفضُ غيابَ بيتِ التكلفةِ كلِّه — ومنه تُبنى تكلفةُ المخزونِ كلُّها",
+    judgeTheCostHome([]).length, 1)
+  t("ويرفضُ صيغتَين لتكلفةٍ واحدة — وبيتانِ يفترقانِ يوماً",
+    judgeTheCostHome([GOOD_COST, GOOD_COST]).length > 0, true)
+  t("ويرفضُ من لا يقرأُ سعرَ الصرفِ أصلاً",
+    judgeTheCostHome([GOOD_COST.replace(/exchange_rate/g, "subtotal")]).length > 0, true)
+  t("ويرفضُ من يقرأُ سعراً غيرَ موجبٍ كما هو — وسعرٌ صفرٌ يمحو التكلفة",
+    judgeTheCostHome([GOOD_COST.replace("ELSE 1 END", "ELSE 0 END")]).length > 0, true)
+  t("ويرفضُ توزيعاً بلا ضربٍ فى السعر — توزيعٌ بعملةِ البائع",
+    judgeTheCostHome([GOOD_COST.replace(
+      "(COALESCE(b.subtotal,0) + COALESCE(b.shipping,0)) * v_rate",
+      "(COALESCE(b.subtotal,0) + COALESCE(b.shipping,0))")]).length, 1)
+  t("ويرفضُ طريقَ احتياطٍ غيرَ مُترجَم — وهو بابُ الكذبِ الأخير",
+    judgeTheCostHome([GOOD_COST.replace(
+      "COALESCE(v_unit_price,0) * COALESCE(v_rate,1)", "COALESCE(v_unit_price,0)")]).length, 1)
+  t("ولا يُخطِّئُ مخرجاً فارغاً — ولا تُترجَمُ لا-قيمة",
+    judgeTheCostHome([GOOD_COST + "\n RETURN NULL;"]).length, 0)
+  t("ولا يخدعُه سعرٌ مكتوبٌ فى تعليق — والتعليقُ ليس تعليمة",
+    judgeTheCostHome(["-- exchange_rate v_rate > 0 THEN ELSE 1 v_allocatable"]).length > 0, true)
+  t("ويُسمّى بيتَ التكلفةِ فى كلِّ سببٍ يرفعُه",
+    judgeTheCostHome(["BEGIN RETURN 1; END"]).every((p) => p.includes(COST_HOME)), true)
 
   let fail = 0
   for (const [name, got, exp] of cases) {
@@ -398,6 +521,46 @@ const notes = []
       }
     }
 
+    // ── (٦) وبيتُ التكلفةِ المُنزَلةِ يسألُ سعرَ الصرف ──────────────────────
+    const { rows: costRows } = await client.query(
+      `SELECT pg_get_functiondef(p.oid) AS def, p.prosecdef,
+              array_to_string(COALESCE(p.proconfig, ARRAY[]::text[]), ',') AS cfg
+         FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'public' AND p.proname = $1`, [COST_HOME])
+    problems.push(...judgeTheCostHome(costRows.map((r) => r.def)))
+    for (const r of costRows) {
+      if (!r.prosecdef) {
+        problems.push(`${COST_HOME} ليست بصلاحيّاتٍ كاملة — فقد لا تقرأُ الفاتورةَ لكلِّ مُنادٍ.`)
+      }
+      if (!/search_path=/.test(r.cfg)) {
+        problems.push(`${COST_HOME} بلا مسارِ بحثٍ مضبوط — **وبابٌ بصلاحيّاتٍ كاملةٍ بلا مسارٍ يُزوَّرُ اسمُه**.`)
+      }
+    }
+
+    // **وحفظُ المجموعِ يُقاسُ لا يُوعَدُ به**: تكاليفُ الأصنافِ = (القيمة + الشحن) × السعر.
+    // ولا يُحاكَمُ إلّا ما له سعرٌ صالحٌ منشور، فسياسةُ السعرِ غيرِ الموجبِ بيتُها
+    // الدالّةُ نفسُها ولا تُنسَخُ هنا لتفترقَ عنها غداً.
+    const { rows: cons } = await client.query(
+      `WITH s AS (
+         SELECT b.id,
+                (COALESCE(b.subtotal, 0) + COALESCE(b.shipping, 0)) * b.exchange_rate AS allocatable,
+                SUM(public.${COST_HOME}(bi.bill_id, bi.product_id) * bi.quantity) AS lots
+           FROM public.bills b JOIN public.bill_items bi ON bi.bill_id = b.id
+          WHERE b.exchange_rate IS NOT NULL AND b.exchange_rate > 0
+          GROUP BY b.id, b.subtotal, b.shipping, b.exchange_rate)
+       SELECT count(*)::int AS bills,
+              count(*) FILTER (WHERE lots IS NULL)::int AS blind,
+              count(*) FILTER (WHERE allocatable > 0 AND abs(lots - allocatable) > 0.01)::int AS off,
+              COALESCE(max(abs(lots - allocatable)), 0)::text AS worst
+         FROM s`)
+    const cn = cons[0] || { bills: 0, blind: 0, off: 0, worst: "0" }
+    if (cn.off > 0) {
+      problems.push(
+        `${cn.off} فاتورةً مجموعُ تكاليفِ أصنافِها لا يُساوى (القيمة + الشحن) × سعرَ الصرف ` +
+        `(أسوأُ فرقٍ ${cn.worst}) — **فإمّا أنَّ الترجمةَ سقطت وإمّا أنَّ التوزيعَ لم يعدْ يحفظُ المجموع**.`)
+    }
+    notes.push(`  بيتُ التكلفةِ المُنزَلة: صيغةٌ منشورة=${costRows.length} · فواتيرُ حُوسبت=${cn.bills} · بلا تكلفة=${cn.blind} · تُخالفُ حفظَ المجموع=${cn.off} (المطلوبُ صفر) · أسوأُ فرق=${cn.worst}`)
+
     notes.push(`  مستنداتٌ تحملُ عملة: ${carriers.length} · تحملُ القانون: ${Object.keys(installed).length} · لا تستطيعُ الترجمة: ${cannot.length} (المُثبَّت ${PINNED_CANNOT_TRANSLATE.length})`)
     notes.push(`  صفوفٌ قائمةٌ تُخالفُ القانون: ${violators} (المطلوبُ صفر)`)
   }, { onAttempt: () => { problems.length = 0; notes.length = 0 } })
@@ -405,7 +568,8 @@ const notes = []
   if (problems.length > 0) {
     console.error(`X مالٌ بعملةٍ لم تُترجَم (${problems.length}):`)
     for (const p of problems) console.error(`  - ${p}`)
-    console.error("  انظر supabase/migrations/20260822000001_v3_75_84_no_money_is_recorded_in_a_currency_that_was_not_translated.sql")
+    console.error("  انظر supabase/migrations/20260822000032_v3_75_84_no_money_is_recorded_in_a_currency_that_was_not_translated.sql")
+    console.error("  و supabase/migrations/20260822000034_v3_75_85_the_cost_is_measured_in_the_ledgers_currency_not_the_sellers.sql")
     process.exit(1)
   }
 
@@ -413,5 +577,6 @@ const notes = []
   console.log(
     "+ ولا يُسجَّلُ مالٌ بعملةٍ لم تُترجَم: الحكمُ فى بيتٍ واحدٍ يسألُ عملةَ الأساسِ وخاناتِها " +
     "ولا يخترعُ رقماً · ومُركَّبٌ على المستنداتِ الأربعةِ التى تستطيعُ الترجمةَ إنشاءً وتعديلاً · " +
-    "ومن لا يستطيعُ معدودٌ بالاسمِ لا مسكوتٌ عنه · ولا صفَّ قائمٌ يُخالفُه.")
+    "ومن لا يستطيعُ معدودٌ بالاسمِ لا مسكوتٌ عنه · ولا صفَّ قائمٌ يُخالفُه · " +
+    "**وبيتُ التكلفةِ المُنزَلةِ يسألُ سعرَ الصرفِ ويُترجِمُ كلَّ مخرجٍ له، وحفظُ المجموعِ مقيسٌ لا موعود**.")
 })().catch((e) => { console.error(`X ${e.message}`); process.exit(1) })

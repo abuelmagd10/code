@@ -2,7 +2,7 @@
 -- AUTO-GENERATED SNAPSHOT — all live public functions & procedures.
 -- Single Source of Truth mirror of the Supabase database.
 -- DO NOT edit by hand. Regenerate with:  node scripts/dump-db-functions.js
--- Generated: 2026-08-22T12:20:00.083Z
+-- Generated: 2026-08-22T13:22:24.860Z
 -- Routines: 1417
 -- =====================================================================
 
@@ -28745,6 +28745,15 @@ AS $function$
 -- other product. Verified: two lines whose true cost is 100 each came out 106.54
 -- and 93.46. The bill total stayed right, which is exactly why nothing caught it —
 -- only the per-product cost, and therefore per-product profit, was wrong.
+--
+-- v3.75.85 — AND THE COST IS MEASURED IN THE LEDGER'S CURRENCY, NOT THE SELLER'S.
+-- The allocatable amount is translated by the bill's exchange rate before it is
+-- spread, and the fallback list price with it. The WEIGHTS need no rate: they are
+-- a ratio, and the rate cancels out of both sides of it.
+-- A rate that is not greater than zero is read as one, because a zero rate would
+-- wipe the cost to nothing - the zero-cost lot bug of v3.74.702. A foreign bill
+-- with no usable rate cannot exist at all: erp_foreign_money_is_translated refuses
+-- it when the row is born.
 DECLARE
   v_qty         numeric;
   v_unit_price  numeric;
@@ -28754,10 +28763,15 @@ DECLARE
   v_base        numeric;
   v_allocatable numeric;
   v_tax_incl    boolean;
+  v_rate        numeric;
 BEGIN
   SELECT COALESCE(b.tax_inclusive, false),
-         COALESCE(b.subtotal, 0) + COALESCE(b.shipping, 0)
-    INTO v_tax_incl, v_allocatable
+         CASE WHEN COALESCE(b.exchange_rate, 1) > 0 THEN COALESCE(b.exchange_rate, 1) ELSE 1 END
+    INTO v_tax_incl, v_rate
+  FROM bills b WHERE b.id = p_bill_id;
+
+  SELECT (COALESCE(b.subtotal, 0) + COALESCE(b.shipping, 0)) * v_rate
+    INTO v_allocatable
   FROM bills b WHERE b.id = p_bill_id;
 
   SELECT bi.quantity, bi.unit_price, COALESCE(bi.discount_percent, 0), COALESCE(bi.tax_rate, 0)
@@ -28783,9 +28797,10 @@ BEGIN
 
   -- No usable basis to allocate against: fall back to the list price rather than
   -- risk a zero-cost lot — that failure mode is exactly what produced the
-  -- zero-cost COGS bug fixed in v3.74.702.
+  -- zero-cost COGS bug fixed in v3.74.702. And the fallback is translated too,
+  -- because a list price in dollars is not a cost in the ledger's currency.
   IF v_base IS NULL OR v_base <= 0 OR v_allocatable IS NULL OR v_allocatable <= 0 THEN
-    RETURN COALESCE(v_unit_price, 0);
+    RETURN COALESCE(v_unit_price, 0) * COALESCE(v_rate, 1);
   END IF;
 
   RETURN ROUND((v_allocatable * (v_line_net / v_base)) / v_qty, 6);
