@@ -53,6 +53,8 @@
     "test:period-closing": "npx tsx scripts/test-period-closing.ts",
     "inventory:audit": "node scripts/inventory-audit.js",
     "check:scripts-tracked": "node scripts/check-referenced-scripts-tracked.js",
+    "check:rpc-doors": "node scripts/check-every-rpc-call-has-a-door.js",
+    "check:rpc-doors:selftest": "node scripts/check-every-rpc-call-has-a-door.js --selftest",
     "check:period-lock": "node scripts/check-the-period-lock-is-one-home.js",
     "check:period-lock:selftest": "node scripts/check-the-period-lock-is-one-home.js --selftest",
     "check:traps": "node scripts/check-every-selftest-trap-is-run.js",

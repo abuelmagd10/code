@@ -38,6 +38,23 @@ interface AccountingPeriod {
 }
 
 interface ClosingPreview {
+    // v3.75.83 — **صفرٌ لم يُقَسْ ليس صفراً.** كانت هذه المعاينةُ تُنادى دالّةً
+    // اسمُها `execute_sql` **لا وجودَ لها فى القاعدةِ أصلاً** (مقيسٌ: لا فى أىِّ
+    // مخطَّطٍ ولا بأىِّ نوع)، ولا تقرأُ خطأَ النداءِ إطلاقاً — فكان النداءُ يفشلُ
+    // فى كلِّ مرّة، وتُقرأُ النتيجةُ فراغاً، فتُعرَضُ على صاحبِ الشأنِ **إيراداتٌ
+    // صفرٌ ومصروفاتٌ صفرٌ وصافى ربحٍ صفر** فى الشاشةِ التى يقرِّرُ فيها إقفالَ
+    // فترةٍ محاسبيّة. وهذا أسوأُ من بابٍ يُصدِرُ خطأً: بابٌ يُصدِرُ خطأً يُسمَع،
+    // أمّا رقمٌ كاذبٌ فيُصدَّقُ ويُبنى عليه قرار.
+    //
+    // ولم يُوضَعْ مكانَه حسابٌ جديد **عمداً**: صافى الربحِ للفترةِ له بيتٌ يحسبُه
+    // اليومَ فعلاً وهو `close_accounting_period(period, closed_by, retained)` —
+    // يقرأُ نوعَ الحسابِ وعَلَمَ قيدِ الإقفالِ ويُرجِعُ صافى الربحَ ويكتبُ القيد.
+    // فلو حسبتِ المعاينةُ الرقمَ بيدِها لصار **بيتانِ لرقمٍ واحد**، وقد يفترقان
+    // على الشاشةِ نفسِها التى يُقرَّرُ فيها الإقفال. وتوحيدُهما يمسُّ كتابةَ قيدٍ
+    // فى الدفاتر، فهو دفعةٌ تُقاسُ بذاتِها ولا تُخلَطُ بنزعِ كذبة.
+    //
+    // فالحكمُ هنا هو الحكمُ الثالث: **لم أَقِسْ** — يُقالُ صراحةً ولا يُتَجمَّل.
+    measured: boolean
     totalRevenue: number
     totalExpense: number
     netIncome: number
@@ -94,69 +111,22 @@ export default function AccountingPeriodsPage() {
     }
 
     const loadClosingPreview = async (period: AccountingPeriod) => {
+        // v3.75.83 — نُزعَ من هنا نداءانِ لدالّةٍ لا وجودَ لها (`execute_sql`)، وكان
+        // خطؤُهما لا يُقرَأُ أصلاً، فتُعرَضُ أصفارٌ كأنّها قياس. والسببُ مشروحٌ عندَ
+        // تعريفِ ClosingPreview أعلاه. ولا يُعطَّلُ الإقفالُ بذلك: القيدُ يُحسَبُ
+        // ويُكتَبُ فى القاعدةِ نفسِها عندَ التأكيد، والمعاينةُ وحدَها هى التى صمتت.
         try {
             setIsLoadingPreview(true)
             const companyId = await getActiveCompanyId(supabase)
             if (!companyId) return
 
-            // Calculate Revenue
-            const { data: revenueData } = await supabase.rpc('execute_sql', {
-                query: `
-          SELECT 
-            coa.account_name,
-            SUM(COALESCE(jel.credit_amount, 0) - COALESCE(jel.debit_amount, 0)) as balance
-          FROM journal_entry_lines jel
-          JOIN journal_entries je ON jel.journal_entry_id = je.id
-          JOIN chart_of_accounts coa ON jel.account_id = coa.id
-          WHERE je.company_id = '${companyId}'
-            AND je.status = 'posted'
-            AND je.is_closing_entry = FALSE
-            AND je.entry_date BETWEEN '${period.period_start}' AND '${period.period_end}'
-            AND coa.account_type = 'income'
-          GROUP BY coa.account_name
-          HAVING SUM(COALESCE(jel.credit_amount, 0) - COALESCE(jel.debit_amount, 0)) <> 0
-        `
-            })
-
-            // Calculate Expenses
-            const { data: expenseData } = await supabase.rpc('execute_sql', {
-                query: `
-          SELECT 
-            coa.account_name,
-            SUM(COALESCE(jel.debit_amount, 0) - COALESCE(jel.credit_amount, 0)) as balance
-          FROM journal_entry_lines jel
-          JOIN journal_entries je ON jel.journal_entry_id = je.id
-          JOIN chart_of_accounts coa ON jel.account_id = coa.id
-          WHERE je.company_id = '${companyId}'
-            AND je.status = 'posted'
-            AND je.is_closing_entry = FALSE
-            AND je.entry_date BETWEEN '${period.period_start}' AND '${period.period_end}'
-            AND coa.account_type = 'expense'
-          GROUP BY coa.account_name
-          HAVING SUM(COALESCE(jel.debit_amount, 0) - COALESCE(jel.credit_amount, 0)) <> 0
-        `
-            })
-
-            const revenueAccounts = (revenueData || []).map((r: any) => ({
-                account_name: r.account_name,
-                balance: Number(r.balance || 0)
-            }))
-
-            const expenseAccounts = (expenseData || []).map((e: any) => ({
-                account_name: e.account_name,
-                balance: Number(e.balance || 0)
-            }))
-
-            const totalRevenue = revenueAccounts.reduce((sum: number, acc: { account_name: string; balance: number }) => sum + acc.balance, 0)
-            const totalExpense = expenseAccounts.reduce((sum: number, acc: { account_name: string; balance: number }) => sum + acc.balance, 0)
-            const netIncome = totalRevenue - totalExpense
-
             setClosingPreview({
-                totalRevenue,
-                totalExpense,
-                netIncome,
-                revenueAccounts,
-                expenseAccounts
+                measured: false,
+                totalRevenue: 0,
+                totalExpense: 0,
+                netIncome: 0,
+                revenueAccounts: [],
+                expenseAccounts: []
             })
         } catch (error) {
             console.error("Error loading preview:", error)
@@ -447,22 +417,41 @@ export default function AccountingPeriodsPage() {
                         <LoadingState type="spinner" />
                     ) : closingPreview ? (
                         <div className="space-y-4">
-                            {/* Net Income Summary */}
-                            <Card className={closingPreview.netIncome >= 0 ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}>
-                                <CardContent className="pt-6">
-                                    <div className="text-center">
-                                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                                            {appLang === 'en' ? 'Net Income' : 'صافي الربح/الخسارة'}
+                            {/* v3.75.83 — الحكمُ الثالث: لم يُقَسْ شىء، فلا يُعرَضُ رقمٌ كأنّه قياس. */}
+                            {!closingPreview.measured && (
+                                <div className="flex items-start gap-3 p-4 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-lg">
+                                    <AlertCircle className="w-5 h-5 text-slate-600 dark:text-slate-300 flex-shrink-0 mt-0.5" />
+                                    <div className="text-sm text-slate-700 dark:text-slate-200">
+                                        <p className="font-semibold mb-1">
+                                            {appLang === 'en' ? 'The preview was not measured' : 'المعاينة غير مقيسة'}
                                         </p>
-                                        <p className={`text-3xl font-bold ${closingPreview.netIncome >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                            {numberFmt.format(closingPreview.netIncome)}
-                                        </p>
-                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                            {appLang === 'en' ? `Revenue: ${numberFmt.format(closingPreview.totalRevenue)} - Expense: ${numberFmt.format(closingPreview.totalExpense)}` : `الإيرادات: ${numberFmt.format(closingPreview.totalRevenue)} - المصروفات: ${numberFmt.format(closingPreview.totalExpense)}`}
+                                        <p>
+                                            {appLang === 'en'
+                                                ? 'Revenue, expense and net income are not shown here because they are computed by the database at the moment of closing. Nothing is estimated on this screen.'
+                                                : 'لا تُعرَض هنا الإيرادات والمصروفات وصافي الربح، لأنها تُحسَب في قاعدة البيانات نفسها لحظةَ الإقفال. ولا يُقدَّر على هذه الشاشة رقم.'}
                                         </p>
                                     </div>
-                                </CardContent>
-                            </Card>
+                                </div>
+                            )}
+
+                            {/* Net Income Summary */}
+                            {closingPreview.measured && (
+                                <Card className={closingPreview.netIncome >= 0 ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}>
+                                    <CardContent className="pt-6">
+                                        <div className="text-center">
+                                            <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                                                {appLang === 'en' ? 'Net Income' : 'صافي الربح/الخسارة'}
+                                            </p>
+                                            <p className={`text-3xl font-bold ${closingPreview.netIncome >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                                                {numberFmt.format(closingPreview.netIncome)}
+                                            </p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                                {appLang === 'en' ? `Revenue: ${numberFmt.format(closingPreview.totalRevenue)} - Expense: ${numberFmt.format(closingPreview.totalExpense)}` : `الإيرادات: ${numberFmt.format(closingPreview.totalRevenue)} - المصروفات: ${numberFmt.format(closingPreview.totalExpense)}`}
+                                            </p>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            )}
 
                             {/* Revenue Accounts */}
                             {closingPreview.revenueAccounts.length > 0 && (

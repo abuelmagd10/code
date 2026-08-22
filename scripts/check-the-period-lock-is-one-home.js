@@ -24,6 +24,8 @@
  *   ‏(٣) **بابان ميّتان**: مسارا `/api/accounting-periods/lock` و`/unlock`
  *       يُمرِّرانِ وسيطاً (`p_company_id`) **لا تقبلُه أىُّ نسخةٍ منشورة**،
  *       فيفشلانِ فى كلِّ مرّة. ولا شاشةَ تُنادِيهما، فلم يُكتشَفْ ذلك قطّ.
+ *       **وهذه الثالثةُ لم تبقَ هنا**: قِيسَ المشروعُ كلُّه فى v3.75.83 فوُجدَ
+ *       ٨٨ نداءً بلا باب، فانتقلَ حكمُها إلى بيتِه الواحدِ ولم يبقَ منه ههنا شىء.
  *
  * ═══ وما وجدَه الحارسُ أوّلَ مرّةٍ شُغِّلَ على القاعدةِ الحيّة ═══
  *
@@ -85,13 +87,12 @@ const PINNED_SECOND_HOMES = [
 // ومن يُنادى البيتَ فيسألُ سؤالَه: المُشغِّلانِ على رأسِ القيدِ وسطورِه.
 const MUST_ASK_THE_HOME = ["enforce_period_lock_header", "enforce_period_lock_lines"]
 
-// المساراتُ التى قِيسَ نداؤها فى هذه الدفعة. **وليست هذه كلَّ نداءاتِ المشروع**:
-// مسحُ كلِّ نداءٍ فى الشيفرةِ على توقيعاتِ القاعدةِ دفعةٌ قائمةٌ بذاتها لم تُقَسْ
-// بعد، ولا يُكتَبُ لها رقمٌ هنا قبلَ أن تُقاس.
-const MEASURED_CALL_SITES = [
-  "app/api/accounting-periods/lock/route.ts",
-  "app/api/accounting-periods/unlock/route.ts",
-]
+// v3.75.83 — **وقانونٌ فى بيتَينِ هو العطبُ الذى نُحاربُه.** كان هنا قانونٌ رابع:
+// «لا يُنادى وسيطٌ لا وجودَ له»، مقصوراً على المسارَينِ اللذَينِ قِيسا فى v3.75.82.
+// وقد قِيسَ المشروعُ كلُّه يومَ ٢٢ أغسطس ٢٠٢٦ (٤٩٤ نداءً · ٨٨ بلا باب)، فانتقلَ
+// الحكمُ إلى بيتِه الواحد: `scripts/check-every-rpc-call-has-a-door.js` — وهو
+// يقيسُ كلَّ نداءٍ فى المستودعِ لا موضعَينِ منه، ويُثبِّتُ الدَّينَ بالاسمِ والعدد.
+// فنُزعَ من هنا كاملاً ولم يُترَكْ منه أثرٌ يُخالفُه غداً.
 
 // ═══════════════════════════════════════════════════════════════════════════
 // الجزءُ الخالصُ من المنطق — يُختبَرُ بلا قرص
@@ -196,37 +197,6 @@ function asksTheHome(def) {
   return /validate_transaction_period\s*\(/.test(maskSqlComments(def))
 }
 
-/**
- * أسماءُ الوسائطِ فى نداءِ RPC مكتوبٍ حرفاً — ولا يُحكَمُ على نداءٍ بمتغيّر.
- * @returns {{fn:string, keys:string[], line:number}[]}
- */
-function literalRpcCalls(src) {
-  const code = maskJsComments(src)
-  const out = []
-  const re = /\.rpc\(\s*["'`]([a-z0-9_]+)["'`]\s*,\s*\{([\s\S]{0,900}?)\}\s*\)/g
-  let m
-  while ((m = re.exec(code)) !== null) {
-    const keys = [...m[2].matchAll(/(^|[{,\s])([a-zA-Z_][a-zA-Z0-9_]*)\s*:/g)].map((x) => x[2])
-    if (keys.length === 0) continue
-    out.push({ fn: m[1], keys: [...new Set(keys)].sort(), line: code.slice(0, m.index).split("\n").length })
-  }
-  return out
-}
-
-/**
- * أيقبلُ توقيعٌ منشورٌ **واحدٌ على الأقلّ** هذه الأسماء؟
- * @param {string[]} keys أسماءُ الوسائطِ المُرسَلة
- * @param {{argnames:string[], nargs:number, ndefaults:number}[]} overloads
- */
-function someOverloadAccepts(keys, overloads) {
-  return overloads.some((o) => {
-    const inArgs = o.argnames.slice(0, o.nargs)
-    if (!keys.every((k) => inArgs.includes(k))) return false
-    // وما لم يُرسَلْ يجب أن يكونَ له قيمةٌ افتراضيّة، وإلّا لم يُنادَ التوقيعُ أصلاً.
-    return inArgs.length - keys.length <= o.ndefaults
-  })
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // الفخُّ الذاتىّ — **وحارسٌ لا يُرى وهو يرفض ليس حارساً**
 // ═══════════════════════════════════════════════════════════════════════════
@@ -307,26 +277,6 @@ if (process.argv.includes("--selftest")) {
     asksTheHome("-- PERFORM public.validate_transaction_period(a, b);\nBEGIN END;"), false)
   t("ولا يعدُّ ذِكرَ الاسمِ نداءً بلا قوس",
     asksTheHome("BEGIN RAISE NOTICE 'validate_transaction_period'; END;"), false)
-
-  t("يقرأُ أسماءَ وسائطِ نداءٍ مكتوبٍ حرفاً",
-    literalRpcCalls("await x.rpc('f', { p_a: 1, p_b: y })")[0].keys, ["p_a", "p_b"])
-  t("ولا يقرأُ نداءً فى تعليق",
-    literalRpcCalls("// await x.rpc('f', { p_a: 1 })").length, 0)
-  t("ويقرأُ اسمَ الدالّةِ بعينِه",
-    literalRpcCalls("await x.rpc('close_accounting_period', { p_period_id: i })")[0].fn,
-    "close_accounting_period")
-
-  const OVL = [{ argnames: ["p_period_id", "p_user_id", "p_notes"], nargs: 3, ndefaults: 1 }]
-  t("يقبلُ نداءً يُطابقُ توقيعاً منشوراً", someOverloadAccepts(["p_period_id", "p_user_id"], OVL), true)
-  t("ويقبلُ نداءً يملأُ كلَّ الوسائط", someOverloadAccepts(["p_notes", "p_period_id", "p_user_id"], OVL), true)
-  t("**ويرفضُ وسيطاً لا وجودَ له** — وهو العطبُ الذى أفشلَ المسارَين",
-    someOverloadAccepts(["p_period_id", "p_company_id", "p_user_id"], OVL), false)
-  t("ويرفضُ نقصاً فى وسيطٍ بلا قيمةٍ افتراضيّة",
-    someOverloadAccepts(["p_period_id"], [{ argnames: ["p_period_id", "p_user_id"], nargs: 2, ndefaults: 0 }]), false)
-  t("ولا يخدعُه اسمُ وسيطٍ مخرَجٍ بعدَ الوسائطِ الداخلة",
-    someOverloadAccepts(["out_col"], [{ argnames: ["p_a", "out_col"], nargs: 1, ndefaults: 0 }]), false)
-  t("ويرفضُ حين لا توقيعَ أصلاً — وبحثٌ لا يجدُ ليس دليلَ سلامة",
-    someOverloadAccepts(["p_a"], []), false)
 
   let fail = 0
   for (const [name, got, exp] of cases) {
@@ -429,28 +379,6 @@ const notes = []
       }
     }
 
-    // ── (٤) ولا يُنادى وسيطٌ لا وجودَ له ───────────────────────────────────
-    for (const rel of MEASURED_CALL_SITES) {
-      const abs = path.join(ROOT, rel)
-      if (!fs.existsSync(abs)) { problems.push(`مسارٌ مقيسٌ غائب: ${rel}`); continue }
-      const calls = literalRpcCalls(fs.readFileSync(abs, "utf8"))
-      for (const c of calls) {
-        const { rows: ovl } = await client.query(
-          `SELECT COALESCE(p.proargnames, ARRAY[]::text[]) AS argnames, p.pronargs, p.pronargdefaults
-             FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-            WHERE n.nspname = 'public' AND p.proname = $1`, [c.fn])
-        const overloads = ovl.map((o) => ({
-          argnames: o.argnames, nargs: Number(o.pronargs), ndefaults: Number(o.pronargdefaults),
-        }))
-        if (!someOverloadAccepts(c.keys, overloads)) {
-          problems.push(
-            `${rel}:${c.line} ينادى ${c.fn} بوسائطَ (${c.keys.join(", ")}) ` +
-            "ولا توقيعَ منشورٌ يقبلُها — **فهذا النداءُ يفشلُ فى كلِّ مرّة**، " +
-            "وبابٌ لا يُفتَحُ لا يحرسُ شيئاً.")
-        }
-      }
-      notes.push(`  ${rel}: ${calls.length} نداءً مكتوباً حرفاً`)
-    }
   }, { onAttempt: () => { problems.length = 0; notes.length = 0 } })
 
   if (problems.length > 0) {
@@ -464,5 +392,6 @@ const notes = []
   console.log(
     "+ قفلُ الفترةِ قفل: بابُ الفتحِ يعرفُ فاتحَه من الجلسةِ لا ممّا يُرسَلُ إليه، والغيابُ " +
     "ليس إذناً، والفتحُ يرفعُ العلامتَينِ معاً · وسؤالُ «هل الفترةُ مقفولة» له بيتٌ واحدٌ " +
-    "يسألُه الرأسُ والسطورُ جميعاً · ولا نداءَ بوسيطٍ لا وجودَ له فى المسارَينِ المقيسَين.")
+    "يسألُه الرأسُ والسطورُ جميعاً · وحكمُ «لا نداءَ بوسيطٍ لا وجودَ له» انتقلَ إلى " +
+    "بيتِه الواحد: check-every-rpc-call-has-a-door.")
 })().catch((e) => { console.error(`X ${e.message}`); process.exit(1) })

@@ -437,18 +437,16 @@ export default function EditTransferPage({ params }: { params: Promise<{ id: str
           if (delError) {
             console.error('❌ [EDIT] Direct delete failed:', delError.message, delError.code)
 
-            // محاولة الحذف باستخدام RPC
-            const { error: rpcError, data: rpcData } = await supabase.rpc('delete_transfer_item', {
-              p_item_id: itemId
-            })
-
-            console.log('🗑️ [EDIT] RPC delete result:', { error: rpcError, data: rpcData })
-
-            if (rpcError) {
-              console.error('❌ [EDIT] RPC delete also failed:', rpcError.message)
-            } else {
-              console.log('✅ [EDIT] Deleted via RPC:', itemId)
-            }
+            // v3.75.83 — **بديلٌ لا وجودَ له ليس بديلاً.** كان هنا نداءٌ احتياطىٌّ
+            // لدالّةٍ اسمُها `delete_transfer_item` **غيرُ موجودةٍ فى القاعدةِ إطلاقاً**
+            // (مقيسٌ يومَ ٢٢ أغسطس ٢٠٢٦: لا فى أىِّ مخطَّطٍ ولا بأىِّ نوع). فكان الحذفُ
+            // إذا رفضتْه القاعدةُ يسقطُ مرّتين ويُكتَبُ فى سجلِّ المتصفِّحِ وحدَه، ثمّ
+            // تمضى الحفظةُ إلى آخرِها فيقرأُ صاحبُ الشأنِ «تم الحفظ» **والبندُ باقٍ**.
+            // فنُزعَ البديلُ الميتُ ورُفعَ الرفضُ إلى من يقرأُ الشاشة.
+            throw new Error(
+              (delError.message || 'تعذّر حذف أحد بنود التحويل') +
+              ' — لم يُحذَف البند، ولم يُحفَظ التعديل كاملاً'
+            )
           } else {
             console.log('✅ [EDIT] Deleted directly:', itemId)
           }

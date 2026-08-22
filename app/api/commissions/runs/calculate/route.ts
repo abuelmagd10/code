@@ -141,8 +141,30 @@ export async function POST(request: NextRequest) {
 
         // Call RPC to calculate commissions for each plan
         // This will populate commission_ledger entries
+        //
+        // v3.75.83 — **حسابٌ لم يقعْ لا يُكتَبُ صفراً ويُسمّى نجاحاً.**
+        // قِيسَ يومَ ٢٢ أغسطس ٢٠٢٦ أنَّ `calculate_commission_for_period`
+        // **لا وجودَ لها فى قاعدةِ الإنتاجِ أصلاً** — لا بهذا الاسمِ ولا بغيرِه من
+        // أسماءِ العمولات. فكلُّ نداءٍ هنا كان يفشلُ، ويُقفَزُ عنه بـ`continue`،
+        // ثمّ تُكتَبُ فى `commission_runs` مبالغُ **صفر** وتعودُ الاستجابةُ
+        // `success: true`. أى أنَّ الشاشةَ تقولُ «حُسبت العمولات» ورقمُها صفرٌ
+        // مكتوبٌ فى جدولِ مال. **ورقمٌ كاذبٌ فى جدولِ مالٍ أسوأُ من خطأٍ ظاهر.**
+        //
+        // فيُعَدُّ الآنَ ما نجحَ وما سقط:
+        //   • سقطَ الكلُّ ولم ينجحْ شىء ⇐ **تُمحى دورةُ العمولةِ التى أُنشئت فى هذا
+        //     الطلبِ نفسِه** (ولم يُكتَبْ لها سطرٌ واحدٌ فى الدفتر)، ويعودُ الخطأُ
+        //     صريحاً. ولولا المحوُ لبقيتْ دورةٌ فارغةٌ تمنعُ كلَّ محاولةٍ تالية
+        //     بحجّةِ «توجد دورةٌ لهذه الفترة» — فيصيرُ الفشلُ حاجزاً دائماً.
+        //   • نجحَ بعضٌ وسقطَ بعضٌ ⇐ يُكتَبُ ما نجحَ **ولا يُقالُ نجاح**، ويُسمّى
+        //     العددُ الساقطُ وأوّلُ سببٍ له.
+        //
+        // ولم يُبْنَ محرّكُ الحسابِ هنا: بناءُ دالّةِ عمولاتٍ تكتبُ فى الدفترِ دفعةٌ
+        // تُقاسُ بذاتِها. وهو مُسمّىً ومعدودٌ فى حارسِ check-every-rpc-call-has-a-door.
         let totalCommission = 0
         let totalClawbacks = 0
+        let calculated = 0
+        let failed = 0
+        let firstFailure = ''
 
         for (const planId of plan_ids) {
             // Get all employees
@@ -173,17 +195,51 @@ export async function POST(request: NextRequest) {
 
                     if (calcError) {
                         console.error('Calculation error:', calcError)
+                        failed++
+                        if (!firstFailure) firstFailure = calcError.message || String(calcError)
                         continue
                     }
 
+                    calculated++
                     if (result) {
                         totalCommission += Number(result.total_commission || 0)
                         totalClawbacks += Number(result.total_clawbacks || 0)
                     }
-                } catch (err) {
+                } catch (err: any) {
                     console.error('Error calculating commission:', err)
+                    failed++
+                    if (!firstFailure) firstFailure = err?.message || String(err)
                 }
             }
+        }
+
+        // لم ينجحْ حسابٌ واحد: تُمحى الدورةُ الفارغةُ التى أُنشئت قبلَ قليل، ويُقالُ الحقّ.
+        if (calculated === 0 && failed > 0) {
+            // **والمحوُ نفسُه يُقرَأُ خطؤُه**: لو سقطَ المحوُ صامتاً لبقيتْ دورةٌ فارغةٌ
+            // تمنعُ كلَّ محاولةٍ تاليةٍ بحجّةِ «توجد دورةٌ لهذه الفترة»، فيصيرُ العلاجُ
+            // حاجزاً. فيُقالُ للمستخدِمِ صراحةً إن بقيتْ، ليعرفَ لماذا تُرفَضُ إعادتُه.
+            const { error: rollbackError } = await supabase
+                .from('commission_runs')
+                .delete()
+                .eq('id', run.id)
+            if (rollbackError) console.error('Error rolling back empty run:', rollbackError)
+
+            return NextResponse.json(
+                {
+                    error: 'Commission calculation is not available: the database function calculate_commission_for_period is not deployed',
+                    error_ar: 'حساب العمولات غير متاح: دالة الحساب calculate_commission_for_period غير منشورة في قاعدة البيانات',
+                    attempted: failed,
+                    calculated: 0,
+                    details: firstFailure,
+                    ...(rollbackError
+                        ? {
+                            stale_run_id: run.id,
+                            warning_ar: 'تعذّر حذف دورة العمولة الفارغة — قد تمنع محاولة جديدة لنفس الفترة'
+                        }
+                        : {})
+                },
+                { status: 503 }
+            )
         }
 
         // Update run totals
@@ -203,8 +259,11 @@ export async function POST(request: NextRequest) {
         }
 
         return NextResponse.json({
-            success: true,
+            success: failed === 0,
             run_id: run.id,
+            calculated,
+            failed,
+            ...(failed > 0 ? { error_ar: `تعذّر حساب ${failed} من العمولات — والمبالغ أدناه ناقصة`, details: firstFailure } : {}),
             total_commission: totalCommission,
             total_clawbacks: totalClawbacks,
             net_commission: netCommission
